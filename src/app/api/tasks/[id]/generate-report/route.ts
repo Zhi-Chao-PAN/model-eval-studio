@@ -1,0 +1,206 @@
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { requireAuth } from '@/lib/session'
+import { getUserAiConfig } from '@/lib/user-ai'
+import { generateChat } from '@/lib/ai'
+import { buildSystemPrompt, buildReportPrompt, buildReportAdjustPrompt } from '@/lib/ai-prompts'
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await requireAuth()
+  if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+  const { id } = await params
+  const body = await request.json()
+  const modelId = body.modelId
+  const adjustInstruction = body.adjustInstruction
+
+  const task = await prisma.task.findFirst({
+    where: { id, userId: session.userId },
+    include: {
+      models: {
+        include: {
+          artifacts: true,
+          reports: { orderBy: { createdAt: 'desc' }, take: 1 },
+        },
+      },
+    },
+  })
+  if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+
+  const model = task.models.find((m) => m.id === modelId)
+  if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
+
+  const aiConfig = await getUserAiConfig(session.userId)
+  if (!aiConfig) {
+    return NextResponse.json({ error: '请先配置 AI API' }, { status: 400 })
+  }
+
+  let reportText: string
+
+  if (adjustInstruction && model.reports.length > 0) {
+    const current = model.reports[0]
+    const currentText = formatReportText(model.modelCode, current)
+
+    const prompt = buildReportAdjustPrompt({
+      currentReport: currentText,
+      userInstruction: adjustInstruction,
+      modelCode: model.modelCode,
+      userBackground: aiConfig.background,
+    })
+
+    reportText = await generateChat(
+      [
+        { role: 'system', content: buildSystemPrompt(aiConfig.background) },
+        { role: 'user', content: prompt },
+      ],
+      {
+        baseUrl: aiConfig.baseUrl,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+        provider: aiConfig.provider,
+        temperature: 0.6,
+        maxTokens: 3000,
+      }
+    )
+  } else {
+    const hardMetrics = model.hardMetricsJson ? JSON.parse(model.hardMetricsJson) : null
+
+    const artifactsText = model.artifacts
+      .map((a) => `文件：${a.name}\n内容：${a.parsedText || a.textContent || '[非文本文件]'}`)
+      .join('\n\n')
+
+    const analysisContext = task.analysisJson
+      ? JSON.parse(task.analysisJson).content
+      : ''
+
+    const prompt = buildReportPrompt({
+      task,
+      modelCode: model.modelCode,
+      hardMetrics,
+      processText: model.processText || '',
+      artifactsText,
+      userBackground: aiConfig.background,
+      analysisContext,
+    })
+
+    reportText = await generateChat(
+      [
+        { role: 'system', content: buildSystemPrompt(aiConfig.background) },
+        { role: 'user', content: prompt },
+      ],
+      {
+        baseUrl: aiConfig.baseUrl,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+        provider: aiConfig.provider,
+        temperature: 0.7,
+        maxTokens: 4000,
+      }
+    )
+  }
+
+  const parsed = parseReport(reportText)
+
+  const report = await prisma.modelReport.create({
+    data: {
+      taskModelId: modelId,
+      productFeedback: parsed.productFeedback,
+      overallScore: parsed.overallScore,
+      overallComment: parsed.overallComment,
+      efficiencyScore: parsed.efficiencyScore,
+      efficiencyComment: parsed.efficiencyComment,
+      qualityScore: parsed.qualityScore,
+      qualityComment: parsed.qualityComment,
+    },
+  })
+
+  await prisma.task.update({
+    where: { id },
+    data: { currentStep: 'REPORT' },
+  })
+
+  return NextResponse.json({ report, rawText: reportText })
+}
+
+function formatReportText(modelCode: string, report: any): string {
+  return `====================================
+模型代号：${modelCode}
+====================================
+
+【产物效果反馈】
+${report.productFeedback}
+
+
+【模型的综合表现怎么样】
+评分：${report.overallScore} / 10
+评论：
+${report.overallComment}
+
+
+【模型交付效率是否符合预期？】
+评分：${report.efficiencyScore} / 10
+评论：
+${report.efficiencyComment}
+
+
+【模型的产物质量怎么样】
+评分：${report.qualityScore} / 10
+评论：
+${report.qualityComment}
+`
+}
+
+function parseReport(text: string) {
+  const productFeedback = extractSection(text, '【产物效果反馈】', '【模型的综合表现怎么样】')
+  const overallScore = extractScore(text, '【模型的综合表现怎么样】')
+  const overallComment = extractComment(text, '【模型的综合表现怎么样】', '【模型交付效率是否符合预期？】')
+  const efficiencyScore = extractScore(text, '【模型交付效率是否符合预期？】')
+  const efficiencyComment = extractComment(text, '【模型交付效率是否符合预期？】', '【模型的产物质量怎么样】')
+  const qualityScore = extractScore(text, '【模型的产物质量怎么样】')
+  const qualityComment = extractCommentAfter(text, '【模型的产物质量怎么样】')
+
+  return {
+    productFeedback: productFeedback.trim(),
+    overallScore: overallScore || 0,
+    overallComment: overallComment.trim(),
+    efficiencyScore: efficiencyScore || 0,
+    efficiencyComment: efficiencyComment.trim(),
+    qualityScore: qualityScore || 0,
+    qualityComment: qualityComment.trim(),
+  }
+}
+
+function extractSection(text: string, startMarker: string, endMarker: string): string {
+  const start = text.indexOf(startMarker)
+  const end = text.indexOf(endMarker)
+  if (start === -1 || end === -1) return ''
+  return text.slice(start + startMarker.length, end).trim()
+}
+
+function extractScore(text: string, afterMarker: string): number {
+  const idx = text.indexOf(afterMarker)
+  if (idx === -1) return 0
+  const after = text.slice(idx)
+  const match = after.match(/评分[：]\s*([\d.]+)\s*\/\s*10/)
+  if (match) return parseFloat(match[1])
+  return 0
+}
+
+function extractComment(text: string, startMarker: string, endMarker: string): string {
+  const start = text.indexOf(startMarker)
+  const end = text.indexOf(endMarker)
+  if (start === -1 || end === -1) return ''
+  const section = text.slice(start + startMarker.length, end)
+  const withoutScore = section.replace(/评分[：].*?\n/, '')
+  return withoutScore.replace(/评论[：]\s*/, '').trim()
+}
+
+function extractCommentAfter(text: string, startMarker: string): string {
+  const start = text.indexOf(startMarker)
+  if (start === -1) return ''
+  const section = text.slice(start + startMarker.length)
+  const withoutScore = section.replace(/评分[：].*?\n/, '')
+  return withoutScore.replace(/评论[：]\s*/, '').trim()
+}
