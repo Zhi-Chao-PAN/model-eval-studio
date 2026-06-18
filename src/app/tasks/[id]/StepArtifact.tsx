@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import {
-  Package, UploadCloud, X, FileText, Trash2, Sparkles, Plus, AlertTriangle,
+  Package, UploadCloud, X, FileText, Trash2, Sparkles, Plus, AlertTriangle, CheckCircle2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea, Input } from '@/components/ui/input'
@@ -23,6 +23,7 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
+  const [note, setNote] = useState<{ type: 'ok'|'err'; text: string } | null>(null)
 
   const models = task.models || []
 
@@ -37,7 +38,7 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
 
   async function analyze() {
     if (models.length === 0) {
-      alert('还没有模型，请先在第 3 步上传看板截图识别模型')
+      setNote({ type: 'err', text: '还没有模型，请先在第 3 步上传看板截图识别模型' }); setTimeout(() => setNote(null), 4000)
       return
     }
     setAnalyzing(true)
@@ -64,7 +65,7 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
         method: 'POST', body: formData,
       })
       if (res.ok) onRefresh()
-      else { const data = await res.json(); alert('上传失败: ' + (data.error || '未知错误')) }
+      else { const data = await res.json(); setNote({ type: 'err', text: '上传失败: ' + (data.error || '未知错误') }); setTimeout(() => setNote(null), 4000) }
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -95,7 +96,7 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
     const code = newModelCode.trim().toUpperCase();
     if (!code) return;
     if (models.find((m: any) => m.modelCode.toUpperCase() === code)) {
-      alert('模型 ' + code + ' 已存在');
+      setNote({ type: 'err', text: '模型 ' + code + ' 已存在' }); setTimeout(() => setNote(null), 3000);
       return;
     }
     setAddingModel(true);
@@ -106,7 +107,7 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
         body: JSON.stringify({ modelCodes: [code] }),
       });
       if (res.ok) {  let d; try { d = await res.json(); } catch { d = null; } if (d) { setNewModelCode(''); onRefresh(); } else { setNewModelCode(''); onRefresh(); } }
-      else { let d; try { d = await res.json(); } catch { throw new Error('服务器返回了非预期内容'); } alert('添加失败：' + (d.error || '未知错误')); }
+      else { let d; try { d = await res.json(); } catch { throw new Error('服务器返回了非预期内容'); } setNote({ type: 'err', text: '添加失败：' + (d.error || '未知错误') }); setTimeout(() => setNote(null), 4000); }
     } finally { setAddingModel(false); }
   }
 
@@ -151,6 +152,13 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
         <div className="glass p-10 text-center text-sm text-gray-500 border-dashed">
           <Package className="h-8 w-8 mx-auto mb-3 text-gray-600" />
           暂无待测模型。先在第 3 步上传数据看板，AI 会自动识别模型代号。
+
+      {note && (
+        <div className={'flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm animate-rise ' + (note.type === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300')}>
+          {note.type === 'ok' ? <CheckCircle2 className="h-4 w-4 flex-shrink-0" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0" />}
+          {note.text}
+        </div>
+      )}
         </div>
       ) : (
         <div className="grid gap-3">
