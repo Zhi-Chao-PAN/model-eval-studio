@@ -1,0 +1,12 @@
+.env
+.env.local
+node_modules
+.next
+.vercel
+scripts/verify.ts
+scripts/fix-*.js
+scripts/gen-*.js
+scripts/use-*.js
+scripts/make-*.js
+scripts/write-*.js
+scripts/test-*.js

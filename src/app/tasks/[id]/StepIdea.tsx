@@ -1,0 +1,167 @@
+'use client'
+import { useState, useEffect, useRef } from 'react'
+import { Brain, Sparkles, Square, AlertCircle, Zap } from 'lucide-react'
+import { MarkdownView } from '@/components/MarkdownView'
+import { Button } from '@/components/ui/button'
+
+interface Props {
+  task: any
+  onAddMessage: (msg: any) => void
+}
+
+type Phase = 'idle' | 'connecting' | 'streaming' | 'done' | 'error'
+
+export default function StepIdea({ task, onAddMessage }: Props) {
+  const [idea, setIdea] = useState('')
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [error, setError] = useState<string | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+  const startedAt = useRef<number | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (task.taskIdeaJson) {
+      try {
+        const parsed = JSON.parse(task.taskIdeaJson)
+        setIdea(parsed.content || '')
+        setPhase('done')
+      } catch {}
+    }
+  }, [task.taskIdeaJson])
+
+  useEffect(() => {
+    if (phase !== 'connecting' && phase !== 'streaming') return
+    const t = setInterval(() => {
+      if (startedAt.current) setElapsed((Date.now() - startedAt.current) / 1000)
+    }, 100)
+    return () => clearInterval(t)
+  }, [phase])
+
+  async function generate() {
+    setError(null); setIdea(''); setPhase('connecting')
+    startedAt.current = Date.now(); setElapsed(0)
+    const controller = new AbortController()
+    abortRef.current = controller
+    try {
+      const res = await fetch('/api/tasks/' + task.id + '/generate-idea/stream', {
+        method: 'POST', signal: controller.signal,
+      })
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'HTTP ' + res.status)
+      }
+      setPhase('streaming')
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let acc = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const events = buffer.split('\n\n')
+        buffer = events.pop() || ''
+        for (const ev of events) {
+          let eventName = 'message'
+          let dataLine = ''
+          for (const line of ev.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim()
+            else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
+          }
+          if (!dataLine) continue
+          try {
+            const payload = JSON.parse(dataLine)
+            if (eventName === 'delta' && payload.text) {
+              acc += payload.text; setIdea(acc)
+            } else if (eventName === 'error') {
+              throw new Error(payload.message || '生成出错')
+            } else if (eventName === 'done') {
+              setIdea(payload.full || acc); setPhase('done')
+              onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: payload.full || acc, step: 'IDEA' })
+            }
+          } catch {}
+        }
+      }
+      if (phase !== 'done') { setIdea(acc); setPhase('done') }
+    } catch (e: any) {
+      if (e.name === 'AbortError') setPhase(idea ? 'done' : 'idle')
+      else { setError(e.message || String(e)); setPhase('error') }
+    } finally { abortRef.current = null }
+  }
+
+  function abort() { abortRef.current?.abort() }
+
+  const charCount = idea.length
+  const isWorking = phase === 'connecting' || phase === 'streaming'
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+            <Brain className="h-5 w-5 text-violet-300" />
+          </div>
+          <div>
+            <h2 className="display text-xl">测试思路</h2>
+            <p className="text-sm text-gray-400 mt-1">
+              AI 基于个人背景与任务来源生成测试思路。流式输出，可中断、可重试。
+            </p>
+          </div>
+        </div>
+        <div className="shrink-0 flex items-center gap-2">
+          {isWorking && (
+            <Button variant="secondary" size="sm" onClick={abort}>
+              <Square className="h-3 w-3 fill-current" /> 停止
+            </Button>
+          )}
+          <Button onClick={generate} loading={isWorking}>
+            <Sparkles className="h-3.5 w-3.5" />
+            {phase === 'connecting' && '连接中...'}
+            {phase === 'streaming' && 'AI 正在生成'}
+            {phase === 'done' && idea && '重新生成'}
+            {(phase === 'idle' || (phase === 'done' && !idea) || phase === 'error') && 'AI 生成测试思路'}
+          </Button>
+        </div>
+      </div>
+
+      {isWorking && (
+        <div className="glass px-4 py-3 flex items-center gap-3 text-sm">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-400" />
+          </span>
+          <span className="text-indigo-200 font-medium">
+            {phase === 'connecting' ? '正在与模型建立连接...' : '正在生成内容'}
+          </span>
+          <span className="text-gray-500 text-xs mono">
+            {elapsed.toFixed(1)}s · {charCount} 字
+          </span>
+          <div className="ml-auto h-1 w-24 bg-white/10 rounded-full overflow-hidden">
+            <div className="h-full shimmer bg-indigo-400/40" style={{ width: '100%' }} />
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="glass px-4 py-3 text-sm text-red-300 flex items-start gap-2 border-red-500/20">
+          <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>生成失败：{error}</span>
+        </div>
+      )}
+
+      {idea ? (
+        <div className="glass p-6 max-h-[600px] overflow-y-auto scrollbar-thin">
+          <MarkdownView text={idea} />
+          {phase === 'streaming' && (
+            <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse align-middle ml-1" />
+          )}
+        </div>
+      ) : !isWorking ? (
+        <div className="glass p-12 text-center text-sm text-gray-500 border-dashed">
+          <Zap className="h-8 w-8 mx-auto mb-3 text-gray-600" />
+          点击右上角按钮，让 AI 基于任务信息生成测试思路
+        </div>
+      ) : null}
+    </div>
+  )
+}
