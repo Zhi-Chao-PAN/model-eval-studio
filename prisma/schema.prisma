@@ -108,6 +108,7 @@ model TaskModel {
   hardMetricsJson  String?
   processText    String?
   screenshotUrls String?
+  verificationScreenshotUrls String?
   createdAt      DateTime @default(now())
   artifacts      ModelArtifact[]
   reports        ModelReport[]
@@ -131,12 +132,15 @@ model ModelReport {
   taskModelId       String
   taskModel         TaskModel @relation(fields: [taskModelId], references: [id], onDelete: Cascade)
   productFeedback   String
+  verificationScreenshotUrls String?
+  verificationSummary String?
   overallScore      Float
   overallComment    String
   efficiencyScore   Float
   efficiencyComment String
   qualityScore      Float
   qualityComment    String
+  trajectoryAnalysis String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }

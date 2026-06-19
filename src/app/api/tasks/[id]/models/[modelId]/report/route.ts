@@ -26,7 +26,18 @@ export async function POST(
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id, modelId } = await params
-  const { productFeedback, overallScore, overallComment, efficiencyScore, efficiencyComment, qualityScore, qualityComment } = await request.json()
+  const {
+    productFeedback,
+    verificationScreenshotUrls,
+    verificationSummary,
+    overallScore,
+    overallComment,
+    efficiencyScore,
+    efficiencyComment,
+    qualityScore,
+    qualityComment,
+    trajectoryAnalysis,
+  } = await request.json()
 
   const model = await prisma.taskModel.findFirst({
     where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
@@ -37,14 +48,29 @@ export async function POST(
     data: {
       taskModelId: modelId,
       productFeedback: productFeedback || '',
-      overallScore: overallScore || 0,
+      verificationScreenshotUrls: verificationScreenshotUrls || null,
+      verificationSummary: verificationSummary || null,
+      overallScore: normalizeOverallScore(overallScore),
       overallComment: overallComment || '',
-      efficiencyScore: efficiencyScore || 0,
+      efficiencyScore: normalizeHalfScore(efficiencyScore),
       efficiencyComment: efficiencyComment || '',
-      qualityScore: qualityScore || 0,
+      qualityScore: normalizeHalfScore(qualityScore),
       qualityComment: qualityComment || '',
+      trajectoryAnalysis: trajectoryAnalysis || '未提供轨迹截图。',
     },
   })
 
   return NextResponse.json({ report })
+}
+
+function normalizeOverallScore(score: unknown): number {
+  const value = Number(score)
+  if (!Number.isFinite(value) || value <= 0) return 1
+  return Math.min(10, Math.max(1, Math.round(value)))
+}
+
+function normalizeHalfScore(score: unknown): number {
+  const value = Number(score)
+  if (!Number.isFinite(value) || value <= 0) return 1
+  return Math.min(10, Math.max(1, Math.round(value * 2) / 2))
 }

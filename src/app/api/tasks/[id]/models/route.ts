@@ -80,7 +80,7 @@ export async function PUT(
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id } = await params
-  const { modelId, displayName, hardMetricsJson, processText, screenshotUrls } = await request.json()
+  const { modelId, displayName, hardMetricsJson, processText, screenshotUrls, verificationScreenshotUrls } = await request.json()
 
   if (!modelId) return NextResponse.json({ error: 'modelId 必填' }, { status: 400 })
 
@@ -94,6 +94,7 @@ export async function PUT(
   if (hardMetricsJson !== undefined) data.hardMetricsJson = hardMetricsJson
   if (processText !== undefined) data.processText = processText
   if (screenshotUrls !== undefined) data.screenshotUrls = screenshotUrls
+  if (verificationScreenshotUrls !== undefined) data.verificationScreenshotUrls = verificationScreenshotUrls
 
   const updated = await prisma.taskModel.update({ where: { id: modelId }, data })
   return NextResponse.json({ model: updated })
