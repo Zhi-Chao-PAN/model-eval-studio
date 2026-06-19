@@ -1,12 +1,13 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+
+import { useEffect, useRef, useState } from 'react'
 import {
-  Package, UploadCloud, FileText, Trash2, Sparkles, Plus, AlertTriangle, CheckCircle2,
+  AlertTriangle, CheckCircle2, FileText, Package,
+  Plus, Trash2, UploadCloud,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Textarea, Input } from '@/components/ui/input'
+import { Input, Textarea } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { MarkdownView } from '@/components/MarkdownView'
 
 interface Props {
   task: any
@@ -14,19 +15,23 @@ interface Props {
 }
 
 export default function StepArtifact({ task, onRefresh }: Props) {
-  const [analysis, setAnalysis] = useState('')
-  const [analyzing, setAnalyzing] = useState(false)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [textContent, setTextContent] = useState('')
   const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
-  const [note, setNote] = useState<{ type: 'ok'|'err'; text: string } | null>(null)
+  const [note, setNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const noteTimerRef = useRef<number | null>(null)
 
+  const models = task.models || []
+
+  useEffect(() => () => {
+    if (noteTimerRef.current) window.clearTimeout(noteTimerRef.current)
+  }, [])
+
   function askConfirm(title: string, message: string): boolean {
-    return window.confirm(title + '\\n\\n' + message)
+    return window.confirm(title + '\n\n' + message)
   }
 
   function showNote(type: 'ok' | 'err', text: string, timeout = type === 'err' ? 15000 : 4000) {
@@ -51,58 +56,26 @@ export default function StepArtifact({ task, onRefresh }: Props) {
     }
   }
 
-  const models = task.models || []
-
-  useEffect(() => {
-    if (task.analysisJson) {
-      try {
-        const parsed = JSON.parse(task.analysisJson)
-        setAnalysis(parsed.content || '')
-      } catch {}
-    }
-  }, [task.analysisJson])
-
-  useEffect(() => () => {
-    if (noteTimerRef.current) window.clearTimeout(noteTimerRef.current)
-  }, [])
-
-  async function analyze() {
-    if (models.length === 0) {
-      showNote('err', '还没有模型，请先在第 3 步上传看板截图识别模型')
-      return
-    }
-    setAnalyzing(true)
-    try {
-      const res = await fetch('/api/tasks/' + task.id + '/analyze-artifacts', { method: 'POST' })
-      const data = await readJsonResponse(res)
-      if (!res.ok) {
-        showNote('err', data.error || '分析失败（HTTP ' + res.status + '）', 5000)
-        return
-      }
-      if (data.analysis) {
-        setAnalysis(data.analysis)
-      } else if (data.error) {
-        showNote('err', data.error, 5000)
-      }
-    } finally { setAnalyzing(false) }
-  }
-
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, modelId: string) {
     const input = e.currentTarget
-    const files = Array.from(e.target.files || [])
+    const files = Array.from(input.files || [])
     if (files.length === 0) return
+
     setUploading(true)
     try {
       const formData = new FormData()
-      files.forEach(f => formData.append('files', f))
+      files.forEach(file => formData.append('files', file))
       const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifacts', {
-        method: 'POST', body: formData,
+        method: 'POST',
+        body: formData,
       })
-      if (res.ok) onRefresh()
-      else {
-        const data = await readJsonResponse(res)
+      const data = await readJsonResponse(res)
+      if (!res.ok) {
         showNote('err', '上传失败: ' + (data.error || '未知错误'))
+        return
       }
+      showNote('ok', '产物文件已上传')
+      onRefresh()
     } finally {
       setUploading(false)
       input.value = ''
@@ -117,12 +90,15 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: '文本内容.txt', textContent }),
     })
-    if (res.ok) {
-      setTextContent(''); setSelectedModel(null); onRefresh()
-    } else {
-      const data = await readJsonResponse(res)
+    const data = await readJsonResponse(res)
+    if (!res.ok) {
       showNote('err', '添加文本失败: ' + (data.error || '未知错误'))
+      return
     }
+    setTextContent('')
+    setSelectedModel(null)
+    showNote('ok', '文本产物已添加')
+    onRefresh()
   }
 
   async function deleteArtifact(modelId: string, artifactId: string) {
@@ -132,25 +108,26 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ artifactId }),
     })
-    if (res.ok) onRefresh()
-    else {
-      const data = await readJsonResponse(res)
+    const data = await readJsonResponse(res)
+    if (!res.ok) {
       showNote('err', '删除失败: ' + (data.error || '未知错误'))
+      return
     }
+    onRefresh()
   }
 
   async function addModelManual() {
     const inputCodes = [...new Set(
       newModelCode
         .split(/[,，、\s]+/)
-        .map((code) => code.trim().toUpperCase())
+        .map(code => code.trim().toUpperCase())
         .filter(Boolean),
     )]
     if (inputCodes.length === 0) return
 
-    const existingCodes = new Set(models.map((m: any) => m.modelCode.toUpperCase()))
-    const codes = inputCodes.filter((code) => !existingCodes.has(code))
-    const skipped = inputCodes.filter((code) => existingCodes.has(code))
+    const existingCodes = new Set(models.map((model: any) => model.modelCode.toUpperCase()))
+    const codes = inputCodes.filter(code => !existingCodes.has(code))
+    const skipped = inputCodes.filter(code => existingCodes.has(code))
 
     if (codes.length === 0) {
       showNote('err', '模型 ' + skipped.join('、') + ' 已存在', 3000)
@@ -166,7 +143,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       })
       const data = await readJsonResponse(res)
       if (!res.ok) {
-        showNote('err', '添加失败：' + (data.error || '未知错误'))
+        showNote('err', '添加失败: ' + (data.error || '未知错误'))
         return
       }
       const addedCount = Array.isArray(data.models) ? data.models.length : codes.length
@@ -176,18 +153,22 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         '已添加 ' + addedCount + ' 个模型' + (skipped.length ? '，跳过已存在：' + skipped.join('、') : ''),
       )
       onRefresh()
-    } finally { setAddingModel(false) }
+    } finally {
+      setAddingModel(false)
+    }
   }
 
   async function deleteModel(modelId: string) {
-    if (!askConfirm('删除模型', '删除此模型及其所有产物/报告？')) return
+    if (!askConfirm('删除模型', '删除此模型及其所有产物、报告？')) return
     const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId, { method: 'DELETE' })
-    if (res.ok) onRefresh()
-    else {
-      const data = await readJsonResponse(res)
-      showNote('err', '删除失败：' + (data.error || '未知错误'))
+    const data = await readJsonResponse(res)
+    if (!res.ok) {
+      showNote('err', '删除失败: ' + (data.error || '未知错误'))
+      return
     }
+    onRefresh()
   }
+
   return (
     <div className="space-y-5">
       <div className="flex items-start gap-3">
@@ -195,9 +176,9 @@ export default function StepArtifact({ task, onRefresh }: Props) {
           <Package className="h-5 w-5 text-pink-300" />
         </div>
         <div>
-          <h2 className="display text-xl">产物分析</h2>
+          <h2 className="display text-xl">产物提交</h2>
           <p className="text-sm text-gray-400 mt-1">
-            为每个待测模型上传产物文件（PDF / Word / Excel / PPT / ZIP / 文本均可），AI 服务端解析内容后做对比分析。
+            为每个待测模型上传或粘贴最终产物，第五阶段会基于这些产物生成正式评估报告。
           </p>
         </div>
       </div>
@@ -205,9 +186,14 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-2">
         <Input
           value={newModelCode}
-          onChange={e => setNewModelCode(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addModelManual(); } }}
-          placeholder="手动添加模型代号（多个用英文逗号分隔）"
+          onChange={event => setNewModelCode(event.target.value)}
+          onKeyDown={event => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              addModelManual()
+            }
+          }}
+          placeholder="手动添加模型代号，多个用逗号分隔"
           className="mono max-w-lg"
         />
         <Button size="sm" onClick={addModelManual} loading={addingModel} disabled={!newModelCode.trim()}>
@@ -215,39 +201,43 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         </Button>
         {models.length === 0 && (
           <div className="text-[11px] text-gray-500 flex items-center gap-1.5">
-            <AlertTriangle className="h-3 w-3" /> AI 没识别到？手动输入代号即可
+            <AlertTriangle className="h-3 w-3" /> AI 没识别到模型时，可以手动添加代号
           </div>
         )}
       </div>
 
       {note && (
-        <div className={'flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm animate-rise select-text break-words ' + (note.type === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300')}>
-          {note.type === 'ok' ? <CheckCircle2 className="h-4 w-4 flex-shrink-0" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0" />}
-          {note.text}
+        <div className={'flex items-start gap-2 px-4 py-2.5 rounded-lg border text-sm animate-rise select-text break-words ' + (note.type === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300')}>
+          {note.type === 'ok' ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+          <span>{note.text}</span>
         </div>
       )}
 
       {models.length === 0 ? (
         <div className="glass p-10 text-center text-sm text-gray-500 border-dashed">
           <Package className="h-8 w-8 mx-auto mb-3 text-gray-600" />
-          暂无待测模型。先在第 3 步上传数据看板，AI 会自动识别模型代号。
+          暂无待测模型。先在第 3 步上传数据看板，或在上方手动添加模型代号。
         </div>
       ) : (
         <div className="grid gap-3">
-          {models.map((m: any) => (
-            <div key={m.id} className="glass p-4">
+          {models.map((model: any) => (
+            <div key={model.id} className="glass p-4">
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="primary" className="mono">{m.modelCode}</Badge>
-                  <button onClick={() => deleteModel(m.id)} className="text-gray-500 hover:text-red-400 p-1 rounded transition-colors" title="删除此模型">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Badge variant="primary" className="mono">{model.modelCode}</Badge>
+                  <button
+                    onClick={() => deleteModel(model.id)}
+                    className="text-gray-500 hover:text-red-400 p-1 rounded transition-colors"
+                    title="删除此模型"
+                  >
                     <Trash2 className="h-3 w-3" />
                   </button>
                   <span className="text-xs text-gray-500">
-                    {m.artifacts?.length || 0} 个文件
+                    {model.artifacts?.length || 0} 个文件
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="subtle" size="sm" onClick={() => setSelectedModel(m.id)}>
+                  <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
                     <Plus className="h-3 w-3" /> 粘贴文本
                   </Button>
                   <label className={`inline-flex items-center gap-1 h-8 px-3 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
@@ -261,24 +251,25 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                       className="hidden"
                       multiple
                       accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.zip"
-                      onChange={(e) => handleFileUpload(e, m.id)}
+                      onChange={(event) => handleFileUpload(event, model.id)}
                       disabled={uploading}
                     />
                   </label>
                 </div>
               </div>
 
-              {m.artifacts?.length > 0 ? (
+              {model.artifacts?.length > 0 ? (
                 <div className="space-y-1">
-                  {m.artifacts.map((a: any) => (
-                    <div key={a.id} className="flex items-center justify-between text-sm bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 px-3 py-2 rounded-lg group transition-colors">
+                  {model.artifacts.map((artifact: any) => (
+                    <div key={artifact.id} className="flex items-center justify-between text-sm bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 px-3 py-2 rounded-lg group transition-colors">
                       <div className="flex items-center gap-2 min-w-0">
                         <FileText className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
-                        <span className="text-gray-300 truncate">{a.name}</span>
+                        <span className="text-gray-300 truncate">{artifact.name}</span>
                       </div>
                       <button
-                        onClick={() => deleteArtifact(m.id, a.id)}
+                        onClick={() => deleteArtifact(model.id, artifact.id)}
                         className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition flex-shrink-0 p-1"
+                        title="删除文件"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -301,7 +292,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
             <h3 className="font-medium text-white mb-3">粘贴产物文本</h3>
             <Textarea
               value={textContent}
-              onChange={e => setTextContent(e.target.value)}
+              onChange={event => setTextContent(event.target.value)}
               rows={12}
               className="mono"
               placeholder="将模型输出的产物文本粘贴到这里..."
@@ -314,30 +305,6 @@ export default function StepArtifact({ task, onRefresh }: Props) {
           </div>
         </div>
       )}
-
-      <div className="glass p-5 space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h3 className="font-medium text-white">综合对比分析</h3>
-            <p className="text-xs text-gray-500 mt-0.5">基于所有模型的产物 + 任务上下文，生成结构化对比</p>
-          </div>
-          <Button onClick={analyze} loading={analyzing} disabled={models.length === 0}>
-            <Sparkles className="h-3.5 w-3.5" />
-            {analyzing ? 'AI 分析中...' : '开始 AI 分析'}
-          </Button>
-        </div>
-
-        {analysis ? (
-          <div className="glass p-4 max-h-96 overflow-y-auto scrollbar-thin">
-            <MarkdownView text={analysis} />
-          </div>
-        ) : (
-          <div className="text-sm text-gray-500 text-center py-6 border border-dashed border-white/[0.06] rounded-lg">
-            <AlertTriangle className="h-5 w-5 mx-auto mb-2 text-gray-600" />
-            上传各模型产物后，点击上方按钮进行 AI 整体对比分析
-          </div>
-        )}
-      </div>
     </div>
   )
 }
