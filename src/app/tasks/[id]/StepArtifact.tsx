@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle2, FileText, Package,
-  Plus, Trash2, UploadCloud,
+  Plus, Trash2, UploadCloud, Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
@@ -17,7 +17,8 @@ interface Props {
 export default function StepArtifact({ task, onRefresh }: Props) {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [textContent, setTextContent] = useState('')
-  const [uploading, setUploading] = useState(false)
+  const [uploadingModelId, setUploadingModelId] = useState<string | null>(null)
+  const [addingText, setAddingText] = useState(false)
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
   const [note, setNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
@@ -61,7 +62,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
     const files = Array.from(input.files || [])
     if (files.length === 0) return
 
-    setUploading(true)
+    setUploadingModelId(modelId)
     try {
       const formData = new FormData()
       files.forEach(file => formData.append('files', file))
@@ -74,10 +75,10 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         showNote('err', '上传失败: ' + (data.error || '未知错误'))
         return
       }
-      showNote('ok', '产物文件已上传')
+      showNote('ok', `已上传 ${files.length} 个产物文件`)
       onRefresh()
     } finally {
-      setUploading(false)
+      setUploadingModelId(null)
       input.value = ''
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
@@ -85,20 +86,25 @@ export default function StepArtifact({ task, onRefresh }: Props) {
 
   async function addTextArtifact() {
     if (!selectedModel || !textContent.trim()) return
-    const res = await fetch('/api/tasks/' + task.id + '/models/' + selectedModel + '/artifacts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: '文本内容.txt', textContent }),
-    })
-    const data = await readJsonResponse(res)
-    if (!res.ok) {
-      showNote('err', '添加文本失败: ' + (data.error || '未知错误'))
-      return
+    setAddingText(true)
+    try {
+      const res = await fetch('/api/tasks/' + task.id + '/models/' + selectedModel + '/artifacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '文本内容.txt', textContent }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) {
+        showNote('err', '添加文本失败: ' + (data.error || '未知错误'))
+        return
+      }
+      setTextContent('')
+      setSelectedModel(null)
+      showNote('ok', '文本产物已添加')
+      onRefresh()
+    } finally {
+      setAddingText(false)
     }
-    setTextContent('')
-    setSelectedModel(null)
-    showNote('ok', '文本产物已添加')
-    onRefresh()
   }
 
   async function deleteArtifact(modelId: string, artifactId: string) {
@@ -240,21 +246,25 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                   <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
                     <Plus className="h-3 w-3" /> 粘贴文本
                   </Button>
-                  <label className={`inline-flex items-center gap-1 h-8 px-3 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
-                    uploading ? 'opacity-50 pointer-events-none' : ''
-                  } text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10`}>
-                    <UploadCloud className="h-3 w-3" />
-                    {uploading ? '上传中...' : '上传文件'}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      className="hidden"
-                      multiple
-                      accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.zip"
-                      onChange={(event) => handleFileUpload(event, model.id)}
-                      disabled={uploading}
-                    />
-                  </label>
+                  {uploadingModelId === model.id ? (
+                    <span className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-indigo-300">
+                      <Loader2 className="h-3 w-3 animate-spin" /> 上传中...
+                    </span>
+                  ) : (
+                    <label className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg cursor-pointer transition-colors text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10">
+                      <UploadCloud className="h-3 w-3" />
+                      上传文件
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        multiple
+                        accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.zip"
+                        onChange={(event) => handleFileUpload(event, model.id)}
+                        disabled={uploadingModelId !== null}
+                      />
+                    </label>
+                  )}
                 </div>
               </div>
 
@@ -299,8 +309,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
               autoFocus
             />
             <div className="flex justify-end gap-2 mt-4">
-              <Button variant="ghost" size="sm" onClick={() => { setSelectedModel(null); setTextContent('') }}>取消</Button>
-              <Button size="sm" onClick={addTextArtifact} disabled={!textContent.trim()}>添加</Button>
+              <Button variant="ghost" size="sm" disabled={addingText} onClick={() => { setSelectedModel(null); setTextContent('') }}>取消</Button>
+              <Button size="sm" onClick={addTextArtifact} loading={addingText} loadingText="添加中..." disabled={!textContent.trim()}>添加</Button>
             </div>
           </div>
         </div>

@@ -2,10 +2,11 @@
 import { useState, useRef } from 'react'
 import {
   Image as ImageIcon, Camera, BarChart3, UploadCloud, X as XIcon,
-  Sparkles, AlertTriangle, SkipForward, CheckCircle2,
+  Sparkles, AlertTriangle, SkipForward, CheckCircle2, Square,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { WorkingStatus } from '@/components/working-status'
 import { JsonTable } from '@/components/JsonTable'
 import { cn } from '@/lib/utils'
 
@@ -74,11 +75,17 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
   const [processImages, setProcessImages] = useState<UploadedImage[]>([])
   const [dashboardImages, setDashboardImages] = useState<UploadedImage[]>([])
   const [analyzing, setAnalyzing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [startedAt, setStartedAt] = useState<number | undefined>(undefined)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [skippedProcess, setSkippedProcess] = useState(false)
   const [streamText, setStreamText] = useState('')
   const abortRef = useRef<AbortController | null>(null)
+
+  function stopAnalyze() {
+    if (abortRef.current) abortRef.current.abort()
+  }
 
   function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -155,7 +162,9 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
   async function analyze() {
   const images = activeTab === 'process' ? processImages : dashboardImages
   if (images.length === 0) { setError('请先上传至少 1 张图片'); return }
-  setAnalyzing(true); setResult(null); setError(null); setStreamText('')
+  const startTs = Date.now()
+  setStartedAt(startTs)
+  setAnalyzing(true); setResult(null); setError(null); setStreamText(''); setSaving(false)
   const controller = new AbortController()
   abortRef.current = controller
   try {
@@ -204,8 +213,11 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
   setStreamText(sanitizeVisionStreamPreview(acc))
   } else if (eventName === 'done') {
   completed = true
+  setSaving(true)
+  if (payload.parsed?.models?.length) {
+    await saveRecognizedRows(payload.parsed.models)
+  }
   setResult({ parsed: payload.parsed, raw: payload.raw })
-  onRefresh()
   } else if (eventName === 'error') {
   throw new Error(payload.message || '视觉模型返回错误')
   }
@@ -215,7 +227,7 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
   } catch (e: any) {
   if (e.name !== 'AbortError') setError(e.message || String(e))
   } finally {
-  setAnalyzing(false); setStreamText(''); abortRef.current = null
+  setAnalyzing(false); setSaving(false); setStreamText(''); setStartedAt(undefined); abortRef.current = null
   }
   }
 
@@ -313,19 +325,30 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
         </div>
       )}
 
+      {analyzing && (
+        <WorkingStatus
+          phase={saving ? '正在保存识别结果...' : '正在识别截图内容...'}
+          hint={saving ? '写入数据库' : `${streamText.length} 字`}
+          startedAt={startedAt}
+          onCancel={stopAnalyze}
+          dotColor={saving ? 'emerald' : 'fuchsia'}
+        />
+      )}
+
       {analyzing && streamText && (
         <div className="glass p-4 max-h-40 overflow-y-auto scrollbar-thin text-sm text-gray-300 whitespace-pre-wrap font-mono">
           {streamText}
+          <span className="inline-block w-1.5 h-4 bg-fuchsia-400 animate-pulse align-middle ml-0.5" />
         </div>
       )}
 
-            {currentImages.length > 0 && (
+            {currentImages.length > 0 && !analyzing && (
         <div className="flex items-center gap-3">
-          <Button onClick={analyze} loading={analyzing}>
+          <Button onClick={analyze} loading={false}>
             <Sparkles className="h-3.5 w-3.5" />
-            {analyzing ? 'AI 分析中...' : '开始 AI 分析'}
+            开始 AI 分析
           </Button>
-          <span className="text-xs text-gray-500">分析需要 10-30 秒，请耐心等待</span>
+          <span className="text-xs text-gray-500">分析需要 10-30 秒，可随时停止</span>
         </div>
       )}
 

@@ -9,6 +9,7 @@ interface BProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
   size?: Size
   loading?: boolean
+  loadingText?: string
 }
 
 const variants: Record<Variant, string> = {
@@ -53,7 +54,16 @@ const sizes: Record<Size, string> = {
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, BProps>(
-  ({ className, variant = 'primary', size = 'md', loading, disabled, children, ...rest }, ref) => {
+  ({ className, variant = 'primary', size = 'md', loading, loadingText, disabled, children, ...rest }, ref) => {
+    const isIconSize = size === 'icon' || size === 'icon-sm'
+    const content = loading
+      ? (isIconSize
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          : (<>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {loadingText ?? children}
+            </>))
+      : children
     return (
       <button
         ref={ref}
@@ -67,7 +77,7 @@ export const Button = React.forwardRef<HTMLButtonElement, BProps>(
         disabled={disabled || loading}
         {...rest}
       >
-        {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : children}
+        {content}
       </button>
     )
   },
