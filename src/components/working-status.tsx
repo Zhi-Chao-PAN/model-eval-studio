@@ -1,21 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Square } from 'lucide-react'
+import { Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface WorkingStatusProps {
-  /** Current human-readable phase description, e.g. "正在撰写评估报告..." */
   phase: string
-  /** Optional: smaller secondary text (e.g. character count, extra hint) */
   hint?: string
-  /** Unix timestamp (ms) when work started, for an elapsed timer */
   startedAt?: number
-  /** Cancel callback – if provided, a stop button is shown */
   onCancel?: () => void
-  /** Bar = full-width glass status bar (default). Inline = smaller inline hint next to buttons */
   variant?: 'bar' | 'inline'
-  /** Dot color (tailwind bg class) */
   dotColor?: 'indigo' | 'cyan' | 'emerald' | 'amber' | 'red' | 'fuchsia'
   className?: string
 }
@@ -76,7 +70,10 @@ export function WorkingStatus({
   if (variant === 'inline') {
     return (
       <span className={cn('inline-flex items-center gap-2 text-xs text-gray-400', className)}>
-        <Loader2 className="h-3 w-3 animate-spin" />
+        <span className="relative flex h-1.5 w-1.5">
+          <span className={cn('animate-ping absolute inline-flex h-full w-full rounded-full opacity-75', dotCls)} />
+          <span className={cn('relative inline-flex rounded-full h-1.5 w-1.5', dotCls)} />
+        </span>
         <span>{phase}</span>
         {startedAt && <span className="mono text-gray-500">{formatElapsed(elapsed)}</span>}
       </span>
@@ -86,7 +83,7 @@ export function WorkingStatus({
   return (
     <div
       className={cn(
-        'glass px-4 py-3 flex items-center gap-3 text-sm animate-rise',
+        'panel px-4 py-3 flex items-center gap-3 text-[13px] animate-rise',
         className,
       )}
     >
@@ -96,20 +93,20 @@ export function WorkingStatus({
       </span>
       <span className={cn('font-medium flex-shrink-0', textCls)}>{phase}</span>
       {startedAt && (
-        <span className="text-gray-500 text-xs mono flex-shrink-0">
+        <span className="text-gray-500 text-[11px] mono flex-shrink-0">
           {formatElapsed(elapsed)}
         </span>
       )}
       {hint && (
-        <span className="text-gray-500 text-xs truncate">{hint}</span>
+        <span className="text-gray-500 text-[11px] truncate">{hint}</span>
       )}
-      <div className="ml-auto h-1 flex-1 max-w-[200px] bg-white/10 rounded-full overflow-hidden">
+      <div className="ml-auto h-1 flex-1 max-w-[200px] bg-white/[0.06] rounded-full overflow-hidden">
         <div className={cn('h-full shimmer w-full', shimmerCls)} />
       </div>
       {onCancel && (
         <button
           onClick={onCancel}
-          className="flex-shrink-0 inline-flex items-center gap-1 h-7 px-2.5 text-xs rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-300 transition-colors"
+          className="flex-shrink-0 inline-flex items-center gap-1 h-7 px-2.5 text-[11px] rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 transition-colors border border-red-500/20"
           title="停止生成"
         >
           <Square className="h-3 w-3 fill-current" />

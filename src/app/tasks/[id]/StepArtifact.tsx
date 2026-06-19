@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle2, FileText, Package,
-  Plus, Trash2, UploadCloud, Loader2,
+  Plus, Trash2, UploadCloud, Loader2, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
@@ -176,135 +176,161 @@ export default function StepArtifact({ task, onRefresh }: Props) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 animate-rise">
       <div className="flex items-start gap-3">
-        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-pink-500/20 to-rose-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
-          <Package className="h-5 w-5 text-pink-300" />
+        <div className="relative h-11 w-11 rounded-xl bg-gradient-to-br from-pink-500/20 to-rose-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+          <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-pink-400/20 to-transparent blur-md" />
+          <Package className="h-5 w-5 text-pink-300 relative z-10" />
         </div>
         <div>
-          <h2 className="display text-xl">产物提交</h2>
-          <p className="text-sm text-gray-400 mt-1">
+          <h2 className="display text-xl sm:text-2xl tracking-tight">产物提交</h2>
+          <p className="text-sm text-gray-400 mt-1 max-w-2xl">
             为每个待测模型上传或粘贴最终产物，第五阶段会基于这些产物生成正式评估报告。
           </p>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-2">
-        <Input
-          value={newModelCode}
-          onChange={event => setNewModelCode(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              addModelManual()
-            }
-          }}
-          placeholder="手动添加模型代号，多个用逗号分隔"
-          className="mono max-w-lg"
-        />
-        <Button size="sm" onClick={addModelManual} loading={addingModel} disabled={!newModelCode.trim()}>
-          <Plus className="h-3.5 w-3.5" /> 添加模型
-        </Button>
+      <div className="panel p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <Input
+            value={newModelCode}
+            onChange={event => setNewModelCode(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                addModelManual()
+              }
+            }}
+            placeholder="手动添加模型代号，多个用逗号分隔"
+            className="mono flex-1 bg-white/[0.02] border-white/[0.07]"
+          />
+          <Button size="sm" onClick={addModelManual} loading={addingModel} disabled={!newModelCode.trim()}>
+            <Plus className="h-3.5 w-3.5" /> 添加模型
+          </Button>
+        </div>
         {models.length === 0 && (
-          <div className="text-[11px] text-gray-500 flex items-center gap-1.5">
+          <div className="mt-2.5 text-[11px] text-gray-500 flex items-center gap-1.5">
             <AlertTriangle className="h-3 w-3" /> AI 没识别到模型时，可以手动添加代号
           </div>
         )}
       </div>
 
       {note && (
-        <div className={'flex items-start gap-2 px-4 py-2.5 rounded-lg border text-sm animate-rise select-text break-words ' + (note.type === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300')}>
+        <div className={'flex items-start gap-2 px-4 py-2.5 rounded-xl border text-sm animate-rise select-text break-words ' + (note.type === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300')}>
           {note.type === 'ok' ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
           <span>{note.text}</span>
         </div>
       )}
 
       {models.length === 0 ? (
-        <div className="glass p-10 text-center text-sm text-gray-500 border-dashed">
-          <Package className="h-8 w-8 mx-auto mb-3 text-gray-600" />
-          暂无待测模型。先在第 3 步上传数据看板，或在上方手动添加模型代号。
+        <div className="panel p-10 text-center">
+          <div className="relative inline-flex mb-4">
+            <div className="absolute inset-0 bg-gradient-to-br from-pink-500/20 to-rose-500/20 blur-xl rounded-full" />
+            <div className="relative h-12 w-12 rounded-2xl bg-gradient-to-br from-pink-500/15 to-rose-500/15 border border-white/10 flex items-center justify-center">
+              <Package className="h-5 w-5 text-pink-300" />
+            </div>
+          </div>
+          <p className="text-[13px] text-gray-400 mb-1">暂无待测模型</p>
+          <p className="text-[11px] text-gray-600">先在第 3 步上传数据看板，或在上方手动添加模型代号</p>
         </div>
       ) : (
         <div className="grid gap-3">
-          {models.map((model: any) => (
-            <div key={model.id} className="glass p-4">
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Badge variant="primary" className="mono">{model.modelCode}</Badge>
-                  <button
-                    onClick={() => deleteModel(model.id)}
-                    className="text-gray-500 hover:text-red-400 p-1 rounded transition-colors"
-                    title="删除此模型"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                  <span className="text-xs text-gray-500">
-                    {model.artifacts?.length || 0} 个文件
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
-                    <Plus className="h-3 w-3" /> 粘贴文本
-                  </Button>
-                  {uploadingModelId === model.id ? (
-                    <span className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-indigo-300">
-                      <Loader2 className="h-3 w-3 animate-spin" /> 上传中...
+          {models.map((model: any) => {
+            const artifactCount = model.artifacts?.length || 0
+            const isUploading = uploadingModelId === model.id
+            return (
+              <div key={model.id} className="panel p-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="mono px-2.5 py-1 rounded-lg bg-gradient-to-br from-pink-500/20 to-rose-500/20 border border-pink-500/30 text-[12px] font-medium text-pink-200">
+                      {model.modelCode}
                     </span>
-                  ) : (
-                    <label className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg cursor-pointer transition-colors text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10">
-                      <UploadCloud className="h-3 w-3" />
-                      上传文件
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        className="hidden"
-                        multiple
-                        accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.zip"
-                        onChange={(event) => handleFileUpload(event, model.id)}
-                        disabled={uploadingModelId !== null}
-                      />
-                    </label>
-                  )}
+                    <button
+                      onClick={() => deleteModel(model.id)}
+                      className="text-gray-500 hover:text-red-400 p-1 rounded transition-colors"
+                      title="删除此模型"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                    <Badge variant="muted" className="text-[10px]">
+                      {artifactCount} 个文件
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
+                      <Plus className="h-3 w-3" /> 粘贴文本
+                    </Button>
+                    {isUploading ? (
+                      <span className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-indigo-300">
+                        <Loader2 className="h-3 w-3 animate-spin" /> 上传中...
+                      </span>
+                    ) : (
+                      <label className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg cursor-pointer transition-colors text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10">
+                        <UploadCloud className="h-3 w-3" />
+                        上传文件
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          className="hidden"
+                          multiple
+                          accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.zip"
+                          onChange={(event) => handleFileUpload(event, model.id)}
+                          disabled={uploadingModelId !== null}
+                        />
+                      </label>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {model.artifacts?.length > 0 ? (
-                <div className="space-y-1">
-                  {model.artifacts.map((artifact: any) => (
-                    <div key={artifact.id} className="flex items-center justify-between text-sm bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 px-3 py-2 rounded-lg group transition-colors">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
-                        <span className="text-gray-300 truncate">{artifact.name}</span>
+                {artifactCount > 0 ? (
+                  <div className="space-y-1.5">
+                    {model.artifacts.map((artifact: any) => (
+                      <div key={artifact.id} className="flex items-center justify-between text-[13px] bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.05] px-3 py-2 rounded-lg group transition-colors">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
+                          <span className="text-gray-300 truncate">{artifact.name}</span>
+                        </div>
+                        <button
+                          onClick={() => deleteArtifact(model.id, artifact.id)}
+                          className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition flex-shrink-0 p-1"
+                          title="删除文件"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => deleteArtifact(model.id, artifact.id)}
-                        className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition flex-shrink-0 p-1"
-                        title="删除文件"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-gray-500 py-3 text-center border border-dashed border-white/[0.06] rounded-lg">
-                  尚未上传该模型的产物
-                </div>
-              )}
-            </div>
-          ))}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 py-3 text-center border border-dashed border-white/[0.06] rounded-lg">
+                    尚未上传该模型的产物
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
       {selectedModel && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade">
-          <div className="glass-strong w-full max-w-lg p-5 animate-rise">
-            <h3 className="font-medium text-white mb-3">粘贴产物文本</h3>
+          <div className="panel w-full max-w-lg p-5 animate-rise" style={{ background: 'rgba(15,15,20,0.9)' }}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-medium text-white flex items-center gap-2">
+                <FileText className="h-4 w-4 text-indigo-300" />
+                粘贴产物文本
+              </h3>
+              <button
+                onClick={() => { setSelectedModel(null); setTextContent('') }}
+                className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/10 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
             <Textarea
               value={textContent}
               onChange={event => setTextContent(event.target.value)}
               rows={12}
-              className="mono"
+              className="mono bg-white/[0.02] border-white/[0.07] focus:bg-white/[0.03]"
               placeholder="将模型输出的产物文本粘贴到这里..."
               autoFocus
             />
