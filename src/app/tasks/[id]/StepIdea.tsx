@@ -6,12 +6,11 @@ import { Button } from '@/components/ui/button'
 
 interface Props {
   task: any
-  onAddMessage: (msg: any) => void
 }
 
 type Phase = 'idle' | 'connecting' | 'streaming' | 'done' | 'error'
 
-export default function StepIdea({ task, onAddMessage }: Props) {
+export default function StepIdea({ task }: Props) {
   const [idea, setIdea] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -83,7 +82,6 @@ export default function StepIdea({ task, onAddMessage }: Props) {
           } else if (eventName === 'done') {
             completed = true
             setIdea(payload.full || acc); setPhase('done')
-            onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: payload.full || acc, step: 'IDEA' })
           }
         }
       }

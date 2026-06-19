@@ -1,6 +1,6 @@
 'use client'
-import { useRef, RefObject } from 'react'
-import { Send, Square, Bot, User, MessageSquare } from 'lucide-react'
+import { useRef, useState, RefObject } from 'react'
+import { Send, Square, Bot, User, MessageSquare, Maximize2, Minimize2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
@@ -15,7 +15,7 @@ interface Props {
   streaming: boolean
   input: string
   onInputChange: (v: string) => void
-  onSend: (e: React.FormEvent) => void
+  onSend: () => void
   onAbort: () => void
   endRef: RefObject<HTMLDivElement | null>
 }
@@ -25,9 +25,15 @@ export function ChatPanel({
   input, onInputChange, onSend, onAbort, endRef,
 }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [expanded, setExpanded] = useState(true)
 
   return (
-    <Card className="fixed bottom-4 right-4 w-[360px] max-w-[calc(100vw-2rem)] h-[480px] max-h-[calc(100vh-8rem)] flex flex-col z-30 shadow-2xl shadow-black/50 border border-white/[0.08]">
+    <Card className={cn(
+      'fixed bottom-4 right-4 w-[360px] max-w-[calc(100vw-2rem)] flex flex-col z-30 shadow-2xl shadow-black/50 border border-white/[0.08] !bg-[#0d0d14] hover:!bg-[#0d0d14] backdrop-blur-none transition-[height] duration-200',
+      expanded
+        ? 'h-[calc(100dvh-6rem)]'
+        : 'h-[480px] max-h-[calc(100dvh-8rem)]',
+    )}>
       <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-gradient-to-br from-indigo-500/10 to-transparent rounded-t-xl">
         <div className="flex items-center gap-2">
           <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
@@ -35,12 +41,26 @@ export function ChatPanel({
           </div>
           <div>
             <div className="text-sm font-semibold text-white">AI 助手</div>
-            <div className="text-[10px] text-gray-500">{currentStepLabel}</div>
+            <div className="text-[10px] text-gray-500">任务全程对话 · 当前：{currentStepLabel}</div>
           </div>
         </div>
-        {messages.length > 0 && (
-          <Badge variant="default" className="text-[10px]">{messages.length} 条</Badge>
-        )}
+        <div className="flex items-center gap-1.5">
+          {messages.length > 0 && (
+            <Badge variant="default" className="text-[10px]">{messages.length} 条</Badge>
+          )}
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            onClick={() => setExpanded((value) => !value)}
+            aria-label={expanded ? '切换为紧凑窗口' : '展开对话窗口'}
+            title={expanded ? '切换为紧凑窗口' : '展开对话窗口'}
+          >
+            {expanded
+              ? <Minimize2 className="h-3.5 w-3.5" />
+              : <Maximize2 className="h-3.5 w-3.5" />}
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
@@ -49,7 +69,7 @@ export function ChatPanel({
             <MessageSquare className="h-8 w-8 text-slate-300" />
             <div className="text-sm font-medium">有问题随时问我</div>
             <div className="text-xs leading-relaxed">
-              我会基于你当前步骤的内容给出建议。可以问我怎么填测试任务、怎么分析产物、怎么写评估报告。
+              我会结合整个任务的历史与当前进度回答。可以继续追问测试思路、截图数据、产物分析或评估报告。
             </div>
           </div>
         )}
@@ -103,7 +123,13 @@ export function ChatPanel({
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={onSend} className="p-3 border-t border-white/[0.06]">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSend()
+        }}
+        className="p-3 border-t border-white/[0.06]"
+      >
         <div className="relative">
           <textarea
             ref={inputRef}
@@ -116,7 +142,7 @@ export function ChatPanel({
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
-                onSend(e as any)
+                onSend()
               }
             }}
             placeholder="输入消息... (Enter 发送)"

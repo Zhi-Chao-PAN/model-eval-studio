@@ -11,13 +11,12 @@ import { cn } from '@/lib/utils'
 
 interface Props {
   task: any
-  onAddMessage: (msg: any) => void
   onRefresh: () => void
 }
 
 type Tab = 'process' | 'dashboard'
 
-export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props) {
+export default function StepScreenshot({ task, onRefresh }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [processImages, setProcessImages] = useState<{ name: string; dataUrl: string }[]>([])
   const [dashboardImages, setDashboardImages] = useState<{ name: string; dataUrl: string }[]>([])
@@ -152,15 +151,6 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
   setStreamText(acc)
   } else if (eventName === 'done') {
   completed = true
-  const count = payload.parsed?.models?.length || 0
-  const tip = activeTab === 'dashboard'
-  ? '我识别到以下 ' + count + ' 个模型的看板数据：'
-  : '我分析了 ' + count + ' 个模型的执行过程：'
-  const tip2 = count > 0
-  ? tip + '\n\n'
-  : '本次未识别出模型，AI 原始返回：\n\n```\n' + (payload.raw || '') + '\n```\n\n'
-  const chatContent = tip2 + (payload.raw || '') + '\n\n（小提示：表格可点「编辑/补充」手动修正指标。）'
-  onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: chatContent, step: 'SCREENSHOT' })
   setResult({ parsed: payload.parsed, raw: payload.raw })
   onRefresh()
   } else if (eventName === 'error') {

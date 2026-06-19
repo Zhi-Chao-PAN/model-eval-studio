@@ -75,12 +75,5 @@ export async function POST(
     },
   })
 
-  await prisma.taskMessage.createMany({
-    data: [
-      { taskId: id, role: 'user', content: '整体分析', step: 'ARTIFACT' },
-      { taskId: id, role: 'assistant', content: result, step: 'ARTIFACT' },
-    ],
-  })
-
   return NextResponse.json({ analysis: result })
 }

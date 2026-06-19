@@ -79,13 +79,6 @@ export async function POST(
             status: 'IN_PROGRESS',
           },
         })
-        await prisma.taskMessage.createMany({
-          data: [
-            { taskId: id, role: 'user', content: '帮我生成测试思路', step: 'IDEA' },
-            { taskId: id, role: 'assistant', content: fullText, step: 'IDEA' },
-          ],
-        })
-
         send('done', { full: fullText })
       } catch (e: any) {
         send('error', { message: e?.message || String(e) })

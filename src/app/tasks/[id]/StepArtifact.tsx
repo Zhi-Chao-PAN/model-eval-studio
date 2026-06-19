@@ -10,11 +10,10 @@ import { MarkdownView } from '@/components/MarkdownView'
 
 interface Props {
   task: any
-  onAddMessage: (msg: any) => void
   onRefresh: () => void
 }
 
-export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
+export default function StepArtifact({ task, onRefresh }: Props) {
   const [analysis, setAnalysis] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
@@ -70,7 +69,6 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
       }
       if (data.analysis) {
         setAnalysis(data.analysis)
-        onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: data.analysis, step: 'ARTIFACT' })
       } else if (data.error) {
         showNote('err', data.error, 5000)
       }
