@@ -28,6 +28,11 @@ export async function POST(
   const body = await request.json()
   const modelId = body.modelId
   const adjustInstruction = body.adjustInstruction
+  const clientVerificationImages: VerificationImage[] = Array.isArray(body.verificationImages)
+    ? body.verificationImages.filter(
+        (img: any) => typeof img?.name === 'string' && typeof img?.dataUrl === 'string',
+      )
+    : []
 
   const task = await prisma.task.findFirst({
     where: { id, userId: session.userId, status: { not: 'DELETED' } },
@@ -83,7 +88,22 @@ export async function POST(
     )
   } else {
     const hardMetrics = model.hardMetricsJson ? safeJsonParse(model.hardMetricsJson) : null
-    const verificationImages = parseVerificationImages(model.verificationScreenshotUrls)
+
+    // Use client-provided verification screenshots (auto-rendered by the browser
+    // to look like a code editor / document viewer, simulating the tester
+    // opening the artifact). Fall back to any previously saved screenshots.
+    let verificationImages: VerificationImage[] = []
+    if (clientVerificationImages.length > 0) {
+      verificationImages = clientVerificationImages.slice(0, 4)
+      verificationScreenshotUrls = JSON.stringify({ images: verificationImages })
+      await prisma.taskModel.update({
+        where: { id: model.id },
+        data: { verificationScreenshotUrls },
+      })
+    } else {
+      verificationImages = parseVerificationImages(model.verificationScreenshotUrls)
+    }
+
     verificationSummary = await summarizeVerificationImages({
       images: verificationImages,
       taskTitle: task.title,
@@ -191,21 +211,23 @@ async function summarizeVerificationImages(opts: {
   aiConfig: Awaited<ReturnType<typeof getUserAiConfig>>
 }): Promise<string> {
   if (!opts.images.length) return '未提供产物验证截图。'
-  if (!opts.aiConfig) return '已提供产物验证截图，但缺少 AI 配置，未能自动解读截图。'
+  if (!opts.aiConfig) return '已自动生成产物验证截图，但缺少 AI 配置，未能自动解读截图。'
 
   try {
     return await analyzeImages(
       opts.images.map((image) => image.dataUrl),
       [
-        '你是模型产物验收员。请根据截图判断测试人员是否实际打开并核验了模型产物。',
-        '如果产物是文本/文档，请关注截图是否能证明阅读了文本内容。',
-        '如果产物是工具/网页/应用，请关注截图是否展示了工具的实际运行状态、关键界面或功能结果。',
-        '请输出 1 段中文结论，指出截图能证明什么、仍缺少什么证据、产物表面效果如何。',
+        '你是模型产物验收员。这些截图是评测系统在核验模型产物时自动截取的（模拟测试人员打开文件/工具查看产物内容），用于证明产物已被实际打开核验。',
+        '请仔细阅读截图中的内容（文件名、文本内容、代码、数据等），判断：',
+        '1. 截图显示了什么内容？是否足以证明产物被实际打开和核验？',
+        '2. 从截图中可以看到产物的表面效果如何？是否存在明显错误、缺失、乱码、格式问题？',
+        '3. 结合产物文本内容，给出初步验收结论：产物是否符合任务预期？有哪些亮点或问题？',
+        '请输出 1 段中文结论，客观具体，不夸大不回避问题。',
         '',
         `任务：${opts.taskTitle}`,
         `任务 prompt：${opts.taskDescription || '未提供'}`,
         `模型：${opts.modelCode}`,
-        `已解析产物内容：${opts.artifactsText || '未提供'}`,
+        `已解析产物文本（供参考）：${opts.artifactsText || '未提供'}`,
       ].join('\n'),
       {
         baseUrl: opts.aiConfig.baseUrl,

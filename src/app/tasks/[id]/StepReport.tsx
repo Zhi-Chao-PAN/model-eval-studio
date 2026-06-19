@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle, Check, Copy, FileCheck2, Image as ImageIcon,
-  RefreshCw, Send, Sparkles, Star, UploadCloud, X,
+  RefreshCw, Send, Sparkles, Star,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { renderModelVerificationScreenshots } from '@/lib/artifact-screenshot-client'
 
 interface Props {
   task: any
@@ -59,41 +60,11 @@ function buildSectionCopyText(section: ReportSection): string {
   return [section.title, section.content].join('\n')
 }
 
-function fileToResizedDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const image = new Image()
-      image.onload = () => {
-        const maxSide = 1600
-        const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight))
-        const width = Math.max(1, Math.round(image.naturalWidth * scale))
-        const height = Math.max(1, Math.round(image.naturalHeight * scale))
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const context = canvas.getContext('2d')
-        if (!context) {
-          reject(new Error('无法处理图片'))
-          return
-        }
-        context.drawImage(image, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/jpeg', 0.82))
-      }
-      image.onerror = () => reject(new Error('图片读取失败'))
-      image.src = String(reader.result)
-    }
-    reader.onerror = () => reject(new Error('图片读取失败'))
-    reader.readAsDataURL(file)
-  })
-}
-
 export default function StepReport({ task, onRefresh }: Props) {
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [generating, setGenerating] = useState<Record<string, boolean>>({})
   const [adjustText, setAdjustText] = useState('')
   const [adjusting, setAdjusting] = useState<Record<string, boolean>>({})
-  const [uploadingVerification, setUploadingVerification] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [note, setNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
@@ -169,59 +140,26 @@ export default function StepReport({ task, onRefresh }: Props) {
     window.setTimeout(() => setNote(null), type === 'err' ? 8000 : 3000)
   }
 
-  async function saveVerificationImages(modelId: string, images: VerificationImage[]) {
-    const res = await fetch('/api/tasks/' + task.id + '/models', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        modelId,
-        verificationScreenshotUrls: JSON.stringify({ images }),
-      }),
-    })
-    const data = await readJsonResponse(res)
-    if (!res.ok) throw new Error(data.error || '产物验证截图保存失败')
-    onRefresh()
-  }
-
-  async function uploadVerificationScreenshots(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!selectedModel) return
-    const input = e.currentTarget
-    const files = Array.from(input.files || [])
-    if (files.length === 0) return
-
-    setUploadingVerification(true)
-    try {
-      const nextImages = await Promise.all(files.map(async (file) => ({
-        name: file.name,
-        dataUrl: await fileToResizedDataUrl(file),
-      })))
-      await saveVerificationImages(selectedModel.id, [...verificationImages, ...nextImages].slice(0, 4))
-      showNote('ok', '产物验证截图已保存')
-    } catch (error: any) {
-      showNote('err', error?.message || String(error))
-    } finally {
-      input.value = ''
-      setUploadingVerification(false)
-    }
-  }
-
-  async function removeVerificationImage(index: number) {
-    if (!selectedModel) return
-    try {
-      await saveVerificationImages(selectedModel.id, verificationImages.filter((_, imageIndex) => imageIndex !== index))
-      showNote('ok', '产物验证截图已删除')
-    } catch (error: any) {
-      showNote('err', error?.message || String(error))
-    }
-  }
-
   async function generateReport(modelId: string) {
     setGenerating(prev => ({ ...prev, [modelId]: true }))
     try {
+      // Auto-render verification screenshots from artifact text in the browser
+      // (Canvas-based, simulates a code editor / document viewer as proof the
+      // tester "opened" the artifact), then send them to the API for AI analysis.
+      const targetModel = models.find((m: any) => m.id === modelId)
+      const artifacts = targetModel?.artifacts || []
+      const modelCode = targetModel?.modelCode || ''
+      let verificationImages: VerificationImage[] = []
+      try {
+        verificationImages = renderModelVerificationScreenshots(modelCode, artifacts)
+      } catch (err) {
+        console.warn('Client-side screenshot rendering failed:', err)
+      }
+
       const res = await fetch('/api/tasks/' + task.id + '/generate-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId }),
+        body: JSON.stringify({ modelId, verificationImages }),
       })
       const data = await readJsonResponse(res)
       if (!res.ok) {
@@ -273,7 +211,7 @@ export default function StepReport({ task, onRefresh }: Props) {
           <div>
             <h2 className="display text-xl">评估报告</h2>
             <p className="text-sm text-gray-400 mt-1">
-              按测试平台提交项生成：产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
+              按测试平台提交项生成：AI 自动核验产物并截图，再输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
             </p>
           </div>
         </div>
@@ -371,23 +309,13 @@ export default function StepReport({ task, onRefresh }: Props) {
                 <div className="flex items-center gap-2 min-w-0">
                   <ImageIcon className="h-4 w-4 text-cyan-300 flex-shrink-0" />
                   <h4 className="text-[13px] font-medium text-gray-200">产物验证截图</h4>
-                  <span className="text-[11px] text-gray-500">{verificationImages.length}/4</span>
+                  <Badge variant="muted" className="text-[10px] gap-1 bg-cyan-500/10 text-cyan-300 border-cyan-500/20">
+                    <Sparkles className="h-2.5 w-2.5" /> AI 自动核验
+                  </Badge>
+                  {verificationImages.length > 0 && (
+                    <span className="text-[11px] text-gray-500">{verificationImages.length} 张</span>
+                  )}
                 </div>
-                <label className={cn(
-                  'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium cursor-pointer transition-colors',
-                  uploadingVerification ? 'opacity-50 pointer-events-none' : 'text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10',
-                )}>
-                  <UploadCloud className="h-3.5 w-3.5" />
-                  {uploadingVerification ? '上传中...' : '上传截图'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={uploadVerificationScreenshots}
-                    disabled={uploadingVerification}
-                  />
-                </label>
               </div>
 
               {verificationImages.length > 0 ? (
@@ -395,19 +323,20 @@ export default function StepReport({ task, onRefresh }: Props) {
                   {verificationImages.map((image, index) => (
                     <div key={index} className="relative aspect-video rounded-lg overflow-hidden border border-white/10 group">
                       <img src={image.dataUrl} alt={image.name} className="w-full h-full object-cover" />
-                      <button
-                        onClick={() => removeVerificationImage(index)}
-                        className="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/70 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
-                        title="删除截图"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm px-2 py-1 text-[10px] text-gray-300 truncate">
+                        {image.name}
+                      </div>
                     </div>
                   ))}
                 </div>
-              ) : (
+              ) : latestReport ? (
                 <div className="text-xs text-gray-500 py-3 text-center border border-dashed border-white/[0.06] rounded-lg">
-                  尚未上传产物验证截图
+                  暂无验证截图（可能因产物为非文本类型或截图生成失败）
+                </div>
+              ) : (
+                <div className="text-xs text-gray-500 py-3 text-center border border-dashed border-white/[0.06] rounded-lg flex items-center justify-center gap-1.5">
+                  <Sparkles className="h-3 w-3" />
+                  点击下方"生成评估报告"，AI 将自动打开核验产物并生成验证截图
                 </div>
               )}
             </div>
