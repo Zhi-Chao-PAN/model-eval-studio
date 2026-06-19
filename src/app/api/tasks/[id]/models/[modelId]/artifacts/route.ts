@@ -14,7 +14,7 @@ export async function POST(
   const { id, modelId } = await params
 
   const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, task: { userId: session.userId, id } },
+    where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
   })
   if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
 
@@ -91,12 +91,18 @@ export async function DELETE(
 ) {
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
-  const { modelId } = await params
+  const { id, modelId } = await params
   const body = await request.json()
   const artifactId = body.artifactId
 
   const artifact = await prisma.modelArtifact.findFirst({
-    where: { id: artifactId, taskModel: { id: modelId, task: { userId: session.userId } } },
+    where: {
+      id: artifactId,
+      taskModel: {
+        id: modelId,
+        task: { userId: session.userId, id, status: { not: 'DELETED' } },
+      },
+    },
   })
   if (!artifact) return NextResponse.json({ error: '文件不存在' }, { status: 404 })
 

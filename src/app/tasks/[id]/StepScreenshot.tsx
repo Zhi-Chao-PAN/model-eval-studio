@@ -25,9 +25,8 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [skippedProcess, setSkippedProcess] = useState(false)
-  const [streamText, setStreamText] = useState(String)
+  const [streamText, setStreamText] = useState('')
   const abortRef = useRef<AbortController | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -48,6 +47,57 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
     if (type === 'process') setProcessImages(prev => [...prev, ...images])
     else setDashboardImages(prev => [...prev, ...images])
     e.target.value = ''
+  }
+
+  async function readJsonResponse(res: Response): Promise<any> {
+    const text = await res.text().catch(() => '')
+    if (!text) return {}
+    try {
+      return JSON.parse(text)
+    } catch {
+      return { error: text.slice(0, 300) || '服务器返回了非预期内容' }
+    }
+  }
+
+  async function saveRecognizedRows(rows: any[]) {
+    const modelByCode = new Map<string, any>(
+      models.map((model: any) => [model.modelCode.toUpperCase(), model]),
+    )
+    const missingCodes = rows
+      .map((row) => String(row.modelCode || '').trim().toUpperCase())
+      .filter((code) => code && !modelByCode.has(code))
+
+    if (missingCodes.length > 0) {
+      const createRes = await fetch('/api/tasks/' + task.id + '/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelCodes: missingCodes }),
+      })
+      const createData = await readJsonResponse(createRes)
+      if (!createRes.ok) throw new Error(createData.error || '模型创建失败')
+      for (const model of createData.models || []) {
+        modelByCode.set(model.modelCode.toUpperCase(), model)
+      }
+    }
+
+    for (const row of rows) {
+      const code = String(row.modelCode || '').trim().toUpperCase()
+      const model = modelByCode.get(code)
+      if (!model) continue
+      const res = await fetch('/api/tasks/' + task.id + '/models', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modelId: model.id,
+          displayName: row.displayName || row.modelCode,
+          hardMetricsJson: JSON.stringify(row.metrics || {}),
+        }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '模型指标保存失败')
+    }
+
+    onRefresh()
   }
 
   async function analyze() {
@@ -76,6 +126,7 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
   const decoder = new TextDecoder()
   let buffer = ''
   let acc = ''
+  let completed = false
   while (true) {
   const { done, value } = await reader.read()
   if (done) break
@@ -90,12 +141,17 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
   else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
   }
   if (!dataLine) continue
+  let payload: any
   try {
-  const payload = JSON.parse(dataLine)
+  payload = JSON.parse(dataLine)
+  } catch {
+  continue
+  }
   if (eventName === 'delta' && payload.text) {
   acc += payload.text
   setStreamText(acc)
   } else if (eventName === 'done') {
+  completed = true
   const count = payload.parsed?.models?.length || 0
   const tip = activeTab === 'dashboard'
   ? '我识别到以下 ' + count + ' 个模型的看板数据：'
@@ -110,9 +166,9 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
   } else if (eventName === 'error') {
   throw new Error(payload.message || '视觉模型返回错误')
   }
-  } catch (innerErr) { /* skip */ }
   }
   }
+  if (!completed && acc) setStreamText(acc)
   } catch (e: any) {
   if (e.name !== 'AbortError') setError(e.message || String(e))
   } finally {
@@ -232,7 +288,7 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
 
       {result && activeTab === 'dashboard' && (
         result.parsed?.models?.length
-          ? <JsonTable text={result.raw || JSON.stringify(result.parsed)} />
+          ? <JsonTable text={result.raw || JSON.stringify(result.parsed)} onSave={saveRecognizedRows} />
           : (
             <div className="glass p-6 text-center text-sm text-amber-300 border-amber-500/20">
               <AlertTriangle className="h-5 w-5 mx-auto mb-2 opacity-60" />
@@ -243,7 +299,7 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
       )}
 
       {result && activeTab === 'process' && result.parsed?.models?.length > 0 && (
-        <JsonTable text={result.raw || JSON.stringify(result.parsed)} />
+        <JsonTable text={result.raw || JSON.stringify(result.parsed)} onSave={saveRecognizedRows} />
       )}
     </div>
   )

@@ -7,6 +7,8 @@ interface Props {
   text: string
   /** If true, hide the "raw JSON" toggle. */
   hideRaw?: boolean
+  /** Persists edited rows when the table is used as an editable correction surface. */
+  onSave?: (rows: ModelRow[]) => Promise<void> | void
 }
 
 interface ModelRow {
@@ -116,25 +118,22 @@ function formatCellValue(v: any): string {
   return JSON.stringify(v)
 }
 
-function StatPill({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="text-center bg-white/[0.04] px-2 py-1.5 rounded border border-white/[0.08]">
-      <div className="text-base font-semibold text-white/90">{value}</div>
-      <div className="text-[10px] text-gray-500">{label}</div>
-    </div>
-  )
-}
-
-export function JsonTable({ text, hideRaw }: Props) {
+export function JsonTable({ text, hideRaw, onSave }: Props) {
   const [rawOpen, setRawOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editedColumns, setEditedColumns] = useState<string[]>([])
   const [editedRows, setEditedRows] = useState<Record<string, Record<string, string>>>({})
+  const [savedRows, setSavedRows] = useState<ModelRow[] | null>(null)
+  const [savedColumns, setSavedColumns] = useState<string[] | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const parsed = extractFirstJson(text)
   if (!parsed) return null
 
-  const { rows, allColumns } = normalizeModels(parsed)
+  const normalized = normalizeModels(parsed)
+  const rows = savedRows || normalized.rows
+  const allColumns = savedColumns || normalized.allColumns
   if (!rows.length) return null
 
   // Build a stable list of display columns: explicit metrics first, then a few standard fields
@@ -170,17 +169,26 @@ export function JsonTable({ text, hideRaw }: Props) {
     setEditedRows({})
   }
 
-  function saveEditing() {
-    // Merge edited values into rows
-    rows.forEach((r) => {
+  async function saveEditing() {
+    const nextRows = rows.map((r) => {
       const edits = editedRows[r.modelCode] || {}
-      const newMetrics: Record<string, any> = { ...(r.metrics || {}) }
-      for (const [k, v] of Object.entries(edits)) {
-        newMetrics[k] = v
-      }
-      r.metrics = newMetrics
+      const newMetrics: Record<string, any> = {}
+      for (const col of editedColumns) newMetrics[col] = edits[col] ?? ''
+      return { ...r, metrics: newMetrics }
     })
-    setEditing(false)
+
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await onSave?.(nextRows)
+      setSavedRows(nextRows)
+      setSavedColumns([...editedColumns])
+      setEditing(false)
+    } catch (e: any) {
+      setSaveError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
   }
 
   function addColumn() {
@@ -248,9 +256,10 @@ export function JsonTable({ text, hideRaw }: Props) {
               <button
                 type="button"
                 onClick={saveEditing}
+                disabled={saving}
                 className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
-                保存
+                {saving ? '保存中...' : '保存'}
               </button>
               <button
                 type="button"
@@ -263,6 +272,12 @@ export function JsonTable({ text, hideRaw }: Props) {
           )}
         </div>
       </div>
+
+      {saveError && (
+        <div className="border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          保存失败：{saveError}
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
@@ -352,7 +367,7 @@ export function JsonTable({ text, hideRaw }: Props) {
       )}
 
       {rawOpen && !hideRaw && (
-        <pre className="border-t border-white/[0.08] p-3 text-[10px] bg-white text-slate-100 overflow-x-auto max-h-64 font-mono">
+        <pre className="border-t border-white/[0.08] p-3 text-[10px] bg-black/40 text-slate-200 overflow-x-auto max-h-64 font-mono">
 {JSON.stringify(parsed, null, 2)}
         </pre>
       )}

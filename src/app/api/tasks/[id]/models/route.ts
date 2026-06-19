@@ -11,7 +11,9 @@ export async function GET(
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id } = await params
 
-  const task = await prisma.task.findFirst({ where: { id, userId: session.userId } })
+  const task = await prisma.task.findFirst({
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
+  })
   if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
 
   const models = await prisma.taskModel.findMany({
@@ -35,22 +37,39 @@ export async function POST(
   const { id } = await params
   const { modelCodes } = await request.json()
 
-  const task = await prisma.task.findFirst({ where: { id, userId: session.userId } })
+  const task = await prisma.task.findFirst({
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
+  })
   if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
 
   if (!Array.isArray(modelCodes) || modelCodes.length === 0) {
     return NextResponse.json({ error: 'modelCodes 必须是非空数组' }, { status: 400 })
   }
 
+  const normalizedCodes = [...new Set(
+    modelCodes
+      .map((code) => String(code).trim().toUpperCase())
+      .filter(Boolean),
+  )]
+  if (normalizedCodes.length === 0) {
+    return NextResponse.json({ error: 'modelCodes 必须包含有效模型代号' }, { status: 400 })
+  }
+
+  const existing = await prisma.taskModel.findMany({
+    where: { taskId: id, modelCode: { in: normalizedCodes } },
+    select: { modelCode: true },
+  })
+  const existingCodes = new Set(existing.map((model) => model.modelCode.toUpperCase()))
   const created = []
-  for (const code of modelCodes) {
+  for (const code of normalizedCodes) {
+    if (existingCodes.has(code)) continue
     const m = await prisma.taskModel.create({
       data: { taskId: id, modelCode: code, displayName: code },
     })
     created.push(m)
   }
 
-  return NextResponse.json({ models: created })
+  return NextResponse.json({ models: created, skipped: [...existingCodes] })
 }
 
 // 写入对话消息
@@ -66,7 +85,7 @@ export async function PUT(
   if (!modelId) return NextResponse.json({ error: 'modelId 必填' }, { status: 400 })
 
   const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, task: { userId: session.userId, id } },
+    where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
   })
   if (!model) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
 

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import {
-  Package, UploadCloud, X, FileText, Trash2, Sparkles, Plus, AlertTriangle, CheckCircle2,
+  Package, UploadCloud, FileText, Trash2, Sparkles, Plus, AlertTriangle, CheckCircle2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea, Input } from '@/components/ui/input'
@@ -24,10 +24,24 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
   const [note, setNote] = useState<{ type: 'ok'|'err'; text: string } | null>(null)
-  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null)
+
   function askConfirm(title: string, message: string): boolean {
-    // Native confirm used for now — wrapping in our own modal can come later.
     return window.confirm(title + '\\n\\n' + message)
+  }
+
+  function showNote(type: 'ok' | 'err', text: string, timeout = 4000) {
+    setNote({ type, text })
+    window.setTimeout(() => setNote(null), timeout)
+  }
+
+  async function readJsonResponse(res: Response) {
+    const text = await res.text().catch(() => '')
+    if (!text) return {}
+    try {
+      return JSON.parse(text)
+    } catch {
+      return { error: text.slice(0, 300) || '服务器返回了非预期内容' }
+    }
   }
 
   const models = task.models || []
@@ -43,18 +57,22 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
 
   async function analyze() {
     if (models.length === 0) {
-      setNote({ type: 'err', text: '还没有模型，请先在第 3 步上传看板截图识别模型' }); setTimeout(() => setNote(null), 4000)
+      showNote('err', '还没有模型，请先在第 3 步上传看板截图识别模型')
       return
     }
     setAnalyzing(true)
     try {
       const res = await fetch('/api/tasks/' + task.id + '/analyze-artifacts', { method: 'POST' })
-      const data = await res.json()
+      const data = await readJsonResponse(res)
+      if (!res.ok) {
+        showNote('err', data.error || '分析失败（HTTP ' + res.status + '）', 5000)
+        return
+      }
       if (data.analysis) {
         setAnalysis(data.analysis)
         onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: data.analysis, step: 'ARTIFACT' })
       } else if (data.error) {
-        setNote({ type: 'err', text: data.error }); setTimeout(() => setNote(null), 5000)
+        showNote('err', data.error, 5000)
       }
     } finally { setAnalyzing(false) }
   }
@@ -70,7 +88,10 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
         method: 'POST', body: formData,
       })
       if (res.ok) onRefresh()
-      else { const data = await res.json(); setNote({ type: 'err', text: '上传失败: ' + (data.error || '未知错误') }); setTimeout(() => setNote(null), 4000) }
+      else {
+        const data = await readJsonResponse(res)
+        showNote('err', '上传失败: ' + (data.error || '未知错误'))
+      }
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -86,40 +107,74 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
     })
     if (res.ok) {
       setTextContent(''); setSelectedModel(null); onRefresh()
+    } else {
+      const data = await readJsonResponse(res)
+      showNote('err', '添加文本失败: ' + (data.error || '未知错误'))
     }
   }
 
   async function deleteArtifact(modelId: string, artifactId: string) {
     if (!askConfirm('删除文件', '确定删除此文件？')) return
-    await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifacts', {
+    const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifacts', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ artifactId }),
     })
-    onRefresh()
-  }  async function addModelManual() {
-    const code = newModelCode.trim().toUpperCase();
-    if (!code) return;
-    if (models.find((m: any) => m.modelCode.toUpperCase() === code)) {
-      setNote({ type: 'err', text: '模型 ' + code + ' 已存在' }); setTimeout(() => setNote(null), 3000);
-      return;
+    if (res.ok) onRefresh()
+    else {
+      const data = await readJsonResponse(res)
+      showNote('err', '删除失败: ' + (data.error || '未知错误'))
     }
-    setAddingModel(true);
+  }
+
+  async function addModelManual() {
+    const inputCodes = [...new Set(
+      newModelCode
+        .split(/[,，、\s]+/)
+        .map((code) => code.trim().toUpperCase())
+        .filter(Boolean),
+    )]
+    if (inputCodes.length === 0) return
+
+    const existingCodes = new Set(models.map((m: any) => m.modelCode.toUpperCase()))
+    const codes = inputCodes.filter((code) => !existingCodes.has(code))
+    const skipped = inputCodes.filter((code) => existingCodes.has(code))
+
+    if (codes.length === 0) {
+      showNote('err', '模型 ' + skipped.join('、') + ' 已存在', 3000)
+      return
+    }
+
+    setAddingModel(true)
     try {
       const res = await fetch('/api/tasks/' + task.id + '/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelCodes: [code] }),
-      });
-      if (res.ok) {  let d; try { d = await res.json(); } catch { d = null; } if (d) { setNewModelCode(''); onRefresh(); } else { setNewModelCode(''); onRefresh(); } }
-      else { let d; try { d = await res.json(); } catch { throw new Error('服务器返回了非预期内容'); } setNote({ type: 'err', text: '添加失败：' + (d.error || '未知错误') }); setTimeout(() => setNote(null), 4000); }
-    } finally { setAddingModel(false); }
+        body: JSON.stringify({ modelCodes: codes }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) {
+        showNote('err', '添加失败：' + (data.error || '未知错误'))
+        return
+      }
+      const addedCount = Array.isArray(data.models) ? data.models.length : codes.length
+      setNewModelCode('')
+      showNote(
+        'ok',
+        '已添加 ' + addedCount + ' 个模型' + (skipped.length ? '，跳过已存在：' + skipped.join('、') : ''),
+      )
+      onRefresh()
+    } finally { setAddingModel(false) }
   }
 
   async function deleteModel(modelId: string) {
-    if (!askConfirm('删除模型', '删除此模型及其所有产物/报告？')) return;
-    await fetch('/api/tasks/' + task.id + '/models/' + modelId, { method: 'DELETE' });
-    onRefresh();
+    if (!askConfirm('删除模型', '删除此模型及其所有产物/报告？')) return
+    const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId, { method: 'DELETE' })
+    if (res.ok) onRefresh()
+    else {
+      const data = await readJsonResponse(res)
+      showNote('err', '删除失败：' + (data.error || '未知错误'))
+    }
   }
   return (
     <div className="space-y-5">
@@ -153,17 +208,17 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
         )}
       </div>
 
-      {models.length === 0 ? (
-        <div className="glass p-10 text-center text-sm text-gray-500 border-dashed">
-          <Package className="h-8 w-8 mx-auto mb-3 text-gray-600" />
-          暂无待测模型。先在第 3 步上传数据看板，AI 会自动识别模型代号。
-
       {note && (
         <div className={'flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm animate-rise ' + (note.type === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300')}>
           {note.type === 'ok' ? <CheckCircle2 className="h-4 w-4 flex-shrink-0" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0" />}
           {note.text}
         </div>
       )}
+
+      {models.length === 0 ? (
+        <div className="glass p-10 text-center text-sm text-gray-500 border-dashed">
+          <Package className="h-8 w-8 mx-auto mb-3 text-gray-600" />
+          暂无待测模型。先在第 3 步上传数据看板，AI 会自动识别模型代号。
         </div>
       ) : (
         <div className="grid gap-3">
