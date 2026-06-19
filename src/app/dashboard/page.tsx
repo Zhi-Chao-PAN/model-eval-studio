@@ -108,7 +108,7 @@ export default function DashboardPage() {
       </div>
 
       {showNew && (
-        <div className="glass-strong p-5 mb-6 animate-rise">
+        <div className="panel p-5 mb-6 animate-rise">
           <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
             <div className="flex-1">
               <Input
@@ -132,7 +132,7 @@ export default function DashboardPage() {
       {loading ? (
         <div className="grid gap-3">
           {[0,1,2].map(i => (
-            <div key={i} className="glass p-5">
+            <div key={i} className="panel p-5">
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 rounded-lg bg-white/5 animate-pulse" />
                 <div className="flex-1 space-y-2">
@@ -151,7 +151,7 @@ export default function DashboardPage() {
             const status = statusMeta[task.status] || statusMeta.DRAFT
             const stepIdx = STEPS.findIndex(s => s.key === task.currentStep)
             return (
-              <div key={task.id} className="glass p-5 lift group cursor-pointer relative">
+              <div key={task.id} className="panel p-4 group cursor-pointer relative transition-transform hover:-translate-y-0.5">
                 <Link href={'/tasks/' + task.id} className="absolute inset-0" />
                 <div className="flex items-center gap-4 relative pointer-events-none">
                   <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
@@ -210,7 +210,7 @@ export default function DashboardPage() {
 
 function EmptyState({ onNew, hasSearch }: { onNew: () => void; hasSearch: boolean }) {
   return (
-    <div className="glass p-12 text-center">
+    <div className="panel p-12 text-center">
       <div className="inline-flex h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 border border-white/10 items-center justify-center mb-4">
         <FlaskConical className="h-6 w-6 text-indigo-300" />
       </div>
