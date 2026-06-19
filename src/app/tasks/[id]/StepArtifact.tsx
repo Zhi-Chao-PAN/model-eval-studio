@@ -24,6 +24,11 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
   const [note, setNote] = useState<{ type: 'ok'|'err'; text: string } | null>(null)
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null)
+  function askConfirm(title: string, message: string): boolean {
+    // Native confirm used for now — wrapping in our own modal can come later.
+    return window.confirm(title + '\\n\\n' + message)
+  }
 
   const models = task.models || []
 
@@ -49,7 +54,7 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
         setAnalysis(data.analysis)
         onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: data.analysis, step: 'ARTIFACT' })
       } else if (data.error) {
-        alert(data.error)
+        setNote({ type: 'err', text: data.error }); setTimeout(() => setNote(null), 5000)
       }
     } finally { setAnalyzing(false) }
   }
@@ -85,7 +90,7 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
   }
 
   async function deleteArtifact(modelId: string, artifactId: string) {
-    if (!confirm('确定删除此文件？')) return
+    if (!askConfirm('删除文件', '确定删除此文件？')) return
     await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifacts', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -112,7 +117,7 @@ export default function StepArtifact({ task, onAddMessage, onRefresh }: Props) {
   }
 
   async function deleteModel(modelId: string) {
-    if (!confirm('删除此模型及其所有产物/报告？')) return;
+    if (!askConfirm('删除模型', '删除此模型及其所有产物/报告？')) return;
     await fetch('/api/tasks/' + task.id + '/models/' + modelId, { method: 'DELETE' });
     onRefresh();
   }

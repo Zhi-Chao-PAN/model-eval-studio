@@ -47,7 +47,9 @@ export async function POST(
 
   const prompt = buildArtifactAnalysisPrompt(task, modelsData)
 
-  const result = await generateChat(
+  let result: string
+  try {
+    result = await generateChat(
     [
       { role: 'system', content: buildSystemPrompt(aiConfig.background) },
       { role: 'user', content: prompt },
@@ -61,6 +63,9 @@ export async function POST(
       maxTokens: 4000,
     }
   )
+  } catch (e: any) {
+    return NextResponse.json({ error: 'AI 分析失败：' + (e.message || String(e)) }, { status: 502 })
+  }
 
   await prisma.task.update({
     where: { id },

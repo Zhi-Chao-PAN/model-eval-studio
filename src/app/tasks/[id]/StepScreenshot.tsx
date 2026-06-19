@@ -214,7 +214,13 @@ export default function StepScreenshot({ task, onAddMessage, onRefresh }: Props)
         </div>
       )}
 
-      {currentImages.length > 0 && (
+      {analyzing && streamText && (
+        <div className="glass p-4 max-h-40 overflow-y-auto scrollbar-thin text-sm text-gray-300 whitespace-pre-wrap font-mono">
+          {streamText}
+        </div>
+      )}
+
+            {currentImages.length > 0 && (
         <div className="flex items-center gap-3">
           <Button onClick={analyze} loading={analyzing}>
             <Sparkles className="h-3.5 w-3.5" />

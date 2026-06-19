@@ -17,22 +17,25 @@ export default function StepInfo({ task, onUpdate }: Props) {
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
 
   async function save() {
-    setSaving(true)
+    setSaving(true); setError('')
     try {
       const res = await fetch('/api/tasks/' + task.id, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       })
-      const data = await res.json()
+      let data; try { data = await res.json(); } catch { throw new Error('保存失败（HTTP ' + res.status + '）') }
+      if (!res.ok) throw new Error(data.error || '保存失败')
       if (data.task) {
         onUpdate(data.task)
         setSaved(true)
         setTimeout(() => setSaved(false), 1500)
       }
-    } finally { setSaving(false) }
+    } catch (e: any) { setError(e.message || String(e)) }
+    finally { setSaving(false) }
   }
 
   return (
