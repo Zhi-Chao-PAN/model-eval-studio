@@ -12,7 +12,9 @@ export async function GET(
   }
   const { id } = await params
 
-  const task = await prisma.task.findFirst({ where: { id, userId: session.userId } })
+  const task = await prisma.task.findFirst({
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
+  })
   if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
 
   const messages = await prisma.taskMessage.findMany({
@@ -36,7 +38,9 @@ export async function POST(
     return NextResponse.json({ error: 'role / content / step 必填' }, { status: 400 })
   }
 
-  const task = await prisma.task.findFirst({ where: { id, userId: session.userId } })
+  const task = await prisma.task.findFirst({
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
+  })
   if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
 
   const msg = await prisma.taskMessage.create({

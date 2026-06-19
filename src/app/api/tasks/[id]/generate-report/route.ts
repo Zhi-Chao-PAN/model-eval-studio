@@ -17,7 +17,7 @@ export async function POST(
   const adjustInstruction = body.adjustInstruction
 
   const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId },
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
     include: {
       models: {
         include: {

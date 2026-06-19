@@ -12,7 +12,7 @@ export async function GET(
   const { id } = await params
 
   const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId },
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
     include: {
       models: { include: { reports: { orderBy: { createdAt: 'desc' }, take: 1 } } },
     },

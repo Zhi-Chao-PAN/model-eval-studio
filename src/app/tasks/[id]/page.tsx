@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Download, Trash2, Loader2, Check, ChevronRight,
+  ArrowLeft, Download, Trash2, Loader2, Check,
+  AlertTriangle,
 } from 'lucide-react'
 import StepInfo from './StepInfo'
 import StepIdea from './StepIdea'
@@ -39,6 +40,7 @@ export default function TaskPage() {
 
   const [task, setTask] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [currentStep, setCurrentStep] = useState<string>('INFO')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
@@ -48,23 +50,41 @@ export default function TaskPage() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  async function readJsonResponse(res: Response) {
+    const text = await res.text().catch(() => '')
+    if (!text) return {}
+    try {
+      return JSON.parse(text)
+    } catch {
+      return { error: text.slice(0, 300) || '接口返回了非预期内容' }
+    }
+  }
+
   async function loadTask() {
     setLoading(true)
-    const res = await fetch('/api/tasks/' + taskId)
-    let data; try { data = await res.json(); } catch { throw new Error('任务数据接口返回了非预期内容（HTTP ' + res.status + '）') }
-    if (data.task) {
-      setTask(data.task)
-      setCurrentStep(data.task.currentStep || 'INFO')
-    } else if (res.status === 404) {
-      router.push('/dashboard')
+    setLoadError(null)
+    try {
+      const res = await fetch('/api/tasks/' + taskId)
+      const data = await readJsonResponse(res)
+      if (data.task) {
+        setTask(data.task)
+        setCurrentStep(data.task.currentStep || 'INFO')
+      } else if (res.status === 404) {
+        router.push('/dashboard')
+      } else if (!res.ok) {
+        setLoadError(data.error || '任务加载失败（HTTP ' + res.status + '）')
+      }
+    } catch (e: any) {
+      setLoadError(e?.message || String(e))
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   async function loadMessages() {
     const res = await fetch('/api/tasks/' + taskId + '/messages')
-    const data = await res.json()
-    if (data.messages) setMessages(data.messages)
+    const data = await readJsonResponse(res)
+    if (res.ok && data.messages) setMessages(data.messages)
   }
 
   useEffect(() => { loadTask(); loadMessages() }, [taskId])
@@ -87,7 +107,7 @@ export default function TaskPage() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentStep: stepKey }),
-    }).then(r => r.json()).then(data => { if (data.task) setTask(data.task) })
+    }).then(readJsonResponse).then(data => { if (data.task) setTask(data.task) })
   }
 
   async function handleChatSend(e: React.FormEvent) {
@@ -111,6 +131,7 @@ export default function TaskPage() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''; let acc = ''
+      let completed = false
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -124,17 +145,22 @@ export default function TaskPage() {
             else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
           }
           if (!dataLine) continue
+          let payload: any
           try {
-            const payload = JSON.parse(dataLine)
-            if (eventName === 'user-message' && payload.message) setMessages(p => [...p, payload.message])
-            else if (eventName === 'delta' && payload.text) { acc += payload.text; setStreamingContent(acc) }
-            else if (eventName === 'done') {
-              if (payload.message) setMessages(p => [...p, payload.message])
-              setStreamingContent('')
-            } else if (eventName === 'error') throw new Error(payload.message || '对话出错')
-          } catch {}
+            payload = JSON.parse(dataLine)
+          } catch {
+            continue
+          }
+          if (eventName === 'user-message' && payload.message) setMessages(p => [...p, payload.message])
+          else if (eventName === 'delta' && payload.text) { acc += payload.text; setStreamingContent(acc) }
+          else if (eventName === 'done') {
+            completed = true
+            if (payload.message) setMessages(p => [...p, payload.message])
+            setStreamingContent('')
+          } else if (eventName === 'error') throw new Error(payload.message || '对话出错')
         }
       }
+      if (!completed) setStreamingContent('')
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setMessages(p => [...p, { id: 'err-' + Date.now(), role: 'system', content: '错误: ' + err.message, step: currentStep }])
@@ -182,6 +208,18 @@ export default function TaskPage() {
   }
 
   if (!task) {
+    if (loadError) {
+      return (
+        <div className="glass p-8 text-center text-sm text-red-300 border-red-500/20">
+          <AlertTriangle className="h-6 w-6 mx-auto mb-3" />
+          <div className="font-medium mb-1">任务加载失败</div>
+          <div className="text-gray-400">{loadError}</div>
+          <Button variant="secondary" size="sm" className="mt-4" onClick={() => router.push('/dashboard')}>
+            返回任务列表
+          </Button>
+        </div>
+      )
+    }
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <Loader2 className="h-6 w-6 text-gray-500 animate-spin" />

@@ -55,6 +55,7 @@ export default function StepIdea({ task, onAddMessage }: Props) {
       const decoder = new TextDecoder()
       let buffer = ''
       let acc = ''
+      let completed = false
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -69,20 +70,24 @@ export default function StepIdea({ task, onAddMessage }: Props) {
             else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
           }
           if (!dataLine) continue
+          let payload: any
           try {
-            const payload = JSON.parse(dataLine)
-            if (eventName === 'delta' && payload.text) {
-              acc += payload.text; setIdea(acc)
-            } else if (eventName === 'error') {
-              throw new Error(payload.message || '生成出错')
-            } else if (eventName === 'done') {
-              setIdea(payload.full || acc); setPhase('done')
-              onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: payload.full || acc, step: 'IDEA' })
-            }
-          } catch {}
+            payload = JSON.parse(dataLine)
+          } catch {
+            continue
+          }
+          if (eventName === 'delta' && payload.text) {
+            acc += payload.text; setIdea(acc)
+          } else if (eventName === 'error') {
+            throw new Error(payload.message || '生成出错')
+          } else if (eventName === 'done') {
+            completed = true
+            setIdea(payload.full || acc); setPhase('done')
+            onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: payload.full || acc, step: 'IDEA' })
+          }
         }
       }
-      if (phase !== 'done') { setIdea(acc); setPhase('done') }
+      if (!completed) { setIdea(acc); setPhase('done') }
     } catch (e: any) {
       if (e.name === 'AbortError') setPhase(idea ? 'done' : 'idle')
       else { setError(e.message || String(e)); setPhase('error') }

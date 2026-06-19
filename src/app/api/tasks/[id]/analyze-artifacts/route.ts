@@ -14,7 +14,7 @@ export async function POST(
   const { id } = await params
 
   const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId },
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
     include: {
       models: { include: { artifacts: true } },
     },
