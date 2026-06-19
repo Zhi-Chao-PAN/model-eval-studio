@@ -11,6 +11,31 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeDashboardTable(parsed: unknown): unknown {
+  if (!isRecord(parsed) || !Array.isArray(parsed.models)) return parsed
+
+  for (const model of parsed.models) {
+    if (!isRecord(model) || !isRecord(model.metrics)) continue
+
+    const metrics = model.metrics
+    const extraOutputKey = Object.keys(metrics).find((key) => /^Output_\d+$/i.test(key))
+    if (extraOutputKey && metrics.Output !== undefined) {
+      const likelyInputTotal = metrics.Output
+      metrics.Output = metrics[extraOutputKey]
+      delete metrics[extraOutputKey]
+      if (metrics['Input Total'] === undefined || metrics['Input Total'] === '' || metrics['Input Total'] === '0') {
+        metrics['Input Total'] = likelyInputTotal
+      }
+    }
+  }
+
+  return parsed
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -52,12 +77,20 @@ export async function POST(
     return new Response(JSON.stringify({ error: '截图识别需要 OpenAI 兼容接口' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
   }
 
-  const prompt = type === 'dashboard' ? buildDashboardAnalysisPrompt() : buildScreenshotAnalysisPrompt()
+  const basePrompt = type === 'dashboard' ? buildDashboardAnalysisPrompt() : buildScreenshotAnalysisPrompt()
+  const prompt = [
+    'You are a strict OCR-to-JSON engine for model evaluation screenshots.',
+    'Return only one valid JSON object. Do not output markdown, comments, explanations, or thinking tags.',
+    'If the screenshot is a table, read every visible header and row exactly as shown.',
+    'Inputs may include the full screenshot plus overlapping crops of the same table; merge them into one table, do not duplicate rows.',
+    'Keep model names/codes exactly as visible, preserving case where possible.',
+    basePrompt,
+  ].join('\n\n')
 
   // Build multimodal messages
-  const userContent: any[] = [{ type: 'text', text: prompt }]
+  const userContent: Array<Record<string, unknown>> = [{ type: 'text', text: prompt }]
   for (const url of images) {
-    userContent.push({ type: 'image_url', image_url: { url } })
+    userContent.push({ type: 'image_url', image_url: { url, detail: 'high' } })
   }
 
   const baseUrl = aiConfig.baseUrl.replace(/\/$/, '')
@@ -76,6 +109,19 @@ export async function POST(
         send('start', { ts: Date.now() })
 
         const fullUrl = baseUrl.endsWith('/v1') ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions'
+        const requestBody: Record<string, unknown> = {
+          model: aiConfig.model,
+          messages: [{ role: 'user', content: userContent }],
+          max_tokens: 12000,
+          max_completion_tokens: 12000,
+          temperature: 0.1,
+          stream: true,
+        }
+
+        if (/minimax[-_ ]?m3/i.test(aiConfig.model)) {
+          requestBody.thinking = { type: 'disabled' }
+        }
+
         const res = await fetch(fullUrl, {
           method: 'POST',
           headers: {
@@ -83,14 +129,7 @@ export async function POST(
             'Authorization': 'Bearer ' + aiConfig.apiKey,
             
           },
-          body: JSON.stringify({
-            model: aiConfig.model,
-            messages: [{ role: 'user', content: userContent }],
-            max_tokens: 12000,
-            max_completion_tokens: 12000,
-            temperature: 0.2,
-            stream: true,
-          }),
+          body: JSON.stringify(requestBody),
         })
 
         if (!res.ok || !res.body) {
@@ -154,6 +193,7 @@ export async function POST(
             if (m) parsed = JSON.parse(m[0])
           } catch {}
         }
+        parsed = normalizeDashboardTable(parsed)
 
         if (!Array.isArray(parsed?.models)) {
           const reason = finishReason === 'length'

@@ -34,6 +34,24 @@ interface ChatMessage {
   modelId?: string | null
 }
 
+function mergeTaskUpdate(previous: unknown, updated: unknown) {
+  if (
+    typeof previous !== 'object' || previous === null ||
+    typeof updated !== 'object' || updated === null
+  ) return updated
+
+  const previousTask = previous as Record<string, unknown>
+  const updatedTask = updated as Record<string, unknown>
+
+  return {
+    ...previousTask,
+    ...updatedTask,
+    attachments: updatedTask.attachments ?? previousTask.attachments,
+    models: updatedTask.models ?? previousTask.models,
+    messages: updatedTask.messages ?? previousTask.messages,
+  }
+}
+
 export default function TaskPage() {
   const params = useParams()
   const router = useRouter()
@@ -50,6 +68,7 @@ export default function TaskPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const loadTaskSeqRef = useRef(0)
 
   async function readJsonResponse(res: Response) {
     const text = await res.text().catch(() => '')
@@ -61,15 +80,18 @@ export default function TaskPage() {
     }
   }
 
-  async function loadTask() {
-    setLoading(true)
+  async function loadTask(options: { forceStep?: string } = {}) {
+    const seq = ++loadTaskSeqRef.current
+    const showGlobalLoading = task === null
+    if (showGlobalLoading) setLoading(true)
     setLoadError(null)
     try {
       const res = await fetch('/api/tasks/' + taskId)
       const data = await readJsonResponse(res)
+      if (seq !== loadTaskSeqRef.current) return
       if (data.task) {
         setTask(data.task)
-        setCurrentStep(data.task.currentStep || 'INFO')
+        setCurrentStep(options.forceStep || data.task.currentStep || 'INFO')
       } else if (res.status === 404) {
         router.push('/dashboard')
       } else if (!res.ok) {
@@ -78,7 +100,7 @@ export default function TaskPage() {
     } catch (e: any) {
       setLoadError(e?.message || String(e))
     } finally {
-      setLoading(false)
+      if (seq === loadTaskSeqRef.current && showGlobalLoading) setLoading(false)
     }
   }
 
@@ -94,17 +116,21 @@ export default function TaskPage() {
   const chatMessages = filterConversationMessages(messages, task || {})
 
   function handleTaskUpdate(updated: any) {
-    setTask(updated)
+    setTask((previous: unknown) => mergeTaskUpdate(previous, updated))
     if (updated.currentStep) setCurrentStep(updated.currentStep)
   }
 
   function goToStep(stepKey: string) {
+    if (stepKey === currentStep) return
+    loadTaskSeqRef.current += 1
     setCurrentStep(stepKey)
     fetch('/api/tasks/' + taskId, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentStep: stepKey }),
-    }).then(readJsonResponse).then(data => { if (data.task) setTask(data.task) })
+    }).then(readJsonResponse).then(data => {
+      if (data.task) setTask((previous: unknown) => mergeTaskUpdate(previous, data.task))
+    })
   }
 
   async function handleChatSend() {
@@ -184,9 +210,9 @@ export default function TaskPage() {
     switch (currentStep) {
       case 'INFO': return <StepInfo task={task} onUpdate={handleTaskUpdate} />
       case 'IDEA': return <StepIdea task={task} />
-      case 'SCREENSHOT': return <StepScreenshot task={task} onRefresh={loadTask} />
-      case 'ARTIFACT': return <StepArtifact task={task} onRefresh={loadTask} />
-      case 'REPORT': return <StepReport task={task} onRefresh={loadTask} />
+      case 'SCREENSHOT': return <StepScreenshot task={task} onRefresh={() => loadTask({ forceStep: 'SCREENSHOT' })} />
+      case 'ARTIFACT': return <StepArtifact task={task} onRefresh={() => loadTask({ forceStep: 'ARTIFACT' })} />
+      case 'REPORT': return <StepReport task={task} onRefresh={() => loadTask({ forceStep: 'REPORT' })} />
       default: return null
     }
   }

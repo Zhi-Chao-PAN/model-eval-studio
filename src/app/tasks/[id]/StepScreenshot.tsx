@@ -15,11 +15,64 @@ interface Props {
 }
 
 type Tab = 'process' | 'dashboard'
+type UploadedImage = { name: string; dataUrl: string }
+
+function sanitizeVisionStreamPreview(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<think>[\s\S]*$/g, '')
+    .trim()
+}
+
+function createWideImageTiles(dataUrl: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => {
+      const width = image.naturalWidth
+      const height = image.naturalHeight
+      const ratio = width / Math.max(height, 1)
+      if (width < 1200 || ratio < 3.5) {
+        resolve([])
+        return
+      }
+
+      const tileCount = Math.min(4, Math.max(2, Math.ceil(ratio / 2.4)))
+      const overlap = Math.round(width * 0.04)
+      const baseTileWidth = Math.ceil(width / tileCount)
+      const tiles: string[] = []
+
+      for (let index = 0; index < tileCount; index++) {
+        const start = Math.max(0, index * baseTileWidth - overlap)
+        const end = Math.min(width, (index + 1) * baseTileWidth + overlap)
+        const tileWidth = end - start
+        const canvas = document.createElement('canvas')
+        canvas.width = tileWidth
+        canvas.height = height
+        const context = canvas.getContext('2d')
+        if (!context) continue
+        context.drawImage(image, start, 0, tileWidth, height, 0, 0, tileWidth, height)
+        tiles.push(canvas.toDataURL('image/png'))
+      }
+
+      resolve(tiles)
+    }
+    image.onerror = () => resolve([])
+    image.src = dataUrl
+  })
+}
+
+async function buildAnalysisImages(images: UploadedImage[], type: Tab): Promise<string[]> {
+  const originals = images.map((image) => image.dataUrl)
+  if (type !== 'dashboard') return originals
+
+  const tiles = await Promise.all(images.map((image) => createWideImageTiles(image.dataUrl)))
+  return [...originals, ...tiles.flat()]
+}
 
 export default function StepScreenshot({ task, onRefresh }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
-  const [processImages, setProcessImages] = useState<{ name: string; dataUrl: string }[]>([])
-  const [dashboardImages, setDashboardImages] = useState<{ name: string; dataUrl: string }[]>([])
+  const [processImages, setProcessImages] = useState<UploadedImage[]>([])
+  const [dashboardImages, setDashboardImages] = useState<UploadedImage[]>([])
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -109,7 +162,7 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
   const res = await fetch('/api/tasks/' + task.id + '/analyze-screenshots', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ images: images.map((i) => i.dataUrl), type: activeTab }),
+  body: JSON.stringify({ images: await buildAnalysisImages(images, activeTab), type: activeTab }),
   signal: controller.signal,
   })
   if (!res.ok || !res.body) {
@@ -148,7 +201,7 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
   }
   if (eventName === 'delta' && payload.text) {
   acc += payload.text
-  setStreamText(acc)
+  setStreamText(sanitizeVisionStreamPreview(acc))
   } else if (eventName === 'done') {
   completed = true
   setResult({ parsed: payload.parsed, raw: payload.raw })
@@ -297,7 +350,7 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
 
 function UploadBox({ label, images, onUpload, onRemove }: {
   label: string
-  images: { name: string; dataUrl: string }[]
+  images: UploadedImage[]
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
   onRemove: (i: number) => void
 }) {
