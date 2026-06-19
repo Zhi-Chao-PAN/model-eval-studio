@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Brain, Sparkles, Square, AlertCircle, Zap } from 'lucide-react'
+import { Brain, Sparkles, Square, AlertCircle, Zap, Lightbulb } from 'lucide-react'
 import { MarkdownView } from '@/components/MarkdownView'
 import { Button } from '@/components/ui/button'
 
@@ -98,15 +98,16 @@ export default function StepIdea({ task }: Props) {
   const isWorking = phase === 'connecting' || phase === 'streaming'
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 animate-rise">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
-            <Brain className="h-5 w-5 text-violet-300" />
+          <div className="relative h-11 w-11 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+            <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-violet-400/20 to-transparent blur-md" />
+            <Brain className="h-5 w-5 text-violet-300 relative z-10" />
           </div>
           <div>
-            <h2 className="display text-xl">测试思路</h2>
-            <p className="text-sm text-gray-400 mt-1">
+            <h2 className="display text-xl sm:text-2xl tracking-tight">测试思路</h2>
+            <p className="text-sm text-gray-400 mt-1 max-w-2xl">
               AI 基于个人背景与任务来源生成测试思路。流式输出，可中断、可重试。
             </p>
           </div>
@@ -128,41 +129,47 @@ export default function StepIdea({ task }: Props) {
       </div>
 
       {isWorking && (
-        <div className="glass px-4 py-3 flex items-center gap-3 text-sm">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-400" />
+        <div className="panel px-4 py-3 flex items-center gap-3">
+          <span className="relative flex h-2 w-2 flex-shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-400" />
           </span>
-          <span className="text-indigo-200 font-medium">
+          <span className="text-violet-200 text-[13px] font-medium">
             {phase === 'connecting' ? '正在与模型建立连接...' : '正在生成内容'}
           </span>
-          <span className="text-gray-500 text-xs mono">
+          <span className="text-gray-500 text-[11px] mono ml-auto">
             {elapsed.toFixed(1)}s · {charCount} 字
           </span>
-          <div className="ml-auto h-1 w-24 bg-white/10 rounded-full overflow-hidden">
-            <div className="h-full shimmer bg-indigo-400/40" style={{ width: '100%' }} />
-          </div>
         </div>
       )}
 
       {error && (
-        <div className="glass px-4 py-3 text-sm text-red-300 flex items-start gap-2 border-red-500/20">
+        <div className="panel px-4 py-3 text-sm text-red-300 flex items-start gap-2 border-red-500/25 bg-red-500/[0.04]">
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <span>生成失败：{error}</span>
         </div>
       )}
 
       {idea ? (
-        <div className="glass p-6 max-h-[600px] overflow-y-auto scrollbar-thin">
+        <div className="panel p-6 max-h-[600px] overflow-y-auto scrollbar-thin">
           <MarkdownView text={idea} />
           {phase === 'streaming' && (
-            <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse align-middle ml-1" />
+            <span className="inline-block w-1.5 h-4 bg-violet-400 animate-pulse align-middle ml-1" />
           )}
         </div>
       ) : !isWorking ? (
-        <div className="glass p-12 text-center text-sm text-gray-500 border-dashed">
-          <Zap className="h-8 w-8 mx-auto mb-3 text-gray-600" />
-          点击右上角按钮，让 AI 基于任务信息生成测试思路
+        <div className="panel p-10 text-center">
+          <div className="relative inline-flex mb-4">
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 blur-xl rounded-full" />
+            <div className="relative h-12 w-12 rounded-2xl bg-gradient-to-br from-violet-500/15 to-fuchsia-500/15 border border-white/10 flex items-center justify-center">
+              <Lightbulb className="h-5 w-5 text-violet-300" />
+            </div>
+          </div>
+          <p className="text-[13px] text-gray-400 mb-1">还没有生成测试思路</p>
+          <p className="text-[11px] text-gray-600 mb-4">点击右上角按钮，让 AI 基于任务信息生成测试思路</p>
+          <Button onClick={generate} size="sm" variant="secondary">
+            <Zap className="h-3.5 w-3.5" /> 开始生成
+          </Button>
         </div>
       ) : null}
     </div>

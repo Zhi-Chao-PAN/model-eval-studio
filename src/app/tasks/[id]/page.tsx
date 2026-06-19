@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Download, Trash2, Loader2, Check,
-  AlertTriangle,
+  AlertTriangle, Sparkles, X,
 } from 'lucide-react'
 import StepInfo from './StepInfo'
 import StepIdea from './StepIdea'
@@ -17,6 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { DesktopStepSidebar, MobileStepBar } from '@/components/tasks/StepSidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { filterConversationMessages } from '@/lib/task-messages'
+import { cn } from '@/lib/utils'
 
 const STEPS = [
   { key: 'INFO', label: '任务信息', desc: '填写任务基本信息' },
@@ -66,6 +67,7 @@ export default function TaskPage() {
   const [streaming, setStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const loadTaskSeqRef = useRef(0)
@@ -111,7 +113,7 @@ export default function TaskPage() {
   }
 
   useEffect(() => { loadTask(); loadMessages() }, [taskId])
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamingContent, currentStep])
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamingContent, currentStep, chatOpen])
 
   const chatMessages = filterConversationMessages(messages, task || {})
 
@@ -222,8 +224,8 @@ export default function TaskPage() {
         <Skeleton className="h-8 w-1/3 mb-4" />
         <Skeleton className="h-4 w-1/4 mb-8" />
         <div className="grid grid-cols-12 gap-6">
-          <Skeleton className="col-span-3 h-64" />
-          <Skeleton className="col-span-9 h-96" />
+          <Skeleton className="col-span-3 h-64 rounded-xl" />
+          <Skeleton className="col-span-9 h-96 rounded-xl" />
         </div>
       </div>
     )
@@ -232,7 +234,7 @@ export default function TaskPage() {
   if (!task) {
     if (loadError) {
       return (
-        <div className="glass p-8 text-center text-sm text-red-300 border-red-500/20">
+        <div className="panel p-8 text-center text-sm text-red-300">
           <AlertTriangle className="h-6 w-6 mx-auto mb-3" />
           <div className="font-medium mb-1">任务加载失败</div>
           <div className="text-gray-400">{loadError}</div>
@@ -250,22 +252,27 @@ export default function TaskPage() {
   }
 
   return (
-    <div className="pb-[520px] sm:pb-[520px] lg:pb-6 lg:pr-[400px] xl:pr-[420px]">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+    <div className="pb-20 lg:pb-6 relative min-h-[80vh]">
+      {/* Top header bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div className="flex items-start gap-3 min-w-0">
-          <Link href="/dashboard" className="text-gray-500 hover:text-white transition-colors p-1 -ml-1 flex-shrink-0 mt-0.5">
+          <Link href="/dashboard" className="text-gray-500 hover:text-white transition-colors p-1.5 -ml-1.5 flex-shrink-0 mt-0 rounded-lg hover:bg-white/5">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div className="min-w-0">
-            <h1 className="display text-xl sm:text-2xl text-white truncate">
+            <h1 className="display text-2xl sm:text-3xl text-white tracking-tight truncate">
               {task.title || '未命名任务'}
             </h1>
-            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1.5 flex-wrap">
-              <Badge variant="muted">{task.models?.length || 0} 个模型</Badge>
-              <span>·</span>
-              <span className="mono">创建 {new Date(task.createdAt).toLocaleDateString('zh-CN')}</span>
-              <span>·</span>
-              <span className="mono">更新 {formatTime(task.updatedAt)}</span>
+            <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-2 flex-wrap">
+              <span className="mono px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/10">
+                {task.models?.length || 0} 个模型
+              </span>
+              <span className="mono px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/10">
+                创建 {new Date(task.createdAt).toLocaleDateString('zh-CN')}
+              </span>
+              <span className="mono px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/10">
+                更新 {formatTime(task.updatedAt)}
+              </span>
             </div>
           </div>
         </div>
@@ -285,33 +292,55 @@ export default function TaskPage() {
         </div>
       </div>
 
+      {/* Mobile step bar */}
       <div className="lg:hidden mb-4">
         <MobileStepBar steps={STEPS} currentStep={currentStep} onChange={goToStep} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+      {/* Main grid: sidebar + content */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
         <aside className="hidden lg:block lg:col-span-3 xl:col-span-2">
           <DesktopStepSidebar steps={STEPS} currentStep={currentStep} onChange={goToStep} />
         </aside>
 
-        <div className="lg:col-span-9 xl:col-span-10 min-w-0">
-          <div className="glass p-5 sm:p-6 min-h-[600px]">
-            {renderStepContent()}
-          </div>
-        </div>
+        <main className="lg:col-span-9 xl:col-span-10 min-w-0">
+          {renderStepContent()}
+        </main>
       </div>
 
-      <ChatPanel
-        currentStepLabel={STEPS.find(s => s.key === currentStep)?.label || ''}
-        messages={chatMessages}
-        streamingContent={streamingContent}
-        streaming={streaming}
-        input={chatInput}
-        onInputChange={setChatInput}
-        onSend={handleChatSend}
-        onAbort={abortChat}
-        endRef={chatEndRef}
-      />
+      {/* FAB Chat trigger */}
+      <button
+        onClick={() => setChatOpen(v => !v)}
+        className="fab-trigger fixed bottom-6 right-6 z-50"
+        aria-label="打开对话助手"
+      >
+        {chatOpen ? <X className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
+        {streaming && <span className="badge">●</span>}
+      </button>
+
+      {/* Chat sheet */}
+      {chatOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden"
+            onClick={() => setChatOpen(false)}
+          />
+          <div className="sheet z-40">
+            <ChatPanel
+              currentStepLabel={STEPS.find(s => s.key === currentStep)?.label || ''}
+              messages={chatMessages}
+              streamingContent={streamingContent}
+              streaming={streaming}
+              input={chatInput}
+              onInputChange={setChatInput}
+              onSend={handleChatSend}
+              onAbort={abortChat}
+              endRef={chatEndRef}
+              onClose={() => setChatOpen(false)}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

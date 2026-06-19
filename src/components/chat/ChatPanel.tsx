@@ -1,9 +1,8 @@
 'use client'
-import { useRef, useState, RefObject } from 'react'
-import { Send, Square, Bot, User, MessageSquare, Maximize2, Minimize2 } from 'lucide-react'
+import { useRef, RefObject } from 'react'
+import { Send, Square, Bot, User, MessageSquare, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownView } from '@/components/MarkdownView'
 import { JsonTable } from '@/components/JsonTable'
@@ -18,57 +17,49 @@ interface Props {
   onSend: () => void
   onAbort: () => void
   endRef: RefObject<HTMLDivElement | null>
+  onClose?: () => void
 }
 
 export function ChatPanel({
   currentStepLabel, messages, streamingContent, streaming,
-  input, onInputChange, onSend, onAbort, endRef,
+  input, onInputChange, onSend, onAbort, endRef, onClose,
 }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const [expanded, setExpanded] = useState(true)
 
   return (
-    <Card className={cn(
-      'fixed bottom-4 right-4 w-[360px] max-w-[calc(100vw-2rem)] flex flex-col z-30 shadow-2xl shadow-black/50 border border-white/[0.08] !bg-[#0d0d14] hover:!bg-[#0d0d14] backdrop-blur-none transition-[height] duration-200',
-      expanded
-        ? 'h-[calc(100dvh-6rem)]'
-        : 'h-[480px] max-h-[calc(100dvh-8rem)]',
-    )}>
-      <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-gradient-to-br from-indigo-500/10 to-transparent rounded-t-xl">
+    <div className="flex flex-col w-full h-full bg-transparent flex-1 min-h-0">
+      <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-            <Bot className="h-3.5 w-3.5 text-white" />
+          <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500/30 to-fuchsia-500/30 border border-white/10 flex items-center justify-center">
+            <Bot className="h-3.5 w-3.5 text-indigo-300" />
           </div>
           <div>
-            <div className="text-sm font-semibold text-white">AI 助手</div>
-            <div className="text-[10px] text-gray-500">任务全程对话 · 当前：{currentStepLabel}</div>
+            <div className="text-[13px] font-medium text-white">AI 助手</div>
+            <div className="text-[10px] text-gray-500 mono">当前：{currentStepLabel}</div>
           </div>
-        </div>
-        <div className="flex items-center gap-1.5">
           {messages.length > 0 && (
-            <Badge variant="default" className="text-[10px]">{messages.length} 条</Badge>
+            <Badge variant="muted" className="text-[10px] ml-1">{messages.length}</Badge>
           )}
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            onClick={() => setExpanded((value) => !value)}
-            aria-label={expanded ? '切换为紧凑窗口' : '展开对话窗口'}
-            title={expanded ? '切换为紧凑窗口' : '展开对话窗口'}
-          >
-            {expanded
-              ? <Minimize2 className="h-3.5 w-3.5" />
-              : <Maximize2 className="h-3.5 w-3.5" />}
-          </Button>
         </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition"
+            aria-label="关闭对话"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin min-h-0">
         {messages.length === 0 && !streamingContent && (
-          <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 gap-2 px-4">
-            <MessageSquare className="h-8 w-8 text-slate-300" />
-            <div className="text-sm font-medium">有问题随时问我</div>
-            <div className="text-xs leading-relaxed">
+          <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 gap-2 px-4 py-8">
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-fuchsia-500/15 border border-white/10 flex items-center justify-center mb-2">
+              <MessageSquare className="h-5 w-5 text-indigo-300/70" />
+            </div>
+            <div className="text-[13px] font-medium text-gray-300">有问题随时问我</div>
+            <div className="text-[11px] leading-relaxed text-gray-500 max-w-xs">
               我会结合整个任务的历史与当前进度回答。可以继续追问测试思路、截图数据、产物分析或评估报告。
             </div>
           </div>
@@ -79,15 +70,15 @@ export function ChatPanel({
           return (
             <div key={msg.id} className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
               {!isUser && (
-                <div className="flex-shrink-0 mr-2 mt-1 h-6 w-6 rounded-md bg-indigo-500/20 flex items-center justify-center">
+                <div className="flex-shrink-0 mr-2 mt-1 h-6 w-6 rounded-md bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center">
                   <Bot className="h-3 w-3 text-indigo-300" />
                 </div>
               )}
               <div className={cn(
-                'max-w-[calc(100%-32px)] rounded-xl px-3 py-2 text-sm shadow-sm',
+                'max-w-[calc(100%-32px)] rounded-xl px-3 py-2 text-[13px] leading-relaxed',
                 isUser
-                  ? 'bg-indigo-600/90 text-white rounded-tr-sm'
-                  : 'bg-white/[0.06] text-white/90 rounded-tl-sm',
+                  ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-sm shadow-lg shadow-indigo-900/30'
+                  : 'bg-white/[0.05] text-white/90 rounded-tl-sm border border-white/[0.06]',
               )}>
                 {msg.role === 'system' ? (
                   <div className="text-xs text-red-300">{msg.content}</div>
@@ -99,7 +90,7 @@ export function ChatPanel({
                 )}
               </div>
               {isUser && (
-                <div className="flex-shrink-0 ml-2 mt-1 h-6 w-6 rounded-md bg-blue-600 flex items-center justify-center">
+                <div className="flex-shrink-0 ml-2 mt-1 h-6 w-6 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
                   <User className="h-3 w-3 text-white" />
                 </div>
               )}
@@ -109,13 +100,13 @@ export function ChatPanel({
 
         {streamingContent && (
           <div className="flex justify-start">
-            <div className="flex-shrink-0 mr-2 mt-1 h-6 w-6 rounded-md bg-indigo-500/20 flex items-center justify-center">
+            <div className="flex-shrink-0 mr-2 mt-1 h-6 w-6 rounded-md bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center">
               <Bot className="h-3 w-3 text-indigo-300" />
             </div>
-            <div className="max-w-[calc(100%-32px)] rounded-xl px-3 py-2 text-sm bg-white/[0.06] text-white/90 rounded-tl-sm shadow-sm">
+            <div className="max-w-[calc(100%-32px)] rounded-xl px-3 py-2 text-[13px] bg-white/[0.05] text-white/90 rounded-tl-sm border border-white/[0.06]">
               <MarkdownView text={streamingContent} compact />
               <JsonTable text={streamingContent} />
-              <span className="inline-block w-1.5 h-3.5 bg-blue-500 animate-pulse align-middle ml-0.5" />
+              <span className="inline-block w-1.5 h-3.5 bg-indigo-400 animate-pulse align-middle ml-0.5" />
             </div>
           </div>
         )}
@@ -128,7 +119,7 @@ export function ChatPanel({
           event.preventDefault()
           onSend()
         }}
-        className="p-3 border-t border-white/[0.06]"
+        className="p-3 border-t border-white/[0.06] flex-shrink-0"
       >
         <div className="relative">
           <textarea
@@ -146,13 +137,13 @@ export function ChatPanel({
               }
             }}
             placeholder="输入消息... (Enter 发送)"
-            className="w-full resize-none rounded-lg border border-white/[0.08] px-3 py-2 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400/60 bg-white/[0.03] focus:bg-white/[0.04] max-h-[100px] scrollbar-thin"
+            className="w-full resize-none rounded-xl border border-white/[0.08] px-3 py-2.5 pr-12 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400/50 bg-white/[0.03] focus:bg-white/[0.05] max-h-[100px] scrollbar-thin transition-colors"
             rows={1}
           />
           <div className="absolute right-1.5 bottom-1.5">
             {streaming ? (
               <Button size="icon-sm" variant="danger" onClick={onAbort} type="button">
-                <Square className="h-3 w-3" />
+                <Square className="h-3 w-3 fill-current" />
               </Button>
             ) : (
               <Button size="icon-sm" type="submit" disabled={!input.trim()}>
@@ -162,6 +153,6 @@ export function ChatPanel({
           </div>
         </div>
       </form>
-    </Card>
+    </div>
   )
 }
