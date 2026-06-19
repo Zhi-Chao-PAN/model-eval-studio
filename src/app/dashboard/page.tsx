@@ -76,7 +76,7 @@ export default function DashboardPage() {
   }
 
   async function handleDelete(id: string, title: string) {
-    if (!confirm('确认删除任务「' + title + '」？\n\n删除后 30 天内可恢复。')) return
+    if (!window.confirm('确认删除任务「' + title + '」？\\n\\n删除后 30 天内可恢复。')) return
     setDeletingId(id)
     try {
       await fetch('/api/tasks/' + id, { method: 'DELETE' })
