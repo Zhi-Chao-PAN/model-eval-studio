@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
-import { parseFile, parseZip } from '@/lib/file-parser'
+import { parseFile, parseZip, sanitizeParsedText } from '@/lib/file-parser'
 
 export const runtime = 'nodejs'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function dbText(value: unknown): string {
+  return sanitizeParsedText(String(value || ''))
 }
 
 async function requireOwnedModel(userId: string, taskId: string, modelId: string) {
@@ -34,7 +38,8 @@ export async function POST(
 
     if (contentType.includes('application/json')) {
       const body = await request.json()
-      const textContent = String(body.textContent || '')
+      const textContent = dbText(body.textContent)
+      const parsedText = dbText(body.parsedText || textContent)
       const artifact = await prisma.modelArtifact.create({
         data: {
           taskModelId: modelId,
@@ -43,7 +48,7 @@ export async function POST(
           textContent: textContent || null,
           mimeType: body.mimeType || null,
           size: body.size || null,
-          parsedText: body.parsedText || textContent || null,
+          parsedText: parsedText || null,
         },
       })
       return NextResponse.json({ artifact })
@@ -79,6 +84,7 @@ export async function POST(
         parsedText = '[文件解析失败: ' + (message || '未知错误') + ']'
       }
 
+      const safeParsedText = dbText(parsedText)
       const artifact = await prisma.modelArtifact.create({
         data: {
           taskModelId: modelId,
@@ -87,7 +93,7 @@ export async function POST(
           mimeType: file.type || null,
           size: file.size,
           textContent: '',
-          parsedText: parsedText || '[无法解析该文件格式]',
+          parsedText: safeParsedText || '[无法解析该文件格式]',
         },
       })
       created.push(artifact)

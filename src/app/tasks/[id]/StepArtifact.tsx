@@ -23,14 +23,22 @@ export default function StepArtifact({ task, onRefresh }: Props) {
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
   const [note, setNote] = useState<{ type: 'ok'|'err'; text: string } | null>(null)
+  const noteTimerRef = useRef<number | null>(null)
 
   function askConfirm(title: string, message: string): boolean {
     return window.confirm(title + '\\n\\n' + message)
   }
 
-  function showNote(type: 'ok' | 'err', text: string, timeout = 4000) {
+  function showNote(type: 'ok' | 'err', text: string, timeout = type === 'err' ? 15000 : 4000) {
+    if (noteTimerRef.current) {
+      window.clearTimeout(noteTimerRef.current)
+      noteTimerRef.current = null
+    }
     setNote({ type, text })
-    window.setTimeout(() => setNote(null), timeout)
+    noteTimerRef.current = window.setTimeout(() => {
+      setNote(null)
+      noteTimerRef.current = null
+    }, timeout)
   }
 
   async function readJsonResponse(res: Response) {
@@ -54,6 +62,10 @@ export default function StepArtifact({ task, onRefresh }: Props) {
     }
   }, [task.analysisJson])
 
+  useEffect(() => () => {
+    if (noteTimerRef.current) window.clearTimeout(noteTimerRef.current)
+  }, [])
+
   async function analyze() {
     if (models.length === 0) {
       showNote('err', '还没有模型，请先在第 3 步上传看板截图识别模型')
@@ -76,6 +88,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, modelId: string) {
+    const input = e.currentTarget
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
     setUploading(true)
@@ -92,6 +105,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       }
     } finally {
       setUploading(false)
+      input.value = ''
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -207,7 +221,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       </div>
 
       {note && (
-        <div className={'flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm animate-rise ' + (note.type === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300')}>
+        <div className={'flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm animate-rise select-text break-words ' + (note.type === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300')}>
           {note.type === 'ok' ? <CheckCircle2 className="h-4 w-4 flex-shrink-0" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0" />}
           {note.text}
         </div>
