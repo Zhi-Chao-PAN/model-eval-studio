@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
 import { streamChat } from '@/lib/ai-stream'
 import { buildSystemPrompt } from '@/lib/ai-prompts'
+import { filterConversationMessages, getWorkflowContent } from '@/lib/task-messages'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -39,11 +40,11 @@ export async function POST(
   }
 
   const history = await prisma.taskMessage.findMany({
-    where: { taskId: id, step },
+    where: { taskId: id },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take: 40,
   })
-  history.reverse()
+  const conversationHistory = filterConversationMessages(history.reverse(), task)
 
   let context = `当前任务：${task.title}
 当前步骤：${step}
@@ -58,6 +59,12 @@ export async function POST(
     }
   }
 
+  const taskIdea = getWorkflowContent(task.taskIdeaJson)
+  if (taskIdea) context += `\n\n已生成的测试思路：\n${taskIdea.slice(0, 6000)}`
+
+  const analysis = getWorkflowContent(task.analysisJson)
+  if (analysis) context += `\n\n已生成的产物分析：\n${analysis.slice(0, 6000)}`
+
   if (modelId) {
     const m = task.models.find((x) => x.id === modelId)
     if (m) {
@@ -68,7 +75,7 @@ export async function POST(
 
   const messages = [
     { role: 'system' as const, content: buildSystemPrompt(aiConfig.background) + '\n\n任务上下文：\n' + context },
-    ...history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    ...conversationHistory.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     { role: 'user' as const, content: message },
   ]
 

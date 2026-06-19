@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DesktopStepSidebar, MobileStepBar } from '@/components/tasks/StepSidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
+import { filterConversationMessages } from '@/lib/task-messages'
 
 const STEPS = [
   { key: 'INFO', label: '任务信息', desc: '填写任务基本信息' },
@@ -90,15 +91,11 @@ export default function TaskPage() {
   useEffect(() => { loadTask(); loadMessages() }, [taskId])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamingContent, currentStep])
 
-  const stepMessages = messages.filter(m => m.step === currentStep)
+  const chatMessages = filterConversationMessages(messages, task || {})
 
   function handleTaskUpdate(updated: any) {
     setTask(updated)
     if (updated.currentStep) setCurrentStep(updated.currentStep)
-  }
-
-  function handleAddMessage(msg: ChatMessage) {
-    setMessages(prev => [...prev, msg])
   }
 
   function goToStep(stepKey: string) {
@@ -110,8 +107,7 @@ export default function TaskPage() {
     }).then(readJsonResponse).then(data => { if (data.task) setTask(data.task) })
   }
 
-  async function handleChatSend(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleChatSend() {
     if (!chatInput.trim() || streaming) return
     const text = chatInput.trim()
     setChatInput(''); setStreaming(true); setStreamingContent('')
@@ -187,10 +183,10 @@ export default function TaskPage() {
     if (!task) return null
     switch (currentStep) {
       case 'INFO': return <StepInfo task={task} onUpdate={handleTaskUpdate} />
-      case 'IDEA': return <StepIdea task={task} onAddMessage={handleAddMessage} />
-      case 'SCREENSHOT': return <StepScreenshot task={task} onAddMessage={handleAddMessage} onRefresh={loadTask} />
-      case 'ARTIFACT': return <StepArtifact task={task} onAddMessage={handleAddMessage} onRefresh={loadTask} />
-      case 'REPORT': return <StepReport task={task} onAddMessage={handleAddMessage} onRefresh={loadTask} />
+      case 'IDEA': return <StepIdea task={task} />
+      case 'SCREENSHOT': return <StepScreenshot task={task} onRefresh={loadTask} />
+      case 'ARTIFACT': return <StepArtifact task={task} onRefresh={loadTask} />
+      case 'REPORT': return <StepReport task={task} onRefresh={loadTask} />
       default: return null
     }
   }
@@ -281,7 +277,7 @@ export default function TaskPage() {
 
       <ChatPanel
         currentStepLabel={STEPS.find(s => s.key === currentStep)?.label || ''}
-        messages={stepMessages}
+        messages={chatMessages}
         streamingContent={streamingContent}
         streaming={streaming}
         input={chatInput}

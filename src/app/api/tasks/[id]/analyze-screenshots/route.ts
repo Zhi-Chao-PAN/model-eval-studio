@@ -8,7 +8,7 @@ import { getUserAiConfig } from '@/lib/user-ai'
 import { buildScreenshotAnalysisPrompt, buildDashboardAnalysisPrompt } from '@/lib/ai-prompts'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
 export async function POST(
@@ -64,6 +64,7 @@ export async function POST(
 
   const encoder = new TextEncoder()
   let fullText = ''
+  let finishReason = ''
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -85,8 +86,8 @@ export async function POST(
           body: JSON.stringify({
             model: aiConfig.model,
             messages: [{ role: 'user', content: userContent }],
-            max_tokens: 4000,
-            max_completion_tokens: 4000,
+            max_tokens: 12000,
+            max_completion_tokens: 12000,
             temperature: 0.2,
             stream: true,
           }),
@@ -124,6 +125,9 @@ export async function POST(
             if (!dataLine || dataLine === '[DONE]') continue
             try {
               const payload = JSON.parse(dataLine)
+              if (payload.choices?.[0]?.finish_reason) {
+                finishReason = payload.choices[0].finish_reason
+              }
               const delta = payload.choices?.[0]?.delta?.content
                 ?? payload.choices?.[0]?.message?.content
                 ?? payload.delta?.text
@@ -138,6 +142,7 @@ export async function POST(
         // Persist to DB
         const clean = fullText
           .replace(/<think>[\s\S]*?<\/think>/g, '')
+          .replace(/<think>[\s\S]*$/g, '')
           .replace(/```json\s*/g, '')
           .replace(/```/g, '')
           .trim()
@@ -150,55 +155,59 @@ export async function POST(
           } catch {}
         }
 
+        if (!Array.isArray(parsed?.models)) {
+          const reason = finishReason === 'length'
+            ? '视觉模型输出达到长度上限，尚未生成最终 JSON。请重试，或上传裁剪后更清晰的截图。'
+            : '视觉模型没有返回可识别的 JSON。请重试，或上传裁剪后更清晰的截图。'
+          send('error', { message: reason })
+          return
+        }
+
         const inserted: string[] = []
         const updated: string[] = []
         try {
-          const models = parsed?.models
-          if (models && Array.isArray(models)) {
-            for (const m of models) {
-              if (!m.modelCode) continue
-              const existing = task.models.find((tm: any) => tm.modelCode === m.modelCode)
-              if (type === 'dashboard') {
-                if (existing) {
-                  await prisma.taskModel.update({
-                    where: { id: existing.id },
-                    data: { hardMetricsJson: JSON.stringify(m.metrics || m) },
-                  })
-                  updated.push(m.modelCode)
-                } else {
-                  await prisma.taskModel.create({
-                    data: {
-                      taskId: id,
-                      modelCode: m.modelCode,
-                      displayName: m.displayName || m.modelCode,
-                      hardMetricsJson: JSON.stringify(m.metrics || m),
-                    },
-                  })
-                  inserted.push(m.modelCode)
-                }
+          for (const m of parsed.models) {
+            const modelCode = String(m.modelCode || '').trim().toUpperCase()
+            if (!modelCode) continue
+            const existing = task.models.find((tm: any) => tm.modelCode.toUpperCase() === modelCode)
+            if (type === 'dashboard') {
+              if (existing) {
+                await prisma.taskModel.update({
+                  where: { id: existing.id },
+                  data: { hardMetricsJson: JSON.stringify(m.metrics || m) },
+                })
+                updated.push(modelCode)
               } else {
-                if (existing) {
-                  await prisma.taskModel.update({
-                    where: { id: existing.id },
-                    data: {
-                      processText: m.processDetail || m.processSummary || existing.processText,
-                      screenshotUrls: images.length + ' images',
-                    },
-                  })
-                  updated.push(m.modelCode)
-                } else {
-                  await prisma.taskModel.create({
-                    data: {
-                      taskId: id,
-                      modelCode: m.modelCode,
-                      displayName: m.displayName || m.modelCode,
-                      processText: m.processDetail || m.processSummary,
-                      screenshotUrls: images.length + ' images',
-                    },
-                  })
-                  inserted.push(m.modelCode)
-                }
+                await prisma.taskModel.create({
+                  data: {
+                    taskId: id,
+                    modelCode,
+                    displayName: m.displayName || modelCode,
+                    hardMetricsJson: JSON.stringify(m.metrics || m),
+                  },
+                })
+                inserted.push(modelCode)
               }
+            } else if (existing) {
+              await prisma.taskModel.update({
+                where: { id: existing.id },
+                data: {
+                  processText: m.processDetail || m.processSummary || existing.processText,
+                  screenshotUrls: images.length + ' images',
+                },
+              })
+              updated.push(modelCode)
+            } else {
+              await prisma.taskModel.create({
+                data: {
+                  taskId: id,
+                  modelCode,
+                  displayName: m.displayName || modelCode,
+                  processText: m.processDetail || m.processSummary,
+                  screenshotUrls: images.length + ' images',
+                },
+              })
+              inserted.push(modelCode)
             }
           }
           await prisma.task.update({ where: { id }, data: { currentStep: 'SCREENSHOT' } })
@@ -208,25 +217,7 @@ export async function POST(
           return
         }
 
-        let chatSummary: string
-        if (inserted.length === 0 && updated.length === 0) {
-          chatSummary = '## 看板识别未提取到模型\n\n' +
-            'AI 似乎没在图里识别到结构化表格数据。你可以：\n' +
-            '1) 重截更清晰的看板\n' +
-            '2) 在第 4 步手动添加模型\n\n' +
-            'AI 原始返回：\n\n```\n' + (fullText || '(空)') + '\n```'
-        } else {
-          const ins = inserted.length > 0 ? '新增 ' + inserted.length + ' 个模型（' + inserted.join('、') + '）' : ''
-          const upd = updated.length > 0 ? '更新 ' + updated.length + ' 个模型（' + updated.join('、') + '）' : ''
-          chatSummary = '## 看板识别完成\n\n' + [ins, upd].filter(Boolean).join('，') + '。'
-        }
-        try {
-          await prisma.taskMessage.create({
-            data: { taskId: id, role: 'assistant', content: chatSummary, step: 'SCREENSHOT' },
-          })
-        } catch {}
-
-        send('done', { inserted, updated, parsed, raw: fullText })
+        send('done', { inserted, updated, parsed, raw: clean })
       } catch (e: any) {
         send('error', { message: e?.message || String(e) })
       } finally {

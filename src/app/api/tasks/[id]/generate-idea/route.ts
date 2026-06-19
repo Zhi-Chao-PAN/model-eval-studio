@@ -62,12 +62,5 @@ export async function POST(
   })
 
   // 写入对话消息
-  await prisma.taskMessage.createMany({
-    data: [
-      { taskId: id, role: 'user', content: '帮我生成测试思路', step: 'IDEA' },
-      { taskId: id, role: 'assistant', content: result, step: 'IDEA' },
-    ],
-  })
-
   return NextResponse.json({ idea: result })
 }

@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
 import { generateChat } from '@/lib/ai'
 import { buildSystemPrompt } from '@/lib/ai-prompts'
+import { filterConversationMessages, getWorkflowContent } from '@/lib/task-messages'
 
 export async function POST(
   request: Request,
@@ -32,13 +33,12 @@ export async function POST(
     return NextResponse.json({ error: '请先配置 AI API' }, { status: 400 })
   }
 
-  // 历史消息
   const history = await prisma.taskMessage.findMany({
-    where: { taskId: id, step },
+    where: { taskId: id },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take: 40,
   })
-  history.reverse()
+  const conversationHistory = filterConversationMessages(history.reverse(), task)
 
   // 构建任务上下文
   let context = `当前任务：${task.title}
@@ -56,6 +56,12 @@ export async function POST(
     }
   }
 
+  const taskIdea = getWorkflowContent(task.taskIdeaJson)
+  if (taskIdea) context += `\n\n已生成的测试思路：\n${taskIdea.slice(0, 6000)}`
+
+  const analysis = getWorkflowContent(task.analysisJson)
+  if (analysis) context += `\n\n已生成的产物分析：\n${analysis.slice(0, 6000)}`
+
   if (modelId) {
     const m = task.models.find((x) => x.id === modelId)
     if (m) {
@@ -68,7 +74,7 @@ export async function POST(
 
   const messages = [
     { role: 'system', content: buildSystemPrompt(task.backgroundUsed || aiConfig.background) + `\n\n任务上下文：\n` + context },
-    ...history.map((m) => ({ role: m.role, content: m.content })),
+    ...conversationHistory.map((m) => ({ role: m.role, content: m.content })),
     { role: 'user', content: message },
   ]
 

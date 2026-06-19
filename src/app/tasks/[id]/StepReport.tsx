@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils'
 
 interface Props {
   task: any
-  onAddMessage: (msg: any) => void
   onRefresh: () => void
 }
 
@@ -42,7 +41,7 @@ function formatReportText(modelCode: string, report: any): string {
   ].join('\n')
 }
 
-export default function StepReport({ task, onAddMessage, onRefresh }: Props) {
+export default function StepReport({ task, onRefresh }: Props) {
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [generating, setGenerating] = useState<Record<string, boolean>>({})
   const [adjustText, setAdjustText] = useState('')
@@ -69,11 +68,6 @@ export default function StepReport({ task, onAddMessage, onRefresh }: Props) {
       let data; try { data = await res.json() } catch { throw new Error('服务器返回了非预期内容（HTTP ' + res.status + '），请稍后重试') }
       if (data.report) {
         onRefresh()
-        onAddMessage({
-          id: 'a-' + Date.now(), role: 'assistant',
-          content: '已为 ' + (selectedModel?.modelCode || '') + ' 生成评估报告',
-          step: 'REPORT', modelId,
-        })
       }
     } finally { setGenerating(prev => ({ ...prev, [modelId]: false })) }
   }
@@ -90,8 +84,6 @@ export default function StepReport({ task, onAddMessage, onRefresh }: Props) {
       let data2; try { data2 = await res.json() } catch { throw new Error('服务器返回了非预期内容（HTTP ' + res.status + '），请稍后重试') }
       if (data2.report) {
         onRefresh()
-        onAddMessage({ id: 'u-' + Date.now(), role: 'user', content: adjustText, step: 'REPORT', modelId })
-        onAddMessage({ id: 'a-' + Date.now(), role: 'assistant', content: '已根据你的反馈重新生成报告', step: 'REPORT', modelId })
         setAdjustText('')
       }
     } finally { setAdjusting(prev => ({ ...prev, [modelId]: false })) }
