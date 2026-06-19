@@ -55,7 +55,7 @@ export async function PUT(
   const data = await request.json()
 
   const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId },
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
   })
   if (!task) {
     return NextResponse.json({ error: '任务不存在' }, { status: 404 })
@@ -94,7 +94,7 @@ export async function DELETE(
   const { id } = await params
 
   const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId },
+    where: { id, userId: session.userId, status: { not: 'DELETED' } },
   })
   if (!task) {
     return NextResponse.json({ error: '任务不存在' }, { status: 404 })
