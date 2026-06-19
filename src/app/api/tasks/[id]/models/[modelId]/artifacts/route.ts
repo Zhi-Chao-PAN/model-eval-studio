@@ -70,18 +70,29 @@ export async function POST(
     for (const file of files) {
       const buffer = Buffer.from(await file.arrayBuffer())
       let parsedText = ''
+      let urlValue = ''
+
+      // For image files, store a data URL so the client can render the actual
+      // image in verification screenshots. Cap at 4 MB to avoid DB bloat.
+      const isImage = file.type?.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name)
+      if (isImage && file.size <= 4 * 1024 * 1024) {
+        const mime = file.type || 'application/octet-stream'
+        urlValue = `data:${mime};base64,${buffer.toString('base64')}`
+      } else if (isImage) {
+        parsedText = '[图片文件过大(' + (file.size / 1024 / 1024).toFixed(1) + 'MB)，未内嵌预览]'
+      }
 
       try {
         if (file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip') {
           const zipResult = await parseZip(buffer)
-          parsedText = zipResult.files.map((entry) => `=== ${entry.name} ===\n${entry.text}`).join('\n\n')
-        } else {
+          parsedText = parsedText || zipResult.files.map((entry) => `=== ${entry.name} ===\n${entry.text}`).join('\n\n')
+        } else if (!isImage) {
           parsedText = await parseFile(buffer, file.name, file.type)
         }
       } catch (error: unknown) {
         const message = errorMessage(error)
         console.error('文件解析失败:', file.name, message)
-        parsedText = '[文件解析失败: ' + (message || '未知错误') + ']'
+        if (!parsedText) parsedText = '[文件解析失败: ' + (message || '未知错误') + ']'
       }
 
       const safeParsedText = dbText(parsedText)
@@ -89,7 +100,7 @@ export async function POST(
         data: {
           taskModelId: modelId,
           name: file.name,
-          url: '',
+          url: urlValue,
           mimeType: file.type || null,
           size: file.size,
           textContent: '',

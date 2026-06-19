@@ -192,7 +192,9 @@ export default function StepReport({ task, onRefresh }: Props) {
       setActiveJobs(prev => ({ ...prev, [modelId]: { modelId, mode, phase: 'client_rendering', startedAt: Date.now(), abort: () => cancelJob(modelId), streamText: '' } }))
       let previewImgs: VerificationImage[] = []
       try {
-        previewImgs = renderModelVerificationScreenshots(targetModel?.modelCode || '', targetModel?.artifacts || [])
+        // Yield to the event loop so the UI updates with "rendering" phase before heavy canvas work
+        await new Promise(r => setTimeout(r, 50))
+        previewImgs = await renderModelVerificationScreenshots(targetModel?.modelCode || '', targetModel?.artifacts || [])
         setPreviewImages(prev => ({ ...prev, [modelId]: previewImgs }))
         body.verificationImages = previewImgs
       } catch (err) {
