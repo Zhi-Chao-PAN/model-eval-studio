@@ -302,29 +302,68 @@ function buildVerificationHtml(input: ArtifactCaptureInput): { html: string; kin
   }
 }
 
-async function launchChromium() {
-  const { chromium: playwrightChromium } = await import('playwright-core')
+// Vercel/serverless 环境用 puppeteer + @sparticuz/chromium（稳定、社区验证充分）
+// 本地环境用 playwright-core（开发体验好）
+async function launchChromium(): Promise<{
+  newPage: (opts?: { viewport?: { width: number; height: number } }) => Promise<any>
+  close: () => Promise<void>
+  driver: 'playwright' | 'puppeteer'
+}> {
+  const isVercel = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
 
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  if (isVercel) {
+    // ---- Vercel / Lambda: puppeteer + @sparticuz/chromium ----
+    const puppeteer = (await import('puppeteer-core')).default
     const chromium = (await import('@sparticuz/chromium')).default
-    chromium.setGraphicsMode = false
-    return playwrightChromium.launch({
+
+    const browser = await puppeteer.launch({
       args: [...chromium.args, '--hide-scrollbars', '--disable-web-security'],
       executablePath: await chromium.executablePath(),
       headless: true,
-    })
+      defaultViewport: null,
+    } as any)
+
+    return {
+      driver: 'puppeteer',
+      async newPage(opts) {
+        const page = await browser.newPage()
+        if (opts?.viewport) {
+          await page.setViewport({
+            width: opts.viewport.width,
+            height: opts.viewport.height,
+            deviceScaleFactor: 1,
+          })
+        }
+        return page
+      },
+      close: () => browser.close(),
+    }
   }
+
+  // ---- 本地: playwright-core ----
+  const { chromium: playwrightChromium } = await import('playwright-core')
 
   const executablePath = localChromiumPath()
   if (!executablePath) {
     throw new Error('本机未找到 Chrome/Edge，可设置 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH 后重试。')
   }
 
-  return playwrightChromium.launch({
+  const browser = await playwrightChromium.launch({
     executablePath,
     headless: true,
     args: ['--hide-scrollbars', '--no-sandbox'],
   })
+
+  return {
+    driver: 'playwright',
+    async newPage(opts) {
+      return browser.newPage({
+        viewport: opts?.viewport || { width: 1365, height: 900 },
+        deviceScaleFactor: 1,
+      })
+    },
+    close: () => browser.close(),
+  }
 }
 
 export async function captureArtifactScreenshot(input: ArtifactCaptureInput): Promise<ArtifactCaptureResult> {
@@ -332,55 +371,110 @@ export async function captureArtifactScreenshot(input: ArtifactCaptureInput): Pr
   const browser = await launchChromium()
 
   try {
-    const page = await browser.newPage({
-      viewport: { width: 1365, height: 900 },
-      deviceScaleFactor: 1,
-    })
+    const page = await browser.newPage({ viewport: { width: 1365, height: 900 } })
 
-    await page.route('**/*', async (route) => {
-      const url = route.request().url()
-      if (
-        url.startsWith('data:') ||
-        url.startsWith('blob:') ||
-        url === 'about:blank'
-      ) {
-        await route.continue()
-        return
-      }
-      await route.abort()
-    })
-
-    await page.setContent(html, { waitUntil: 'load', timeout: 15_000 })
-    await page.waitForTimeout(300)
-
-    const attempts = [
-      { width: 1365, height: 900, quality: 82 },
-      { width: 1280, height: 820, quality: 76 },
-      { width: 1100, height: 760, quality: 70 },
-    ]
-
-    let dataUrl = ''
-    for (const attempt of attempts) {
-      await page.setViewportSize({ width: attempt.width, height: attempt.height })
-      const buffer = await page.screenshot({
-        type: 'jpeg',
-        quality: attempt.quality,
-        fullPage: false,
+    if (browser.driver === 'playwright') {
+      // ---- Playwright driver ----
+      const pwPage = page as any
+      await pwPage.route('**/*', async (route: any) => {
+        const url = route.request().url()
+        if (
+          url.startsWith('data:') ||
+          url.startsWith('blob:') ||
+          url === 'about:blank'
+        ) {
+          await route.continue()
+          return
+        }
+        await route.abort()
       })
-      dataUrl = `data:image/jpeg;base64,${buffer.toString('base64')}`
-      if (dataUrl.length <= MAX_CAPTURE_DATA_URL_LENGTH) break
-    }
 
-    return {
-      dataUrl,
-      artifactKind: kind,
-      runner: process.env.VERCEL ? 'vercel-server-chromium' : `${os.platform()}-local-chromium`,
-      runLog: [
-        `artifact=${input.artifact.name}`,
-        `kind=${kind}`,
-        `render=text/image/html safe viewer`,
-        `executed_untrusted_code=false`,
-      ].join('\n'),
+      await pwPage.setContent(html, { waitUntil: 'load', timeout: 15_000 })
+      await pwPage.waitForTimeout(300)
+
+      const attempts = [
+        { width: 1365, height: 900, quality: 82 },
+        { width: 1280, height: 820, quality: 76 },
+        { width: 1100, height: 760, quality: 70 },
+      ]
+
+      let dataUrl = ''
+      for (const attempt of attempts) {
+        await pwPage.setViewportSize({ width: attempt.width, height: attempt.height })
+        const buffer = await pwPage.screenshot({
+          type: 'jpeg',
+          quality: attempt.quality,
+          fullPage: false,
+        })
+        dataUrl = `data:image/jpeg;base64,${buffer.toString('base64')}`
+        if (dataUrl.length <= MAX_CAPTURE_DATA_URL_LENGTH) break
+      }
+
+      return {
+        dataUrl,
+        artifactKind: kind,
+        runner: process.env.VERCEL ? 'vercel-server-chromium' : `${os.platform()}-local-chromium`,
+        runLog: [
+          `artifact=${input.artifact.name}`,
+          `kind=${kind}`,
+          `render=text/image/html safe viewer`,
+          `driver=playwright`,
+          `executed_untrusted_code=false`,
+        ].join('\n'),
+      }
+    } else {
+      // ---- Puppeteer driver (Vercel) ----
+      const pupPage = page as any
+
+      // 拦截所有非 data/blob 资源
+      await pupPage.setRequestInterception(true)
+      pupPage.on('request', (req: any) => {
+        const url = req.url()
+        if (url.startsWith('data:') || url.startsWith('blob:') || url === 'about:blank') {
+          req.continue()
+        } else {
+          req.abort()
+        }
+      })
+
+      await pupPage.setContent(html, { waitUntil: 'load', timeout: 15_000 })
+      await new Promise(r => setTimeout(r, 300))
+
+      const attempts = [
+        { width: 1365, height: 900, quality: 82 },
+        { width: 1280, height: 820, quality: 76 },
+        { width: 1100, height: 760, quality: 70 },
+      ]
+
+      let dataUrl = ''
+      for (const attempt of attempts) {
+        await pupPage.setViewport({
+          width: attempt.width,
+          height: attempt.height,
+          deviceScaleFactor: 1,
+        })
+        const screenshot = await pupPage.screenshot({
+          type: 'jpeg',
+          quality: attempt.quality,
+          fullPage: false,
+          encoding: 'base64',
+        })
+        dataUrl = `data:image/jpeg;base64,${screenshot}`
+        if (dataUrl.length <= MAX_CAPTURE_DATA_URL_LENGTH) break
+      }
+
+      return {
+        dataUrl,
+        artifactKind: kind,
+        runner: 'vercel-server-chromium',
+        runLog: [
+          `artifact=${input.artifact.name}`,
+          `kind=${kind}`,
+          `render=text/image/html safe viewer`,
+          `driver=puppeteer`,
+          `executed_untrusted_code=false`,
+        ].join('\n'),
+      }
     }
   } finally {
     await browser.close()
