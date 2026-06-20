@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import JSZip from 'jszip'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
+import { logAudit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 
@@ -19,9 +20,10 @@ function formatHalfScore(score: number): string {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id } = await params
@@ -32,7 +34,17 @@ export async function GET(
       models: { include: { reports: { orderBy: { createdAt: 'desc' }, take: 1 } } },
     },
   })
-  if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+  if (!task) {
+    logAudit(request, {
+      action: 'EXPORT',
+      userId: session.userId,
+      taskId: id,
+      status: 'error',
+      error: '任务不存在',
+      durationMs: Date.now() - startedAt,
+    })
+    return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+  }
 
   const zip = new JSZip()
   zip.file('README.txt', `任务：${task.title}\n导出时间：${new Date().toLocaleString('zh-CN')}\n\n本压缩包包含该任务下所有模型的评估报告（5 模块格式）。\n`)
@@ -74,6 +86,16 @@ ${report.trajectoryAnalysis || '未提供轨迹截图。'}
   }
 
   const buffer = await zip.generateAsync({ type: 'uint8array' })
+
+  // fire-and-forget audit
+  logAudit(request, {
+    action: 'EXPORT',
+    userId: session.userId,
+    taskId: id,
+    status: 'success',
+    durationMs: Date.now() - startedAt,
+    detail: { modelCount: task.models.length, title: task.title },
+  })
 
   return new NextResponse(buffer as any, {
     headers: {

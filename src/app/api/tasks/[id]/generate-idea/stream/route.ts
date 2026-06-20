@@ -3,19 +3,25 @@ import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
 import { streamChat } from '@/lib/ai-stream'
 import { buildSystemPrompt, buildTestIdeaPrompt } from '@/lib/ai-prompts'
+import { logAudit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) {
     return new Response(JSON.stringify({ error: '未登录' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
   }
   const { id } = await params
+
+  let tokenInput: number | null = null
+  let tokenOutput: number | null = null
+  let taskTitle = ''
 
   const task = await prisma.task.findFirst({
     where: { id, userId: session.userId, status: { not: 'DELETED' } },
@@ -24,6 +30,7 @@ export async function POST(
   if (!task) {
     return new Response(JSON.stringify({ error: '任务不存在' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
   }
+  taskTitle = task.title
 
   const aiConfig = await getUserAiConfig(session.userId)
   if (!aiConfig) {
@@ -49,6 +56,7 @@ export async function POST(
 
   const encoder = new TextEncoder()
   let fullText = ''
+  let streamError: string | null = null
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -59,7 +67,7 @@ export async function POST(
       try {
         send('start', { ts: Date.now() })
 
-        for await (const delta of streamChat(messages, {
+        for await (const chunk of streamChat(messages, {
           baseUrl: aiConfig.baseUrl,
           apiKey: aiConfig.apiKey,
           model: aiConfig.model,
@@ -67,8 +75,13 @@ export async function POST(
           temperature: 0.7,
           maxTokens: 3000,
         })) {
-          fullText += delta
-          send('delta', { text: delta })
+          if (chunk.type === 'delta') {
+            fullText += chunk.content
+            send('delta', { text: chunk.content })
+          } else if (chunk.type === 'usage') {
+            tokenInput = chunk.usage.promptTokens
+            tokenOutput = chunk.usage.completionTokens
+          }
         }
 
         await prisma.task.update({
@@ -81,9 +94,21 @@ export async function POST(
         })
         send('done', { full: fullText })
       } catch (e: any) {
-        send('error', { message: e?.message || String(e) })
+        streamError = e?.message || String(e)
+        send('error', { message: streamError })
       } finally {
         controller.close()
+        logAudit(request, {
+          action: 'AI_IDEA_GENERATE',
+          userId: session.userId,
+          taskId: id,
+          status: streamError ? 'error' : 'success',
+          error: streamError,
+          tokenInput,
+          tokenOutput,
+          durationMs: Date.now() - startedAt,
+          detail: { taskTitle },
+        })
       }
     },
   })

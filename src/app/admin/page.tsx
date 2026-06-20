@@ -1,8 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
   ShieldCheck, Users, Copy, Check, Loader2, KeyRound, Plus, Power,
   TrendingUp, Clock, UserCheck, UserPlus, Settings2, MoreHorizontal,
+  Activity, Zap, AlertTriangle, ChevronDown, ChevronUp, Search,
+  Terminal, FileText, Bot, Eye,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
@@ -28,9 +30,65 @@ interface User {
   lastActiveAt: string
   _count: { tasks: number }
 }
+interface AuditLog {
+  id: string
+  action: string
+  userId: string | null
+  taskId: string | null
+  detail: any
+  ipAddress: string | null
+  userAgent: string | null
+  path: string | null
+  method: string | null
+  status: string | null
+  error: string | null
+  tokenInput: number | null
+  tokenOutput: number | null
+  durationMs: number | null
+  createdAt: string
+  user: { username: string; role: string } | null
+}
+interface AuditStats {
+  totalCalls: number
+  aiCalls: number
+  errorCalls: number
+  activeUsers: number
+  totalTokenInput: number
+  totalTokenOutput: number
+  range: string
+  from: string
+}
+
+type TabKey = 'invites' | 'users' | 'audit'
+
+const ACTION_LABELS: Record<string, { label: string; color: string; icon: any }> = {
+  LOGIN: { label: '登录', color: 'success', icon: UserCheck },
+  LOGOUT: { label: '登出', color: 'muted', icon: Power },
+  REGISTER: { label: '注册', color: 'primary', icon: UserPlus },
+  TASK_CREATE: { label: '创建任务', color: 'primary', icon: FileText },
+  TASK_UPDATE: { label: '更新任务', color: 'primary', icon: FileText },
+  TASK_DELETE: { label: '删除任务', color: 'danger', icon: FileText },
+  MODEL_ADD: { label: '添加模型', color: 'default', icon: Bot },
+  MODEL_DELETE: { label: '删除模型', color: 'danger', icon: Bot },
+  MODEL_UPDATE: { label: '更新模型', color: 'default', icon: Bot },
+  ARTIFACT_UPLOAD: { label: '上传产物', color: 'warn', icon: FileText },
+  ARTIFACT_DELETE: { label: '删除产物', color: 'danger', icon: FileText },
+  AI_CHAT: { label: 'AI 对话', color: 'primary', icon: Terminal },
+  AI_IDEA_GENERATE: { label: '生成思路', color: 'primary', icon: Bot },
+  AI_SCREENSHOT_ANALYZE: { label: '截图分析', color: 'primary', icon: Eye },
+  AI_ARTIFACT_ANALYZE: { label: '产物分析', color: 'primary', icon: Bot },
+  AI_REPORT_GENERATE: { label: '生成报告', color: 'primary', icon: FileText },
+  USER_SETTINGS_UPDATE: { label: '更新设置', color: 'muted', icon: Settings2 },
+  AI_CONFIG_UPDATE: { label: '更新 AI 配置', color: 'primary', icon: Settings2 },
+  ADMIN_INVITE_CREATE: { label: '创建邀请码', color: 'success', icon: KeyRound },
+  ADMIN_INVITE_TOGGLE: { label: '切换邀请码', color: 'warn', icon: Power },
+  ADMIN_USER_VIEW: { label: '查看用户', color: 'muted', icon: Users },
+  ADMIN_AUDIT_VIEW: { label: '查看审计', color: 'muted', icon: Activity },
+  EXPORT: { label: '导出报告', color: 'default', icon: FileText },
+}
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'invites' | 'users'>('invites')
+  const [tab, setTab] = useState<TabKey>('invites')
   const [invites, setInvites] = useState<Invite[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -39,6 +97,19 @@ export default function AdminPage() {
   const [expiresInDays, setExpiresInDays] = useState(7)
   const [generating, setGenerating] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // Audit state
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
+  const [auditTotal, setAuditTotal] = useState(0)
+  const [auditStats, setAuditStats] = useState<AuditStats | null>(null)
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditPageSize] = useState(20)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditRange, setAuditRange] = useState<'today' | '7d' | '30d'>('today')
+  const [auditAction, setAuditAction] = useState<string>('')
+  const [auditUserId, setAuditUserId] = useState<string>('')
+  const [auditStatus, setAuditStatus] = useState<string>('')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   async function loadInvites() {
     const res = await fetch('/api/admin/invites')
@@ -50,15 +121,63 @@ export default function AdminPage() {
     const data = await res.json()
     if (data.users) setUsers(data.users)
   }
+  async function loadAuditLogs() {
+    setAuditLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.set('page', String(auditPage))
+      params.set('pageSize', String(auditPageSize))
+      if (auditUserId) params.set('userId', auditUserId)
+      if (auditAction) params.set('action', auditAction)
+      if (auditStatus) params.set('status', auditStatus)
+      if (auditRange === 'today') {
+        const d = new Date()
+        const start = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+        params.set('from', start.toISOString())
+      } else if (auditRange === '7d') {
+        params.set('from', new Date(Date.now() - 7 * 86400_000).toISOString())
+      } else if (auditRange === '30d') {
+        params.set('from', new Date(Date.now() - 30 * 86400_000).toISOString())
+      }
+
+      const [logsRes, statsRes] = await Promise.all([
+        fetch('/api/admin/audit-logs?' + params.toString()),
+        fetch('/api/admin/audit-stats?range=' + auditRange),
+      ])
+      const logsData = await logsRes.json()
+      const statsData = await statsRes.json()
+      if (logsData.logs) setAuditLogs(logsData.logs)
+      if (logsData.total !== undefined) setAuditTotal(logsData.total)
+      if (statsData.stats) setAuditStats(statsData.stats)
+    } finally {
+      setAuditLoading(false)
+    }
+  }
 
   useEffect(() => {
     setLoading(true)
     ;(async () => {
       if (tab === 'invites') await loadInvites()
-      else await loadUsers()
+      else if (tab === 'users') await loadUsers()
+      else if (tab === 'audit') await loadAuditLogs()
       setLoading(false)
     })()
   }, [tab])
+
+  useEffect(() => {
+    if (tab === 'audit') {
+      setAuditPage(1)
+      loadAuditLogs()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditAction, auditUserId, auditStatus, auditRange])
+
+  useEffect(() => {
+    if (tab === 'audit' && auditPage > 1) {
+      loadAuditLogs()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditPage])
 
   async function generate() {
     setGenerating(true)
@@ -95,6 +214,18 @@ export default function AdminPage() {
   const usageRate = totalSlots > 0 ? Math.round(used / totalSlots * 100) : 0
   const adminCount = users.filter(u => u.role === 'ADMIN').length
 
+  const allActions = useMemo(() => Object.keys(ACTION_LABELS).sort(), [])
+
+  function ActionBadge({ action }: { action: string }) {
+    const meta = ACTION_LABELS[action] || { label: action, color: 'muted', icon: Activity }
+    const Icon = meta.icon
+    return (
+      <Badge variant={meta.color as any} className="inline-flex items-center gap-1">
+        <Icon className="h-3 w-3" /> {meta.label}
+      </Badge>
+    )
+  }
+
   return (
     <div className="space-y-6 animate-rise pb-12">
       {/* === HEADER === */}
@@ -107,7 +238,7 @@ export default function AdminPage() {
           </div>
           <div>
             <h1 className="display text-2xl sm:text-3xl tracking-tight">管理后台</h1>
-            <p className="text-sm text-gray-400 mt-1">邀请码分发 · 用户管理 · 团队统计</p>
+            <p className="text-sm text-gray-400 mt-1">邀请码分发 · 用户管理 · 审计追踪</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -143,6 +274,18 @@ export default function AdminPage() {
         >
           <Users className="h-3.5 w-3.5" />
           用户
+        </button>
+        <button
+          onClick={() => setTab('audit')}
+          className={cn(
+            'inline-flex items-center gap-2 px-4 h-9 rounded-lg text-[13px] font-medium transition-all',
+            tab === 'audit'
+              ? 'bg-white/[0.08] text-white shadow-sm'
+              : 'text-gray-400 hover:text-white',
+          )}
+        >
+          <Activity className="h-3.5 w-3.5" />
+          审计日志
         </button>
       </div>
 
@@ -484,6 +627,300 @@ export default function AdminPage() {
           </div>
         </>
       )}
+
+      {/* === AUDIT TAB === */}
+      {tab === 'audit' && (
+        <>
+          {/* Stats row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="score-tile indigo">
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] uppercase tracking-wider text-gray-500 mono">总调用</span>
+                  <Activity className="h-4 w-4 text-indigo-400/70" />
+                </div>
+                <div className="display text-4xl tabular text-white leading-none">
+                  {auditStats?.totalCalls ?? '—'}
+                </div>
+                <div className="mt-2 text-[11px] text-gray-500">
+                  其中 AI 调用 {auditStats?.aiCalls ?? 0} 次
+                </div>
+              </div>
+            </div>
+            <div className="score-tile violet">
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] uppercase tracking-wider text-gray-500 mono">Token 消耗</span>
+                  <Zap className="h-4 w-4 text-violet-400/70" />
+                </div>
+                <div className="display text-4xl tabular text-white leading-none">
+                  {formatNumber((auditStats?.totalTokenInput ?? 0) + (auditStats?.totalTokenOutput ?? 0))}
+                </div>
+                <div className="mt-2 text-[11px] text-gray-500">
+                  输入 {formatNumber(auditStats?.totalTokenInput ?? 0)} / 输出 {formatNumber(auditStats?.totalTokenOutput ?? 0)}
+                </div>
+              </div>
+            </div>
+            <div className="score-tile emerald">
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] uppercase tracking-wider text-gray-500 mono">活跃用户</span>
+                  <UserCheck className="h-4 w-4 text-emerald-400/70" />
+                </div>
+                <div className="display text-4xl tabular text-white leading-none">
+                  {auditStats?.activeUsers ?? '—'}
+                </div>
+                <div className="mt-2 text-[11px] text-gray-500">
+                  {auditStats?.range === 'today' ? '今日' : auditStats?.range === '7d' ? '近 7 天' : '近 30 天'}
+                </div>
+              </div>
+            </div>
+            <div className="score-tile red">
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] uppercase tracking-wider text-gray-500 mono">失败请求</span>
+                  <AlertTriangle className="h-4 w-4 text-red-400/70" />
+                </div>
+                <div className="display text-4xl tabular text-white leading-none">
+                  {auditStats?.errorCalls ?? '—'}
+                </div>
+                <div className="mt-2 text-[11px] text-gray-500">
+                  失败率 {auditStats?.totalCalls ? ((auditStats.errorCalls / auditStats.totalCalls) * 100).toFixed(1) : '0'}%
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter bar */}
+          <div className="panel p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-gray-500">时间范围</span>
+                <div className="inline-flex p-0.5 rounded-lg bg-white/[0.04] border border-white/10">
+                  {(['today', '7d', '30d'] as const).map(r => (
+                    <button
+                      key={r}
+                      onClick={() => setAuditRange(r)}
+                      className={cn(
+                        'px-3 h-7 rounded-md text-[11px] font-medium transition-colors',
+                        auditRange === r
+                          ? 'bg-white/[0.08] text-white'
+                          : 'text-gray-500 hover:text-gray-300',
+                      )}
+                    >
+                      {r === 'today' ? '今日' : r === '7d' ? '近 7 天' : '近 30 天'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                <Search className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
+                <select
+                  value={auditAction}
+                  onChange={e => setAuditAction(e.target.value)}
+                  className="flex-1 h-8 bg-white/[0.02] border border-white/10 rounded-lg px-2 text-[12px] text-white focus:outline-none focus:border-indigo-500/50"
+                >
+                  <option value="">全部操作类型</option>
+                  {allActions.map(a => (
+                    <option key={a} value={a}>{ACTION_LABELS[a]?.label || a}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={auditUserId}
+                  onChange={e => setAuditUserId(e.target.value)}
+                  className="h-8 w-36 bg-white/[0.02] border border-white/10 rounded-lg px-2 text-[12px] text-white focus:outline-none focus:border-indigo-500/50"
+                >
+                  <option value="">全部用户</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.username}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={auditStatus}
+                  onChange={e => setAuditStatus(e.target.value)}
+                  className="h-8 w-24 bg-white/[0.02] border border-white/10 rounded-lg px-2 text-[12px] text-white focus:outline-none focus:border-indigo-500/50"
+                >
+                  <option value="">全部状态</option>
+                  <option value="success">成功</option>
+                  <option value="error">失败</option>
+                </select>
+              </div>
+
+              <Button variant="ghost" size="sm" onClick={loadAuditLogs}>
+                <Loader2 className="h-3 w-3" /> 刷新
+              </Button>
+            </div>
+          </div>
+
+          {/* Audit log table */}
+          <div className="panel p-0 overflow-hidden">
+            <div className="px-5 py-3.5 flex items-center justify-between border-b border-white/[0.06]">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-indigo-400" />
+                <span className="text-[13px] font-medium text-white">操作记录</span>
+                <Badge variant="muted" className="text-[10px]">共 {auditTotal} 条</Badge>
+              </div>
+              <div className="text-[11px] text-gray-500 mono">
+                第 {auditPage} / {Math.ceil(auditTotal / auditPageSize) || 1} 页
+              </div>
+            </div>
+
+            {auditLoading ? (
+              <div className="p-16 text-center"><Loader2 className="h-6 w-6 text-gray-500 animate-spin inline" /></div>
+            ) : auditLogs.length === 0 ? (
+              <div className="p-16 text-center text-sm text-gray-500">
+                <Activity className="h-10 w-10 mx-auto mb-3 text-gray-700" />
+                暂无审计日志
+              </div>
+            ) : (
+              <div>
+                <div className="px-5 py-2.5 grid grid-cols-12 gap-3 text-[10px] uppercase tracking-wider text-gray-500 font-semibold border-b border-white/[0.04]">
+                  <div className="col-span-2">时间</div>
+                  <div className="col-span-2">用户</div>
+                  <div className="col-span-2">操作</div>
+                  <div className="col-span-2">Token</div>
+                  <div className="col-span-1 text-right">耗时</div>
+                  <div className="col-span-2">IP / 路径</div>
+                  <div className="col-span-1 text-center">状态</div>
+                </div>
+                {auditLogs.map(log => {
+                  const isExpanded = expandedId === log.id
+                  return (
+                    <div key={log.id} className="border-b border-white/[0.02] last:border-0">
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                        className="w-full px-5 py-3 grid grid-cols-12 gap-3 items-center hover:bg-white/[0.02] transition-colors text-left"
+                      >
+                        <div className="col-span-2">
+                          <div className="text-[12px] text-gray-300 mono">
+                            {new Date(log.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </div>
+                          <div className="text-[10px] text-gray-600 mono">
+                            {new Date(log.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                          </div>
+                        </div>
+                        <div className="col-span-2 flex items-center gap-2 min-w-0">
+                          <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500/30 to-violet-500/30 border border-white/10 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
+                            {(log.user?.username || '?').slice(0, 1).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[12px] text-white truncate">{log.user?.username || '（已删除）'}</div>
+                            <div className="text-[10px] text-gray-600 truncate">{log.taskId ? '任务: ' + log.taskId.slice(-8) : '—'}</div>
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          <ActionBadge action={log.action} />
+                        </div>
+                        <div className="col-span-2">
+                          {log.tokenInput || log.tokenOutput ? (
+                            <>
+                              <div className="text-[12px] tabular text-white">
+                                {formatNumber(log.tokenInput || 0)}<span className="text-gray-600"> / {formatNumber(log.tokenOutput || 0)}</span>
+                              </div>
+                              <div className="text-[10px] text-gray-600">入 / 出</div>
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-gray-600">—</span>
+                          )}
+                        </div>
+                        <div className="col-span-1 text-right">
+                          <div className="text-[12px] tabular text-gray-300">
+                            {log.durationMs !== null ? log.durationMs + 'ms' : '—'}
+                          </div>
+                        </div>
+                        <div className="col-span-2 min-w-0">
+                          <div className="text-[11px] text-gray-400 mono truncate">{log.ipAddress || '—'}</div>
+                          <div className="text-[10px] text-gray-600 truncate">{log.path || ''}</div>
+                        </div>
+                        <div className="col-span-1 flex items-center justify-center gap-1">
+                          {log.status === 'error'
+                            ? <Badge variant="warn" className="text-[10px]">失败</Badge>
+                            : <Badge variant="success" className="text-[10px]">成功</Badge>}
+                          {isExpanded ? <ChevronUp className="h-3 w-3 text-gray-500" /> : <ChevronDown className="h-3 w-3 text-gray-500" />}
+                        </div>
+                      </button>
+
+                      {/* Expanded detail */}
+                      {isExpanded && (
+                        <div className="px-5 pb-4 pl-14">
+                          <div className="bg-black/30 border border-white/[0.06] rounded-lg p-3 space-y-2">
+                            {log.error && (
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-red-400 font-semibold mb-1">错误信息</div>
+                                <div className="text-[12px] text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5 mono break-all">
+                                  {log.error}
+                                </div>
+                              </div>
+                            )}
+                            {log.detail && (
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">详细信息</div>
+                                <pre className="text-[11px] text-gray-300 bg-white/[0.02] border border-white/[0.04] rounded px-2 py-1.5 overflow-x-auto mono">
+                                  {JSON.stringify(log.detail, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                            {log.userAgent && (
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">User Agent</div>
+                                <div className="text-[11px] text-gray-400 bg-white/[0.02] border border-white/[0.04] rounded px-2 py-1.5 mono break-all">
+                                  {log.userAgent}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex gap-4 text-[11px] text-gray-500">
+                              <span>方法: <span className="text-gray-300 mono">{log.method || '—'}</span></span>
+                              <span>路径: <span className="text-gray-300 mono">{log.path || '—'}</span></span>
+                              <span>ID: <span className="text-gray-300 mono">{log.id}</span></span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {auditTotal > auditPageSize && (
+              <div className="px-5 py-3 border-t border-white/[0.06] flex items-center justify-between">
+                <div className="text-[11px] text-gray-500">
+                  共 {auditTotal} 条记录
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={auditPage <= 1}
+                    onClick={() => setAuditPage(p => Math.max(1, p - 1))}
+                  >
+                    上一页
+                  </Button>
+                  <span className="text-[11px] text-gray-400 tabular mono">
+                    {auditPage} / {Math.ceil(auditTotal / auditPageSize)}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={auditPage >= Math.ceil(auditTotal / auditPageSize)}
+                    onClick={() => setAuditPage(p => p + 1)}
+                  >
+                    下一页
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -499,4 +936,10 @@ function formatAgo(ts: string): string {
   const d = Math.floor(h / 24)
   if (d < 30) return d + ' 天前'
   return Math.floor(d / 30) + ' 个月前'
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
+  return String(n)
 }

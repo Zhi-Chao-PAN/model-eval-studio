@@ -4,6 +4,7 @@ import { getUserAiConfig } from '@/lib/user-ai'
 import { analyzeImages, generateChat } from '@/lib/ai'
 import { streamChat } from '@/lib/ai-stream'
 import { buildSystemPrompt, buildReportPrompt, buildReportAdjustPrompt } from '@/lib/ai-prompts'
+import { logAudit } from '@/lib/audit'
 
 type VerificationImage = {
   name: string
@@ -22,6 +23,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) {
     return new Response(JSON.stringify({ error: '未登录' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
@@ -59,19 +61,23 @@ export async function POST(
   }
 
   const encoder = new TextEncoder()
+  let totalTokenInput = 0
+  let totalTokenOutput = 0
+  let streamError: string | null = null
+
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
       }
 
-      const startedAt = Date.now()
+      const startedAtInner = Date.now()
       const phase = (name: string, extra?: Record<string, any>) => {
-        send('phase', { name, elapsedMs: Date.now() - startedAt, ...extra })
+        send('phase', { name, elapsedMs: Date.now() - startedAtInner, ...extra })
       }
 
       try {
-        send('start', { ts: startedAt })
+        send('start', { ts: startedAtInner })
 
         // --- Prepare verification screenshots ---
         let verificationScreenshotUrls = model.verificationScreenshotUrls || null
@@ -96,7 +102,7 @@ export async function POST(
           })
 
           let reportText = ''
-          for await (const delta of streamChat(
+          for await (const chunk of streamChat(
             [
               { role: 'system', content: buildSystemPrompt(aiConfig.background) },
               { role: 'user', content: prompt },
@@ -110,8 +116,13 @@ export async function POST(
               maxTokens: 3500,
             },
           )) {
-            reportText += delta
-            send('delta', { text: delta })
+            if (chunk.type === 'delta') {
+              reportText += chunk.content
+              send('delta', { text: chunk.content })
+            } else if (chunk.type === 'usage') {
+              totalTokenInput += chunk.usage.promptTokens
+              totalTokenOutput += chunk.usage.completionTokens
+            }
           }
 
           phase('saving')
@@ -156,7 +167,7 @@ export async function POST(
           })
           if (verificationImages.length > 0) {
             try {
-              verificationSummary = await analyzeImages(
+              const imgResult = await analyzeImages(
                 verificationImages.map((image) => image.dataUrl),
                 [
                   '你是模型产物验收员。这些截图是评测系统在核验模型产物时自动截取的（模拟测试人员打开文件/工具查看产物内容），用于证明产物已被实际打开核验。',
@@ -180,6 +191,11 @@ export async function POST(
                   maxTokens: 1200,
                 },
               )
+              verificationSummary = imgResult.content
+              if (imgResult.usage) {
+                totalTokenInput += imgResult.usage.promptTokens
+                totalTokenOutput += imgResult.usage.completionTokens
+              }
             } catch (err: any) {
               verificationSummary = '自动生成产物验证截图，但视觉解读失败：' + (err?.message || String(err))
             }
@@ -207,7 +223,7 @@ export async function POST(
           })
 
           let reportText = ''
-          for await (const delta of streamChat(
+          for await (const chunk of streamChat(
             [
               { role: 'system', content: buildSystemPrompt(aiConfig.background) },
               { role: 'user', content: prompt },
@@ -221,8 +237,13 @@ export async function POST(
               maxTokens: 4500,
             },
           )) {
-            reportText += delta
-            send('delta', { text: delta })
+            if (chunk.type === 'delta') {
+              reportText += chunk.content
+              send('delta', { text: chunk.content })
+            } else if (chunk.type === 'usage') {
+              totalTokenInput += chunk.usage.promptTokens
+              totalTokenOutput += chunk.usage.completionTokens
+            }
           }
 
           // Phase 3: save to DB
@@ -247,9 +268,21 @@ export async function POST(
           send('done', { report, rawText: reportText })
         }
       } catch (err: any) {
-        send('error', { message: err?.message || String(err) })
+        streamError = err?.message || String(err)
+        send('error', { message: streamError })
       } finally {
         controller.close()
+        logAudit(request, {
+          action: 'AI_REPORT_GENERATE',
+          userId: session.userId,
+          taskId: id,
+          status: streamError ? 'error' : 'success',
+          error: streamError,
+          tokenInput: totalTokenInput || null,
+          tokenOutput: totalTokenOutput || null,
+          durationMs: Date.now() - startedAt,
+          detail: { modelCode: model.modelCode, adjust: !!adjustInstruction },
+        })
       }
     },
   })
