@@ -12,15 +12,12 @@ import {
 } from '@/lib/ai-prompts'
 import { logAudit } from '@/lib/audit'
 import { mapReduceSummarize, estimateTokens } from '@/lib/text-chunker'
-
-type VerificationImage = {
-  name: string
-  dataUrl: string
-}
-
-type ScreenshotMeta = {
-  images?: VerificationImage[]
-}
+import {
+  isAuthenticVerificationEvidence,
+  parseVerificationEvidence,
+  serializeVerificationEvidence,
+  type VerificationEvidence,
+} from '@/lib/verification-evidence'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -40,11 +37,6 @@ export async function POST(
   const body = await request.json()
   const modelId = body.modelId
   const adjustInstruction = body.adjustInstruction
-  const clientVerificationImages: VerificationImage[] = Array.isArray(body.verificationImages)
-    ? body.verificationImages.filter(
-        (img: any) => typeof img?.name === 'string' && typeof img?.dataUrl === 'string',
-      )
-    : []
 
   const task = await prisma.task.findFirst({
     where: { id, userId: session.userId, status: { not: 'DELETED' } },
@@ -86,17 +78,22 @@ export async function POST(
       try {
         send('start', { ts: startedAtInner })
 
-        // --- Prepare verification screenshots ---
+        // Only stored, source-marked evidence is eligible for report analysis.
         let verificationScreenshotUrls = model.verificationScreenshotUrls || null
-        let verificationImages: VerificationImage[] = []
         let verificationSummary = ''
 
         if (adjustInstruction && model.reports.length > 0) {
-          // ----- Adjustment path: reuse existing report's screenshots & summary -----
+          // ----- Adjustment path: keep only the original report's authentic evidence -----
           const current = model.reports[0]
-          verificationSummary = current.verificationSummary || ''
-          verificationScreenshotUrls = current.verificationScreenshotUrls || verificationScreenshotUrls
-          verificationImages = parseVerificationImages(verificationScreenshotUrls)
+          const reportEvidence = parseVerificationEvidence(
+            current.verificationScreenshotUrls || verificationScreenshotUrls,
+          ).filter(isAuthenticVerificationEvidence)
+          verificationScreenshotUrls = reportEvidence.length
+            ? serializeVerificationEvidence(reportEvidence)
+            : null
+          verificationSummary = reportEvidence.length
+            ? current.verificationSummary || '已提供真实产物验证截图，但未保留截图解读。'
+            : missingEvidenceSummary()
 
           phase('adjusting_report', { modelCode: model.modelCode })
 
@@ -155,29 +152,26 @@ export async function POST(
           // ----- Fresh generation path -----
           const hardMetrics = model.hardMetricsJson ? safeJsonParse(model.hardMetricsJson) : null
 
-          // Use client-provided screenshots (auto-rendered by browser) or reuse existing
-          if (clientVerificationImages.length > 0) {
-            verificationImages = clientVerificationImages.slice(0, 4)
-            verificationScreenshotUrls = JSON.stringify({ images: verificationImages })
-            await prisma.taskModel.update({
-              where: { id: model.id },
-              data: { verificationScreenshotUrls },
-            })
-          } else {
-            verificationImages = parseVerificationImages(model.verificationScreenshotUrls)
-          }
+          const storedEvidence = parseVerificationEvidence(model.verificationScreenshotUrls)
+          const verificationEvidence = storedEvidence.filter(isAuthenticVerificationEvidence)
+          verificationScreenshotUrls = verificationEvidence.length
+            ? serializeVerificationEvidence(verificationEvidence)
+            : null
 
-          // Phase 1: image analysis
+          // Phase 1: analyze tester-provided or user-captured evidence only.
           phase('analyzing_images', {
             modelCode: model.modelCode,
-            hasImages: verificationImages.length > 0,
+            hasImages: verificationEvidence.length > 0,
           })
-          if (verificationImages.length > 0) {
+          if (verificationEvidence.length > 0) {
             try {
               const imgResult = await analyzeImages(
-                verificationImages.map((image) => image.dataUrl),
+                verificationEvidence.map((image) => image.dataUrl),
                 [
-                  '你是模型产物验收员。这些截图是评测系统在核验模型产物时自动截取的（模拟测试人员打开文件/工具查看产物内容），用于证明产物已被实际打开核验。',
+                  '你是模型产物验收员。以下是测试人员上传或通过浏览器窗口捕获的真实产物核验证据。',
+                  '它们可以证明截图中出现的界面、文本、数据或工具结果，但不能证明截图之外的行为。',
+                  '严禁把截图说成系统自动执行了工具，也不能根据文件名或想象补全运行结果。',
+                  `证据来源：${describeEvidenceSources(verificationEvidence)}`,
                   '请仔细阅读截图中的内容（文件名、文本内容、代码、数据等），判断：',
                   '1. 截图显示了什么内容？是否足以证明产物被实际打开和核验？',
                   '2. 从截图中可以看到产物的表面效果如何？是否存在明显错误、缺失、乱码、格式问题？',
@@ -204,10 +198,10 @@ export async function POST(
                 totalTokenOutput += imgResult.usage.completionTokens
               }
             } catch (err: any) {
-              verificationSummary = '自动生成产物验证截图，但视觉解读失败：' + (err?.message || String(err))
+              verificationSummary = '已提供真实产物验证截图，但视觉解读失败：' + (err?.message || String(err))
             }
           } else {
-            verificationSummary = '未提供产物验证截图（可能因产物为非文本类型或截图生成失败）。'
+            verificationSummary = missingEvidenceSummary(storedEvidence.length > 0)
           }
 
           // Phase 1.5: Per-file deep analysis (per-file → summary)
@@ -227,7 +221,7 @@ export async function POST(
           })
 
           if (textArtifacts.length === 0) {
-            filesAnalysis = '(未上传可解析的文本产物，基于验证截图和硬指标进行评估。'
+            filesAnalysis = '（未上传可解析的文本产物，基于真实验证截图和硬指标进行评估。）'
           } else {
             // Process each file individually
             const perFileResults = []
@@ -439,20 +433,19 @@ function buildArtifactsText(artifacts: Array<{ name: string; parsedText?: string
     .join('\n\n')
 }
 
-function parseVerificationImages(raw?: string | null): VerificationImage[] {
-  if (!raw) return []
-  const parsed = safeJsonParse(raw) as ScreenshotMeta | VerificationImage[] | null
-  if (Array.isArray(parsed)) return parsed.filter(isVerificationImage)
-  if (Array.isArray(parsed?.images)) return parsed.images.filter(isVerificationImage)
-  return []
+function describeEvidenceSources(evidence: VerificationEvidence[]): string {
+  const captured = evidence.filter(image => image.source === 'screen_capture').length
+  const uploaded = evidence.filter(image => image.source === 'tester_upload').length
+  const parts: string[] = []
+  if (captured) parts.push(`${captured} 张浏览器窗口捕获`)
+  if (uploaded) parts.push(`${uploaded} 张测试人员上传截图`)
+  return parts.join('，') || '未标记来源'
 }
 
-function isVerificationImage(v: unknown): v is VerificationImage {
-  return (
-    typeof v === 'object' && v !== null &&
-    typeof (v as VerificationImage).name === 'string' &&
-    typeof (v as VerificationImage).dataUrl === 'string'
-  )
+function missingEvidenceSummary(hasLegacyPreview = false): string {
+  return hasLegacyPreview
+    ? '仅检测到历史自动预览图，未提供可作为证据的真实产物验证截图。产物效果反馈只能基于上传产物文本和任务要求判断。'
+    : '未提供真实产物验证截图。产物效果反馈只能基于上传产物文本和任务要求判断。'
 }
 
 // Keep the old format/parse helpers below for reuse (same as before)

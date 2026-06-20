@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
+import {
+  parseVerificationEvidence,
+  serializeVerificationEvidence,
+  validateVerificationEvidence,
+} from '@/lib/verification-evidence'
 
 export async function GET(
   _request: Request,
@@ -44,11 +49,22 @@ export async function POST(
   })
   if (!model) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
 
+  let storedEvidence: string | null = null
+  if (verificationScreenshotUrls !== undefined && verificationScreenshotUrls !== null && verificationScreenshotUrls !== '') {
+    if (typeof verificationScreenshotUrls !== 'string') {
+      return NextResponse.json({ error: '验证截图格式无效' }, { status: 400 })
+    }
+    const evidence = parseVerificationEvidence(verificationScreenshotUrls)
+    const validationError = validateVerificationEvidence(evidence)
+    if (validationError) return NextResponse.json({ error: validationError }, { status: 400 })
+    storedEvidence = evidence.length ? serializeVerificationEvidence(evidence) : null
+  }
+
   const report = await prisma.modelReport.create({
     data: {
       taskModelId: modelId,
       productFeedback: productFeedback || '',
-      verificationScreenshotUrls: verificationScreenshotUrls || null,
+      verificationScreenshotUrls: storedEvidence,
       verificationSummary: verificationSummary || null,
       overallScore: normalizeOverallScore(overallScore),
       overallComment: overallComment || '',

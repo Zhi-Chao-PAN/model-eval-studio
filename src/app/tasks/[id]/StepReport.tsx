@@ -1,26 +1,21 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, Activity, Award, Camera, Check, Copy,
-  FileCheck2, Image as ImageIcon, ListChecks, Pencil,
+  AlertTriangle, Activity, Award, Check, Copy,
+  FileCheck2, ListChecks, Pencil,
   RefreshCw, Send, ShieldCheck, Sparkles, Star, Zap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { WorkingStatus } from '@/components/working-status'
+import { VerificationEvidencePanel } from '@/components/tasks/VerificationEvidencePanel'
 import { cn } from '@/lib/utils'
-import { renderModelVerificationScreenshots } from '@/lib/artifact-screenshot-client'
 
 interface Props {
   task: any
   onRefresh: () => void
-}
-
-type VerificationImage = {
-  name: string
-  dataUrl: string
 }
 
 type ReportSection = {
@@ -54,16 +49,20 @@ type ModelSummary = {
 }
 
 const PHASE_TEXT: Record<string, string> = {
-  client_rendering: '正在生成产物验证截图...',
-  analyzing_images: '正在用视觉模型解读验证截图...',
+  analyzing_images: '正在解读真实产物验证证据...',
+  analyzing_files: '正在逐份分析产物文件...',
+  analyzing_file: '正在分析当前产物文件...',
+  synthesizing: '正在汇总全部产物分析...',
   generating_report: '正在撰写评估报告...',
   adjusting_report: '正在根据您的反馈调整报告...',
   saving: '正在保存报告...',
 }
 
 const PHASE_DOT: Record<string, 'indigo' | 'cyan' | 'emerald' | 'amber'> = {
-  client_rendering: 'cyan',
   analyzing_images: 'cyan',
+  analyzing_files: 'cyan',
+  analyzing_file: 'cyan',
+  synthesizing: 'indigo',
   generating_report: 'indigo',
   adjusting_report: 'indigo',
   saving: 'emerald',
@@ -91,18 +90,6 @@ function tierText(score: number): string {
   return 'text-red-300'
 }
 
-function parseVerificationImages(raw?: string | null): VerificationImage[] {
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    const images = Array.isArray(parsed) ? parsed : parsed?.images
-    if (!Array.isArray(images)) return []
-    return images.filter((image: any) => typeof image?.name === 'string' && typeof image?.dataUrl === 'string')
-  } catch {
-    return []
-  }
-}
-
 function formatScore(score: number | undefined, mode: 'integer' | 'half' = 'half'): string {
   const value = Number(score || 0)
   if (!value) return '-'
@@ -124,7 +111,6 @@ export default function StepReport({ task, onRefresh }: Props) {
   const [adjustText, setAdjustText] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [note, setNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
-  const [previewImages, setPreviewImages] = useState<Record<string, VerificationImage[]>>({})
   const [streamPreview, setStreamPreview] = useState<Record<string, string>>({})
   const abortRefs = useRef<Record<string, AbortController>>({})
 
@@ -143,12 +129,6 @@ export default function StepReport({ task, onRefresh }: Props) {
   const activeJob = selectedModelId ? activeJobs[selectedModelId] : undefined
   const isGenerating = Boolean(activeJob && activeJob.mode === 'generate')
   const isAdjusting = Boolean(activeJob && activeJob.mode === 'adjust')
-
-  const verificationImages = useMemo(() => {
-    if (!selectedModel) return []
-    if (isGenerating && previewImages[selectedModel.id]?.length) return previewImages[selectedModel.id]
-    return parseVerificationImages(selectedModel?.verificationScreenshotUrls || latestReport?.verificationScreenshotUrls)
-  }, [selectedModel, latestReport, isGenerating, previewImages])
 
   const SECTION_DEFS: Array<Omit<ReportSection, 'score' | 'content'>> = [
     { key: 'product',     title: '产物效果反馈',     icon: Sparkles,    accent: 'cyan' },
@@ -188,18 +168,7 @@ export default function StepReport({ task, onRefresh }: Props) {
     abortRefs.current[modelId] = ctrl
 
     if (mode === 'generate') {
-      const targetModel = models.find((m: any) => m.id === modelId)
-      setActiveJobs(prev => ({ ...prev, [modelId]: { modelId, mode, phase: 'client_rendering', startedAt: Date.now(), abort: () => cancelJob(modelId), streamText: '' } }))
-      let previewImgs: VerificationImage[] = []
-      try {
-        // Yield to the event loop so the UI updates with "rendering" phase before heavy canvas work
-        await new Promise(r => setTimeout(r, 50))
-        previewImgs = await renderModelVerificationScreenshots(targetModel?.modelCode || '', targetModel?.artifacts || [])
-        setPreviewImages(prev => ({ ...prev, [modelId]: previewImgs }))
-        body.verificationImages = previewImgs
-      } catch (err) {
-        console.warn('Client-side screenshot rendering failed:', err)
-      }
+      setActiveJobs(prev => ({ ...prev, [modelId]: { modelId, mode, phase: 'analyzing_images', startedAt: Date.now(), abort: () => cancelJob(modelId), streamText: '' } }))
     } else {
       setActiveJobs(prev => ({ ...prev, [modelId]: { modelId, mode, phase: 'adjusting_report', startedAt: Date.now(), abort: () => cancelJob(modelId), streamText: '' } }))
     }
@@ -261,7 +230,6 @@ export default function StepReport({ task, onRefresh }: Props) {
                     return next
                   })
                 } else if (event === 'done') {
-                  setPreviewImages(prev => { const copy = { ...prev }; delete copy[modelId]; return copy })
                   setStreamPreview(prev => { const copy = { ...prev }; delete copy[modelId]; return copy })
                   onRefresh()
                   showNote('ok', mode === 'adjust' ? '报告已调整' : '评估报告生成完成')
@@ -331,7 +299,7 @@ export default function StepReport({ task, onRefresh }: Props) {
           <div>
             <h2 className="display text-xl sm:text-2xl tracking-tight">评估报告</h2>
             <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-              AI 自动核验产物并生成验证截图，输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
+              基于真实产物验证证据与上传产物，输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
             </p>
           </div>
         </div>
@@ -499,55 +467,13 @@ export default function StepReport({ task, onRefresh }: Props) {
                 </div>
               </div>
 
-              {/* Verification screenshots */}
-              <div className="panel p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-white/10 flex items-center justify-center">
-                      <Camera className="h-3.5 w-3.5 text-cyan-300" />
-                    </div>
-                    <h4 className="text-[13px] font-medium text-white">验证截图</h4>
-                  </div>
-                  {verificationImages.length > 0 && (
-                    <Badge variant="muted" className="text-[10px] gap-1 bg-cyan-500/10 text-cyan-300 border-cyan-500/20">
-                      <Sparkles className="h-2.5 w-2.5" /> AI 核验
-                    </Badge>
-                  )}
-                </div>
-
-                {verificationImages.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {verificationImages.map((image, index) => (
-                      <div key={index} className="relative aspect-video rounded-lg overflow-hidden border border-white/10 group cursor-pointer"
-                        onClick={() => window.open(image.dataUrl, '_blank')}>
-                        <img src={image.dataUrl} alt={image.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
-                          <div className="text-[10px] text-gray-300 truncate">{image.name}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : isGenerating ? (
-                  <div className="py-6 flex flex-col items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-                      <Sparkles className="h-3.5 w-3.5 text-cyan-300 animate-pulse" />
-                    </div>
-                    <p className="text-[11px] text-gray-500">正在自动渲染验证截图...</p>
-                  </div>
-                ) : latestReport ? (
-                  <div className="py-6 text-center">
-                    <p className="text-[11px] text-gray-600">暂无验证截图</p>
-                    <p className="text-[10px] text-gray-700 mt-0.5">可能因产物类型不支持渲染</p>
-                  </div>
-                ) : (
-                  <div className="py-6 flex flex-col items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
-                      <ImageIcon className="h-3.5 w-3.5 text-gray-600" />
-                    </div>
-                    <p className="text-[11px] text-gray-500 text-center px-2">生成报告时，AI 将自动核验产物并截图</p>
-                  </div>
-                )}
-              </div>
+              <VerificationEvidencePanel
+                taskId={task.id}
+                model={selectedModel}
+                fallbackEvidenceRaw={latestReport?.verificationScreenshotUrls}
+                onRefresh={onRefresh}
+                onNotice={showNote}
+              />
             </div>
 
             {/* RIGHT COLUMN — report modules */}
@@ -669,7 +595,7 @@ export default function StepReport({ task, onRefresh }: Props) {
                     尚未生成 <span className="mono text-cyan-300">{selectedModel.modelCode}</span> 的评估报告
                   </h4>
                   <p className="text-[13px] text-gray-500 max-w-sm mb-5">
-                    点击上方「生成评估报告」，AI 将自动打开产物核验并截图，随后输出五大模块的评估分析。
+                    完成产物核验并保存真实截图后，生成包含五大模块的正式评估报告。
                   </p>
                   <Button onClick={() => generateReport(selectedModel.id)} size="sm">
                     <Sparkles className="h-3.5 w-3.5" />

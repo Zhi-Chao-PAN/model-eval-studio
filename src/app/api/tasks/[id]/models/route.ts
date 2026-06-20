@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
+import {
+  parseVerificationEvidence,
+  serializeVerificationEvidence,
+  validateVerificationEvidence,
+} from '@/lib/verification-evidence'
 
 // 列出该任务的所有待测模型
 export async function GET(
@@ -136,7 +141,22 @@ export async function PUT(
     if (hardMetricsJson !== undefined) data.hardMetricsJson = hardMetricsJson
     if (processText !== undefined) data.processText = processText
     if (screenshotUrls !== undefined) data.screenshotUrls = screenshotUrls
-    if (verificationScreenshotUrls !== undefined) data.verificationScreenshotUrls = verificationScreenshotUrls
+    if (verificationScreenshotUrls !== undefined) {
+      if (verificationScreenshotUrls === null || verificationScreenshotUrls === '') {
+        data.verificationScreenshotUrls = null
+      } else if (typeof verificationScreenshotUrls !== 'string') {
+        errorMsg = '验证截图格式无效'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      } else {
+        const evidence = parseVerificationEvidence(verificationScreenshotUrls)
+        const validationError = validateVerificationEvidence(evidence)
+        if (validationError) {
+          errorMsg = validationError
+          return NextResponse.json({ error: errorMsg }, { status: 400 })
+        }
+        data.verificationScreenshotUrls = serializeVerificationEvidence(evidence)
+      }
+    }
 
     const updated = await prisma.taskModel.update({ where: { id: modelId }, data })
     status = 'success'
