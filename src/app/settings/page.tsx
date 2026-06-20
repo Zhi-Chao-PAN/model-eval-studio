@@ -28,7 +28,7 @@ const AI_PRESETS: AiPreset[] = [
   },
   {
     id: 'minimax',
-    name: 'MiniMax 海螺',
+    name: 'MiniMax-M3',
     provider: 'OPENAI_COMPAT',
     baseUrl: 'https://api.minimax.chat/v1',
     modelName: 'abab7-chat',
@@ -42,17 +42,17 @@ const AI_PRESETS: AiPreset[] = [
   },
   {
     id: 'zhipu',
-    name: '智谱 ChatGLM',
+    name: '智谱 GLM-5.2',
     provider: 'OPENAI_COMPAT',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    modelName: 'glm-4-plus',
+    modelName: 'glm-5.2',
   },
   {
     id: 'qwen',
-    name: '通义千问',
+    name: '通义千问 Qwen3.7',
     provider: 'OPENAI_COMPAT',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    modelName: 'qwen-plus',
+    modelName: 'qwen3.7-plus',
   },
   {
     id: 'doubao',
