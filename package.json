@@ -29,6 +29,7 @@
     "openai": "^6.43.0",
     "pdf-parse": "^2.4.5",
     "playwright-core": "^1.61.0",
+    "puppeteer-core": "^25.1.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
