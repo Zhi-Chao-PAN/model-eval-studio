@@ -24,6 +24,7 @@ enum TaskStatus {
 }
 
 enum TaskStep {
+  DESIGN
   INFO
   IDEA
   SCREENSHOT

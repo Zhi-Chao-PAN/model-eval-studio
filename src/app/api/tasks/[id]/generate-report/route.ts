@@ -270,6 +270,7 @@ export async function POST(
                 fileContent: contentToAnalyze,
                 userBackground: aiConfig.background,
                 previousFiles: prevFilesContext,
+                taskType: task.requirementType || undefined,
               })
 
               const fileResult = await generateChat(
@@ -310,6 +311,7 @@ export async function POST(
             userBackground: aiConfig.background,
             verificationSummary,
             hasTrajectory: Boolean(processText?.trim()),
+            taskType: task.requirementType || undefined,
           })
 
           const synthesisResult = await generateChat(
@@ -345,6 +347,7 @@ export async function POST(
             analysisContext,
             verificationSummary,
             hasTrajectory: Boolean(processText?.trim()),
+            taskType: task.requirementType || undefined,
           })
 
           let reportText = ''
