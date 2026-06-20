@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
-import { parseFile, parseZip, sanitizeParsedText } from '@/lib/file-parser'
+import { buildFilePreview, parseFile, parseZip, sanitizeParsedText } from '@/lib/file-parser'
 import { logAudit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
@@ -87,6 +87,7 @@ export async function POST(
       const buffer = Buffer.from(await file.arrayBuffer())
       let parsedText = ''
       let urlValue = ''
+      let previewJson = ''
 
       const isImage = file.type?.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name)
       if (isImage && file.size <= 4 * 1024 * 1024) {
@@ -100,8 +101,14 @@ export async function POST(
         if (file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip') {
           const zipResult = await parseZip(buffer)
           parsedText = parsedText || zipResult.files.map((entry) => `=== ${entry.name} ===\n${entry.text}`).join('\n\n')
+          if (zipResult.preview) {
+            zipResult.preview.sourceName = file.name
+            previewJson = JSON.stringify(zipResult.preview)
+          }
         } else if (!isImage) {
           parsedText = await parseFile(buffer, file.name, file.type)
+          const preview = await buildFilePreview(buffer, file.name, file.type, parsedText)
+          if (preview) previewJson = JSON.stringify(preview)
         }
       } catch (error: unknown) {
         const message = errorMessage(error)
@@ -119,6 +126,7 @@ export async function POST(
           size: file.size,
           textContent: '',
           parsedText: safeParsedText || '[无法解析该文件格式]',
+          previewJson: previewJson || null,
         },
       })
       created.push(artifact)

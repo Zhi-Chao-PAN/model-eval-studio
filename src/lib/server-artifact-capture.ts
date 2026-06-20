@@ -1,8 +1,16 @@
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import {
+  buildLegacyArchivePreview,
+  buildPreviewFrameDocument,
+  inferArtifactPreviewKind,
+  parseStoredArtifactPreview,
+  sanitizePreviewHtml,
+  type ArtifactPreviewKind,
+  type StoredArtifactPreview,
+} from '@/lib/artifact-preview'
 
-const MAX_CAPTURE_TEXT_LENGTH = 90_000
 const MAX_CAPTURE_DATA_URL_LENGTH = 1_100_000
 
 export type ArtifactCaptureInput = {
@@ -16,12 +24,15 @@ export type ArtifactCaptureInput = {
     size?: number | null
     parsedText?: string | null
     textContent?: string | null
+    previewJson?: string | null
   }
 }
 
 export type ArtifactCaptureResult = {
   dataUrl: string
-  artifactKind: 'image' | 'html' | 'text' | 'metadata'
+  artifactKind: ArtifactPreviewKind
+  renderMode: StoredArtifactPreview['renderMode']
+  primaryName: string
   runner: string
   runLog: string
 }
@@ -56,12 +67,13 @@ function artifactText(artifact: ArtifactCaptureInput['artifact']): string {
   return (artifact.textContent || artifact.parsedText || '').trim()
 }
 
-function truncate(value: string, limit: number): { text: string; truncated: boolean } {
-  if (value.length <= limit) return { text: value, truncated: false }
-  return {
-    text: value.slice(0, limit),
-    truncated: true,
+function previewForArtifact(artifact: ArtifactCaptureInput['artifact'], text: string): StoredArtifactPreview | null {
+  const stored = parseStoredArtifactPreview(artifact.previewJson)
+  if (stored) return stored
+  if (/\.zip$/i.test(artifact.name) || artifact.mimeType?.includes('zip')) {
+    return buildLegacyArchivePreview(artifact.name, text)
   }
+  return null
 }
 
 function localChromiumPath(): string | undefined {
@@ -78,7 +90,12 @@ function localChromiumPath(): string | undefined {
   return candidates.find(candidate => existsSync(candidate))
 }
 
-function buildVerificationHtml(input: ArtifactCaptureInput): { html: string; kind: ArtifactCaptureResult['artifactKind'] } {
+function buildVerificationHtml(input: ArtifactCaptureInput): {
+  html: string
+  kind: ArtifactCaptureResult['artifactKind']
+  renderMode: ArtifactCaptureResult['renderMode']
+  primaryName: string
+} {
   const { taskTitle, modelCode, artifact } = input
   const text = artifactText(artifact)
   const now = new Date().toLocaleString('zh-CN', { hour12: false })
@@ -90,28 +107,51 @@ function buildVerificationHtml(input: ArtifactCaptureInput): { html: string; kin
     : '未知'
 
   let body = ''
-  let kind: ArtifactCaptureResult['artifactKind'] = 'metadata'
+  let kind: ArtifactCaptureResult['artifactKind'] = inferArtifactPreviewKind(artifact.name)
+  let renderMode: ArtifactCaptureResult['renderMode'] = 'plain-text'
+  let primaryName = artifact.name
+  const preview = previewForArtifact(artifact, text)
 
   if (isImageArtifact(artifact) && artifact.url?.startsWith('data:image/')) {
     kind = 'image'
+    renderMode = 'direct-image'
     body = `
       <section class="canvas image-canvas">
         <img src="${artifact.url}" alt="${name}" />
       </section>
     `
-  } else if (isHtmlArtifact(artifact, text) && text) {
-    kind = 'html'
+  } else if (preview) {
+    kind = preview.primaryKind
+    renderMode = preview.renderMode
+    primaryName = preview.primaryName
     body = `
+      <section class="preview-note">
+        <strong>当前打开：${escapeHtml(preview.primaryName)}</strong>
+        <span>${preview.renderMode === 'legacy-extract' ? '压缩包主文件预览' : '源文件结构化预览'}</span>
+      </section>
       <section class="canvas html-canvas">
-        <iframe sandbox="" srcdoc="${escapeHtml(text)}" title="HTML artifact preview"></iframe>
+        <iframe sandbox="" srcdoc="${escapeHtml(buildPreviewFrameDocument(preview))}" title="Artifact structured preview"></iframe>
       </section>
     `
+  } else if (isHtmlArtifact(artifact, text) && text) {
+    kind = 'html'
+    renderMode = 'sanitized-html'
+    const directPreview: StoredArtifactPreview = {
+      version: 1, source: 'file', sourceName: artifact.name, primaryName: artifact.name,
+      primaryKind: 'html', renderMode, html: sanitizePreviewHtml(text), text,
+    }
+    body = `<section class="canvas html-canvas"><iframe sandbox="" srcdoc="${escapeHtml(buildPreviewFrameDocument(directPreview))}" title="HTML artifact preview"></iframe></section>`
   } else if (text) {
-    kind = 'text'
-    const clipped = truncate(text, MAX_CAPTURE_TEXT_LENGTH)
+    kind = inferArtifactPreviewKind(artifact.name)
+    renderMode = kind === 'table' ? 'structured-table' : kind === 'document' ? 'converted-document' : 'plain-text'
+    const directPreview: StoredArtifactPreview = {
+      version: 1, source: 'file', sourceName: artifact.name, primaryName: artifact.name,
+      primaryKind: kind, renderMode, text,
+    }
     body = `
-      <section class="canvas text-canvas">
-        <pre>${escapeHtml(clipped.text)}${clipped.truncated ? '\n\n[内容过长，后台核验截图仅展示前 90,000 个字符。]' : ''}</pre>
+      <section class="preview-note"><strong>当前打开：${escapeHtml(artifact.name)}</strong><span>文件内容预览</span></section>
+      <section class="canvas html-canvas">
+        <iframe sandbox="" srcdoc="${escapeHtml(buildPreviewFrameDocument(directPreview))}" title="Artifact content preview"></iframe>
       </section>
     `
   } else {
@@ -119,13 +159,15 @@ function buildVerificationHtml(input: ArtifactCaptureInput): { html: string; kin
       <section class="canvas empty-canvas">
         <div class="empty-icon">FILE</div>
         <h2>该产物没有可直接渲染的文本或图片内容</h2>
-        <p>后台已读取产物元数据，但未能自动打开可视内容。请使用手动真实截图作为兜底证据。</p>
+        <p>后台已读取产物元数据，但未能形成可视预览。可通过窗口捕获或上传截图补充核验证据。</p>
       </section>
     `
   }
 
   return {
     kind,
+    renderMode,
+    primaryName,
     html: `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -133,46 +175,43 @@ function buildVerificationHtml(input: ArtifactCaptureInput): { html: string; kin
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
-      color-scheme: dark;
-      background: #0b0d12;
-      color: #eef2ff;
-      font-family: Inter, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      color-scheme: light;
+      background: #eef2f7;
+      color: #172033;
+      font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background:
-        linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(9, 12, 18, 0.98)),
-        radial-gradient(circle at 20% 0%, rgba(14, 165, 233, 0.14), transparent 32%);
+      background: #eef2f7;
     }
     .shell {
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      padding: 32px;
-      gap: 18px;
+      padding: 18px;
+      gap: 12px;
     }
     header {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 24px;
+      gap: 18px;
       align-items: start;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.045);
-      border-radius: 14px;
-      padding: 18px 20px;
+      border: 1px solid #d7dde8;
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: 0 4px 18px rgba(15,23,42,.06);
     }
     .eyebrow {
-      color: #67e8f9;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      margin-bottom: 8px;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 5px;
     }
     h1 {
-      font-size: 26px;
+      font-size: 18px;
       line-height: 1.25;
       margin: 0;
       max-width: 920px;
@@ -182,15 +221,15 @@ function buildVerificationHtml(input: ArtifactCaptureInput): { html: string; kin
       margin-top: 11px;
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      color: #a5b4fc;
-      font-size: 12px;
+      gap: 6px;
+      color: #475569;
+      font-size: 11px;
     }
     .pill {
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.05);
-      border-radius: 999px;
-      padding: 5px 9px;
+      border: 1px solid #d7dde8;
+      background: #f8fafc;
+      border-radius: 7px;
+      padding: 4px 7px;
       max-width: 420px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -199,20 +238,33 @@ function buildVerificationHtml(input: ArtifactCaptureInput): { html: string; kin
     .stamp {
       text-align: right;
       color: #94a3b8;
-      font-size: 12px;
-      line-height: 1.7;
+      font-size: 11px;
+      line-height: 1.6;
       white-space: nowrap;
     }
     .canvas {
       flex: 1;
       min-height: 0;
-      border: 1px solid rgba(255,255,255,0.11);
+      border: 1px solid #d7dde8;
       background: #ffffff;
       color: #0f172a;
-      border-radius: 14px;
+      border-radius: 10px;
       overflow: hidden;
-      box-shadow: 0 24px 80px rgba(0,0,0,.35);
+      box-shadow: 0 10px 28px rgba(15,23,42,.08);
     }
+    .preview-note {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 9px 12px;
+      border: 1px solid #d7dde8;
+      background: #ffffff;
+      color: #1f2937;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+    .preview-note span { color: #64748b; }
     .image-canvas {
       display: flex;
       align-items: center;
@@ -282,17 +334,18 @@ function buildVerificationHtml(input: ArtifactCaptureInput): { html: string; kin
   <main class="shell">
     <header>
       <div>
-        <div class="eyebrow">后台自动产物核验截图</div>
-        <h1>${title}</h1>
+        <div class="eyebrow">产物核验视图</div>
+        <h1>${escapeHtml(primaryName || artifact.name || '未命名产物')}</h1>
         <div class="meta">
           <span class="pill">模型：${code}</span>
-          <span class="pill">产物：${name}</span>
+          <span class="pill">任务：${title}</span>
+          <span class="pill">来源：${name}</span>
           <span class="pill">大小：${escapeHtml(size)}</span>
         </div>
       </div>
       <div class="stamp">
-        <div>Capture: ${escapeHtml(now)}</div>
-        <div>Runner: Server Chromium</div>
+        <div>${escapeHtml(now)}</div>
+        <div>后台代验</div>
       </div>
     </header>
     ${body}
@@ -367,7 +420,7 @@ async function launchChromium(): Promise<{
 }
 
 export async function captureArtifactScreenshot(input: ArtifactCaptureInput): Promise<ArtifactCaptureResult> {
-  const { html, kind } = buildVerificationHtml(input)
+  const { html, kind, renderMode, primaryName } = buildVerificationHtml(input)
   const browser = await launchChromium()
 
   try {
@@ -413,11 +466,14 @@ export async function captureArtifactScreenshot(input: ArtifactCaptureInput): Pr
       return {
         dataUrl,
         artifactKind: kind,
+        renderMode,
+        primaryName,
         runner: process.env.VERCEL ? 'vercel-server-chromium' : `${os.platform()}-local-chromium`,
         runLog: [
           `artifact=${input.artifact.name}`,
           `kind=${kind}`,
-          `render=text/image/html safe viewer`,
+          `primary=${primaryName}`,
+          `render_mode=${renderMode}`,
           `driver=playwright`,
           `executed_untrusted_code=false`,
         ].join('\n'),
@@ -466,11 +522,14 @@ export async function captureArtifactScreenshot(input: ArtifactCaptureInput): Pr
       return {
         dataUrl,
         artifactKind: kind,
+        renderMode,
+        primaryName,
         runner: 'vercel-server-chromium',
         runLog: [
           `artifact=${input.artifact.name}`,
           `kind=${kind}`,
-          `render=text/image/html safe viewer`,
+          `primary=${primaryName}`,
+          `render_mode=${renderMode}`,
           `driver=puppeteer`,
           `executed_untrusted_code=false`,
         ].join('\n'),

@@ -7,6 +7,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea, Label } from '@/components/ui/input'
+import { ThinkBlock } from '@/components/MarkdownView'
+import { parseDesignOutput } from '@/lib/design-output'
 
 type TaskType = 'CODING' | 'AGENT'
 type Phase = 'idle' | 'connecting' | 'streaming' | 'done' | 'error'
@@ -26,6 +28,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
   const [userIdea, setUserIdea] = useState('')
   const [generatedPrompt, setGeneratedPrompt] = useState('')
   const [generatedBackground, setGeneratedBackground] = useState('')
+  const [promptThinking, setPromptThinking] = useState('')
   const [promptPhase, setPromptPhase] = useState<Phase>('idle')
   const [promptError, setPromptError] = useState<string | null>(null)
   const [adjustMode, setAdjustMode] = useState(false)
@@ -103,13 +106,17 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
           try { payload = JSON.parse(dataLine) } catch { continue }
           if (eventName === 'delta' && payload.text) {
             acc += payload.text
-            setGeneratedPrompt(acc)
+            const parsed = parseDesignOutput(acc)
+            setGeneratedPrompt(parsed.prompt)
+            setGeneratedBackground(parsed.background)
+            setPromptThinking(parsed.thinking)
           } else if (eventName === 'error') {
             throw new Error(payload.message || '生成出错')
           } else if (eventName === 'done') {
             completed = true
             finalPrompt = payload.prompt || acc
             finalBackground = payload.background || ''
+            setPromptThinking(payload.thinking || parseDesignOutput(payload.full || acc).thinking)
             setGeneratedPrompt(finalPrompt)
             setGeneratedBackground(finalBackground)
             setPromptPhase('done')
@@ -403,6 +410,9 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
               </div>
 
               <div className="space-y-3">
+                {promptThinking && (
+                  <ThinkBlock content={promptThinking} streaming={isPromptWorking} />
+                )}
                 <div>
                   <Label className="text-xs text-gray-400">任务 Prompt（交给待测模型）</Label>
                   <Textarea

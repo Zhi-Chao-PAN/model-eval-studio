@@ -1,5 +1,17 @@
 import ExcelJS from 'exceljs'
 import mammoth from 'mammoth'
+import {
+  artifactEntryScore,
+  escapePreviewHtml,
+  fileExtension,
+  inferArtifactPreviewKind,
+  isJunkArtifactText,
+  sanitizePreviewHtml,
+  shouldIgnoreArchiveEntry,
+  tableTextHtml,
+  textDocumentHtml,
+  type StoredArtifactPreview,
+} from '@/lib/artifact-preview'
 
 type ZipFileEntry = {
   dir: boolean
@@ -16,7 +28,7 @@ type PdfParseModule = {
 }
 
 function getExtension(filename: string): string {
-  return filename.split('.').pop()?.toLowerCase() || ''
+  return fileExtension(filename)
 }
 
 const TEXT_EXTENSIONS = new Set(['txt', 'csv', 'md', 'markdown', 'json', 'jsonl', 'log', 'xml', 'html', 'htm', 'yaml', 'yml'])
@@ -157,21 +169,100 @@ export async function parseFile(
   return ''
 }
 
-export async function parseZip(buffer: Buffer): Promise<{ files: { name: string; text: string }[] }> {
+export async function buildFilePreview(
+  buffer: Buffer,
+  filename: string,
+  mimeType: string,
+  parsedText?: string,
+): Promise<StoredArtifactPreview | null> {
+  const ext = getExtension(filename)
+  const kind = inferArtifactPreviewKind(filename)
+  const text = parsedText ?? await parseFile(buffer, filename, mimeType)
+  let html = ''
+  let renderMode: StoredArtifactPreview['renderMode'] = 'plain-text'
+
+  if (ext === 'docx') {
+    const converted = await mammoth.convertToHtml({ buffer })
+    html = sanitizePreviewHtml(converted.value || '')
+    renderMode = 'converted-document'
+  } else if (kind === 'table') {
+    html = tableTextHtml(text)
+    renderMode = 'structured-table'
+  } else if (kind === 'html') {
+    html = sanitizePreviewHtml(text)
+    renderMode = 'sanitized-html'
+  } else if (kind === 'document') {
+    html = textDocumentHtml(text)
+    renderMode = 'converted-document'
+  } else if (kind === 'code' || kind === 'text') {
+    html = `<pre>${escapePreviewHtml(text.slice(0, 90_000))}</pre>`
+  }
+
+  if (!text.trim() && !html.trim()) return null
+  return {
+    version: 1,
+    source: 'file',
+    sourceName: filename,
+    primaryName: filename,
+    primaryKind: kind,
+    renderMode,
+    html,
+    text,
+  }
+}
+
+const MAX_ARCHIVE_FILES = 200
+const MAX_ARCHIVE_ENTRY_BYTES = 15 * 1024 * 1024
+const MAX_ARCHIVE_TOTAL_BYTES = 60 * 1024 * 1024
+
+export async function parseZip(buffer: Buffer): Promise<{
+  files: { name: string; text: string }[]
+  preview: StoredArtifactPreview | null
+}> {
   const JSZip = (await import('jszip')).default
   const zip = await JSZip.loadAsync(buffer)
-  const files: { name: string; text: string }[] = []
+  const files: Array<{ name: string; text: string; buffer: Buffer; score: number }> = []
+  let totalBytes = 0
 
   for (const [name, file] of Object.entries(zip.files) as [string, ZipFileEntry][]) {
-    if (file.dir) continue
+    if (file.dir || shouldIgnoreArchiveEntry(name) || files.length >= MAX_ARCHIVE_FILES) continue
     try {
       const fileBuffer = await file.async('nodebuffer')
+      if (fileBuffer.length > MAX_ARCHIVE_ENTRY_BYTES) continue
+      totalBytes += fileBuffer.length
+      if (totalBytes > MAX_ARCHIVE_TOTAL_BYTES) break
       const text = await parseFile(fileBuffer, name, '')
-      if (text) files.push({ name, text })
+      if (!text.trim() || isJunkArtifactText(text)) continue
+      files.push({
+        name,
+        text,
+        buffer: fileBuffer,
+        score: artifactEntryScore(name, inferArtifactPreviewKind(name), text),
+      })
     } catch {
       // Keep ZIP imports resilient: one unsupported file should not reject the whole archive.
     }
   }
 
-  return { files }
+  const primary = [...files].sort((a, b) => b.score - a.score)[0]
+  let preview: StoredArtifactPreview | null = null
+  if (primary) {
+    const filePreview = await buildFilePreview(primary.buffer, primary.name, '', primary.text)
+    if (filePreview) {
+      preview = {
+        ...filePreview,
+        source: 'archive',
+        sourceName: 'ZIP archive',
+        entries: files
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 80)
+          .map(item => ({ name: item.name, kind: inferArtifactPreviewKind(item.name) })),
+      }
+    }
+  }
+
+  return {
+    files: files.map(({ name, text }) => ({ name, text })),
+    preview,
+  }
 }

@@ -3,40 +3,14 @@ import { useMemo, useState, useEffect, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ChevronDown, Brain, Loader2 } from 'lucide-react'
+import { splitAiContent } from '@/lib/ai-content'
 
 interface Props {
   text: string
   compact?: boolean
 }
 
-/* ============================================================
-   Splits text into segments: either a <think>...</think> block
-   or a regular markdown segment. Tolerant of streaming (last
-   block may be unclosed) so a partial think gets a pulsing dot.
-   ============================================================ */
-function splitThinkSegments(text: string): Array<{ kind: 'think' | 'text'; content: string; open?: boolean }> {
-  if (!text) return []
-  const out: Array<{ kind: 'think' | 'text'; content: string; open?: boolean }> = []
-  const pattern = /<think>([\s\S]*?)(<\/think>|$)/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      out.push({ kind: 'text', content: text.slice(lastIndex, match.index) })
-    }
-    const closed = match[2] === '</think>'
-    out.push({ kind: 'think', content: match[1], open: !closed })
-    lastIndex = match.index + match[0].length
-    if (!closed) break
-  }
-  if (lastIndex < text.length) {
-    out.push({ kind: 'text', content: text.slice(lastIndex) })
-  }
-  return out
-}
-
-function ThinkBlock({ content, streaming }: { content: string; streaming?: boolean }) {
+export function ThinkBlock({ content, streaming }: { content: string; streaming?: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const lineCount = content ? content.split('\n').length : 0
   const charCount = content.length
@@ -132,7 +106,7 @@ function MarkdownPart({ text, compact }: { text: string; compact?: boolean }) {
 export function MarkdownView({ text, compact, hideThink }: Props & { hideThink?: boolean }): ReactNode {
   const segments = useMemo(() => {
     if (hideThink) return [{ kind: 'text' as const, content: text }]
-    return splitThinkSegments(text || '')
+    return splitAiContent(text || '')
   }, [text, hideThink])
 
   if (!text) return null

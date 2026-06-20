@@ -19,6 +19,8 @@ export type VerificationEvidence = {
   runner?: string
   verificationUrl?: string
   runLog?: string
+  renderMode?: string
+  primaryArtifactName?: string
 }
 
 type StoredEvidence = Partial<VerificationEvidence> & {
@@ -54,6 +56,8 @@ function normalizeEvidence(value: StoredEvidence, index: number): VerificationEv
     runner: typeof value.runner === 'string' ? value.runner.slice(0, 120) : undefined,
     verificationUrl: typeof value.verificationUrl === 'string' ? value.verificationUrl.slice(0, 500) : undefined,
     runLog: typeof value.runLog === 'string' ? value.runLog.slice(0, 2000) : undefined,
+    renderMode: typeof value.renderMode === 'string' ? value.renderMode.slice(0, 80) : undefined,
+    primaryArtifactName: typeof value.primaryArtifactName === 'string' ? value.primaryArtifactName.slice(0, 240) : undefined,
   }
 }
 
@@ -97,7 +101,7 @@ export function validateVerificationEvidence(evidence: VerificationEvidence[]): 
       return '单张验证截图过大，请压缩后重新上传'
     }
     if (!isAuthenticVerificationEvidence(image)) {
-      return '只能保存测试人员上传或浏览器捕获的真实验证截图'
+      return '正式核验证据必须来自测试者上传、窗口捕获或后台代验截图'
     }
   }
 

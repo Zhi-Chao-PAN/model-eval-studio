@@ -4,6 +4,12 @@ import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { captureArtifactScreenshot } from '@/lib/server-artifact-capture'
 import {
+  artifactEntryScore,
+  buildLegacyArchivePreview,
+  inferArtifactPreviewKind,
+  parseStoredArtifactPreview,
+} from '@/lib/artifact-preview'
+import {
   isAuthenticVerificationEvidence,
   MAX_VERIFICATION_EVIDENCE,
   parseVerificationEvidence,
@@ -24,18 +30,11 @@ type ArtifactLike = {
   size?: number | null
   parsedText?: string | null
   textContent?: string | null
+  previewJson?: string | null
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-function isImageArtifact(artifact: ArtifactLike): boolean {
-  return Boolean(
-    artifact.url?.startsWith('data:image/') ||
-    artifact.mimeType?.startsWith('image/') ||
-    /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(artifact.name),
-  )
 }
 
 function artifactText(artifact: ArtifactLike): string {
@@ -43,23 +42,43 @@ function artifactText(artifact: ArtifactLike): string {
 }
 
 function artifactScore(artifact: ArtifactLike): number {
-  const text = artifactText(artifact)
-  if (isImageArtifact(artifact) && artifact.url?.startsWith('data:image/')) return 90
-  if (/\.(html?|xhtml)$/i.test(artifact.name) || artifact.mimeType?.includes('html')) return text ? 80 : 20
-  if (text) return 70
-  return 10
+  const stored = parseStoredArtifactPreview(artifact.previewJson)
+  const legacy = !stored && /\.zip$/i.test(artifact.name)
+    ? buildLegacyArchivePreview(artifact.name, artifactText(artifact))
+    : null
+  const preview = stored || legacy
+
+  if (preview) {
+    return artifactEntryScore(preview.primaryName, preview.primaryKind, preview.text || '') + 30
+  }
+
+  if (artifact.url?.startsWith('data:image/') || artifact.mimeType?.startsWith('image/')) {
+    return 115
+  }
+
+  const kind = inferArtifactPreviewKind(artifact.name)
+  return artifactEntryScore(artifact.name, kind, artifactText(artifact))
 }
 
-function chooseArtifact(artifacts: ArtifactLike[]): ArtifactLike | null {
+function chooseArtifact(artifacts: ArtifactLike[], requestedArtifactId?: string): ArtifactLike | null {
+  if (requestedArtifactId) {
+    return artifacts.find(artifact => artifact.id === requestedArtifactId) || null
+  }
+
   return [...artifacts].sort((a, b) => artifactScore(b) - artifactScore(a))[0] || null
 }
 
-function makeEvidenceId(): string {
-  return `backend-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+function safeName(value: string): string {
+  return value
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+    .slice(0, 80) || 'artifact'
 }
 
-function safeName(name: string): string {
-  return name.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'artifact'
+function makeEvidenceId(): string {
+  return typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `backend-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 export async function POST(
@@ -69,10 +88,9 @@ export async function POST(
   const startedAt = Date.now()
   let userId: string | null = null
   let taskId: string | null = null
+  let modelCode = ''
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
-  let modelCode = ''
-  let artifactName = ''
 
   try {
     const session = await requireAuth()
@@ -81,8 +99,16 @@ export async function POST(
 
     const { id, modelId } = await params
     taskId = id
-    const body = await request.json().catch(() => ({}))
-    const requestedArtifactId = typeof body.artifactId === 'string' ? body.artifactId : ''
+
+    const body = await request.json().catch(() => ({})) as {
+      artifactId?: unknown
+      requestedArtifactId?: unknown
+    }
+    const requestedArtifactId = typeof body.artifactId === 'string'
+      ? body.artifactId
+      : typeof body.requestedArtifactId === 'string'
+        ? body.requestedArtifactId
+        : undefined
 
     const model = await prisma.taskModel.findFirst({
       where: {
@@ -90,7 +116,7 @@ export async function POST(
         task: { id, userId: session.userId, status: { not: 'DELETED' } },
       },
       include: {
-        task: true,
+        task: { select: { title: true } },
         artifacts: { orderBy: { createdAt: 'asc' } },
       },
     })
@@ -101,28 +127,24 @@ export async function POST(
     }
     modelCode = model.modelCode
 
-    if (model.artifacts.length === 0) {
-      errorMsg = '该模型还没有上传产物，无法后台截图'
+    const artifacts = model.artifacts as ArtifactLike[]
+    if (artifacts.length === 0) {
+      errorMsg = '请先上传模型产物，再生成后台代验截图'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    const artifact = chooseArtifact(artifacts, requestedArtifactId)
+    if (!artifact) {
+      errorMsg = requestedArtifactId ? '指定产物不存在' : '没有可核验的产物'
+      return NextResponse.json({ error: errorMsg }, { status: 404 })
     }
 
     const existingEvidence = parseVerificationEvidence(model.verificationScreenshotUrls)
       .filter(isAuthenticVerificationEvidence)
-
     if (existingEvidence.length >= MAX_VERIFICATION_EVIDENCE) {
-      errorMsg = `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张真实核验证据`
+      errorMsg = `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张验证截图`
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
-
-    const artifact = requestedArtifactId
-      ? model.artifacts.find(item => item.id === requestedArtifactId)
-      : chooseArtifact(model.artifacts)
-
-    if (!artifact) {
-      errorMsg = requestedArtifactId ? '指定产物不存在' : '未找到可截图的产物'
-      return NextResponse.json({ error: errorMsg }, { status: 404 })
-    }
-    artifactName = artifact.name
 
     const capture = await captureArtifactScreenshot({
       taskTitle: model.task.title,
@@ -130,17 +152,19 @@ export async function POST(
       artifact,
     })
 
-    const capturedAt = new Date()
+    const now = new Date()
     const evidence: VerificationEvidence = {
       id: makeEvidenceId(),
-      name: `后台自动截图-${safeName(artifact.name)}-${capturedAt.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`,
+      name: `后台代验-${safeName(capture.primaryName || artifact.name)}-${now.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`,
       dataUrl: capture.dataUrl,
       source: 'backend_capture',
       artifactId: artifact.id,
       artifactName: artifact.name,
-      capturedAt: capturedAt.toISOString(),
+      capturedAt: now.toISOString(),
       runner: capture.runner,
       runLog: capture.runLog,
+      renderMode: capture.renderMode,
+      primaryArtifactName: capture.primaryName,
     }
 
     const nextEvidence = [...existingEvidence, evidence]
@@ -161,18 +185,19 @@ export async function POST(
 
     status = 'success'
     return NextResponse.json({
-      ok: true,
+      model: updated,
       evidence,
       capture: {
         artifactKind: capture.artifactKind,
+        renderMode: capture.renderMode,
+        primaryName: capture.primaryName,
         runner: capture.runner,
       },
-      model: updated,
     })
-  } catch (error: unknown) {
+  } catch (error) {
     errorMsg = errorMessage(error)
-    console.error('Auto verification capture failed:', error)
-    return NextResponse.json({ error: `后台自动截图失败：${errorMsg}` }, { status: 500 })
+    console.error('Backend verification capture failed:', error)
+    return NextResponse.json({ error: '后台代验截图失败：' + errorMsg }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'AI_ARTIFACT_ANALYZE',
@@ -181,7 +206,7 @@ export async function POST(
       status,
       error: errorMsg,
       durationMs: Date.now() - startedAt,
-      detail: { modelCode, artifactName, mode: 'backend_capture' },
+      detail: { modelCode, mode: 'backend_capture' },
     })
   }
 }

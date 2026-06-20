@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { WorkingStatus } from '@/components/working-status'
 import { VerificationEvidencePanel } from '@/components/tasks/VerificationEvidencePanel'
 import { cn } from '@/lib/utils'
+import { isAuthenticVerificationEvidence, parseVerificationEvidence } from '@/lib/verification-evidence'
 
 interface Props {
   task: any
@@ -49,7 +50,8 @@ type ModelSummary = {
 }
 
 const PHASE_TEXT: Record<string, string> = {
-  analyzing_images: '正在解读真实产物验证证据...',
+  reusing_artifact_analysis: '正在复用已完成的产物预分析...',
+  analyzing_images: '正在解读产物核验证据...',
   analyzing_files: '正在逐份分析产物文件...',
   analyzing_file: '正在分析当前产物文件...',
   synthesizing: '正在汇总全部产物分析...',
@@ -129,6 +131,10 @@ export default function StepReport({ task, onRefresh }: Props) {
   const activeJob = selectedModelId ? activeJobs[selectedModelId] : undefined
   const isGenerating = Boolean(activeJob && activeJob.mode === 'generate')
   const isAdjusting = Boolean(activeJob && activeJob.mode === 'adjust')
+  const testerEvidenceCount = selectedModel
+    ? parseVerificationEvidence(selectedModel.verificationScreenshotUrls).filter(isAuthenticVerificationEvidence).length
+    : 0
+  const hasTesterEvidence = testerEvidenceCount > 0
 
   const SECTION_DEFS: Array<Omit<ReportSection, 'score' | 'content'>> = [
     { key: 'product',     title: '产物效果反馈',     icon: Sparkles,    accent: 'cyan' },
@@ -254,6 +260,10 @@ export default function StepReport({ task, onRefresh }: Props) {
   }
 
   function generateReport(modelId: string) {
+    if (!hasTesterEvidence) {
+      showNote('err', '请先完成后台代验，或上传/捕获至少 1 张核验证据。')
+      return
+    }
     runReportStream({ modelId, mode: 'generate', body: { modelId } })
   }
 
@@ -299,7 +309,7 @@ export default function StepReport({ task, onRefresh }: Props) {
           <div>
             <h2 className="display text-xl sm:text-2xl tracking-tight">评估报告</h2>
             <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-              基于真实产物验证证据与上传产物，输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
+              基于产物核验证据与上传产物，输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
             </p>
           </div>
         </div>
@@ -404,6 +414,8 @@ export default function StepReport({ task, onRefresh }: Props) {
                 variant={latestReport ? 'secondary' : 'primary'}
                 size="sm"
                 onClick={() => generateReport(selectedModel.id)}
+                disabled={!hasTesterEvidence}
+                title={!hasTesterEvidence ? '请先完成后台代验或保存至少 1 张核验证据' : undefined}
               >
                 {latestReport ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
                 {latestReport ? '重新生成' : '生成评估报告'}
@@ -595,9 +607,9 @@ export default function StepReport({ task, onRefresh }: Props) {
                     尚未生成 <span className="mono text-cyan-300">{selectedModel.modelCode}</span> 的评估报告
                   </h4>
                   <p className="text-[13px] text-gray-500 max-w-sm mb-5">
-                    完成产物核验并保存真实截图后，生成包含五大模块的正式评估报告。
+                    完成后台代验或保存核验证据后，生成包含五大模块的正式评估报告。
                   </p>
-                  <Button onClick={() => generateReport(selectedModel.id)} size="sm">
+                  <Button onClick={() => generateReport(selectedModel.id)} size="sm" disabled={!hasTesterEvidence}>
                     <Sparkles className="h-3.5 w-3.5" />
                     开始生成评估报告
                   </Button>

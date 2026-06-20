@@ -13,6 +13,7 @@ export interface GenerateOptions {
   provider: AiProvider
   temperature?: number
   maxTokens?: number
+  timeoutMs?: number
 }
 
 export interface AiUsage {
@@ -30,22 +31,23 @@ export async function generateChat(
   messages: AiMessage[],
   options: GenerateOptions
 ): Promise<GenerateResult> {
-  const { baseUrl, apiKey, model, provider, temperature = 0.7, maxTokens = 4000 } = options
+  const { baseUrl, apiKey, model, provider, temperature = 0.7, maxTokens = 4000, timeoutMs = 60_000 } = options
 
   if (provider === 'ANTHROPIC_COMPAT') {
-    return generateChatAnthropic(messages, { baseUrl, apiKey, model, temperature, maxTokens })
+    return generateChatAnthropic(messages, { baseUrl, apiKey, model, temperature, maxTokens, timeoutMs })
   }
 
-  return generateChatOpenai(messages, { baseUrl, apiKey, model, temperature, maxTokens })
+  return generateChatOpenai(messages, { baseUrl, apiKey, model, temperature, maxTokens, timeoutMs })
 }
 
 async function generateChatOpenai(
   messages: AiMessage[],
-  options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number }
+  options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number; timeoutMs: number }
 ): Promise<GenerateResult> {
   const openai = new OpenAI({
     baseURL: options.baseUrl,
     apiKey: options.apiKey,
+    timeout: options.timeoutMs,
   })
 
   const response = await openai.chat.completions.create({
@@ -69,7 +71,7 @@ async function generateChatOpenai(
 
 async function generateChatAnthropic(
   messages: AiMessage[],
-  options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number }
+  options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number; timeoutMs: number }
 ): Promise<GenerateResult> {
   const systemMsgs = messages.filter((m) => m.role === 'system').map((m) => m.content)
   const nonSystemMsgs = messages.filter((m) => m.role !== 'system')
@@ -97,6 +99,7 @@ async function generateChatAnthropic(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(options.timeoutMs),
   })
 
   if (!res.ok) {
@@ -218,6 +221,7 @@ export async function analyzeImages(
       'Authorization': `Bearer ${options.apiKey}`,
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(options.timeoutMs ?? 60_000),
   })
 
   if (!res.ok) {
