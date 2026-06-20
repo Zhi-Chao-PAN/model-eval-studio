@@ -72,6 +72,7 @@ model User {
   aiBaseUrl     String?
   aiApiKey      String?
   aiModelName   String?
+  aiMaxTokens   Int?      @map("ai_max_tokens")
   createdAt     DateTime @default(now())
   lastActiveAt  DateTime @default(now())
   tasks         Task[]

@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { decrypt } from '@/lib/crypto'
 
+export const DEFAULT_MAX_TOKENS = 4000
+
 export async function getUserAiConfig(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -9,6 +11,7 @@ export async function getUserAiConfig(userId: string) {
       aiBaseUrl: true,
       aiApiKey: true,
       aiModelName: true,
+      aiMaxTokens: true,
       background: true,
     },
   })
@@ -22,6 +25,7 @@ export async function getUserAiConfig(userId: string) {
     baseUrl: user.aiBaseUrl,
     apiKey: decrypt(user.aiApiKey),
     model: user.aiModelName,
+    maxTokens: user.aiMaxTokens ?? DEFAULT_MAX_TOKENS,
     background: user.background || '',
   }
 }

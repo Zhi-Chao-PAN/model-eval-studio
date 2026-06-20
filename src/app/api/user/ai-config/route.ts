@@ -18,6 +18,7 @@ export async function GET() {
       aiBaseUrl: true,
       aiModelName: true,
       aiApiKey: true,
+      aiMaxTokens: true,
     },
   })
 
@@ -30,6 +31,7 @@ export async function GET() {
       provider: user.aiProvider,
       baseUrl: user.aiBaseUrl,
       modelName: user.aiModelName,
+      maxTokens: user.aiMaxTokens,
       hasApiKey: !!user.aiApiKey,
     },
   })
@@ -49,7 +51,7 @@ export async function PUT(request: Request) {
 
   try {
     const body = await request.json()
-    const { provider, baseUrl, apiKey, modelName: mn } = body
+    const { provider, baseUrl, apiKey, modelName: mn, maxTokens } = body
     modelName = mn || ''
 
     if (!provider || !baseUrl || !modelName) {
@@ -68,6 +70,14 @@ export async function PUT(request: Request) {
       data.aiApiKey = encrypt(apiKey)
     }
 
+    // maxTokens 可选
+    if (maxTokens !== undefined && maxTokens !== null) {
+      const n = Number(maxTokens)
+      if (Number.isFinite(n) && n > 0) {
+        data.aiMaxTokens = Math.floor(n)
+      }
+    }
+
     const user = await prisma.user.update({
       where: { id: session.userId },
       data,
@@ -76,6 +86,7 @@ export async function PUT(request: Request) {
         aiBaseUrl: true,
         aiModelName: true,
         aiApiKey: true,
+        aiMaxTokens: true,
       },
     })
 
@@ -85,6 +96,7 @@ export async function PUT(request: Request) {
         provider: user.aiProvider,
         baseUrl: user.aiBaseUrl,
         modelName: user.aiModelName,
+        maxTokens: user.aiMaxTokens,
         hasApiKey: !!user.aiApiKey,
       },
     })

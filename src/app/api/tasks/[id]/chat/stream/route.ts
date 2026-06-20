@@ -113,7 +113,7 @@ export async function POST(
           model: aiConfig.model,
           provider: aiConfig.provider,
           temperature: 0.7,
-          maxTokens: 2000,
+          maxTokens: aiConfig.maxTokens,
         })) {
           if (chunk.type === 'delta') {
             fullText += chunk.content
