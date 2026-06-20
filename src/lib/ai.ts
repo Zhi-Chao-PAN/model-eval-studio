@@ -117,6 +117,45 @@ async function generateChatAnthropic(
   return { content, usage }
 }
 
+/**
+ * 对超长文本做智能摘要，保留关键信息。
+ * 用于在上下文窗口有限时压缩输入内容。
+ */
+export async function summarizeText(
+  text: string,
+  options: GenerateOptions & { targetLength?: string; context?: string },
+): Promise<GenerateResult> {
+  const { targetLength = '原文的 20% 左右', context = '', ...genOpts } = options
+
+  const systemPrompt = `你是专业的信息提取助手。你的任务是对给定文本做精准摘要，保留所有关键信息、数据、结论、问题点和具体细节，删除冗余和重复。`
+
+  const userPrompt = `请对以下文本进行摘要，目标长度约为${targetLength}。
+
+要求：
+- 保留所有关键信息、具体数据、结论、错误、问题点
+- 保留专有名词、技术术语、数字、代码片段
+- 删除无意义的客套话、重复表述
+- 保持原文的结构和逻辑顺序
+- 用原文的语言输出
+
+${context ? `【上下文背景】\n${context}\n\n` : ''}【待摘要文本】
+${text}
+
+【摘要结果】`
+
+  return generateChat(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    {
+      ...genOpts,
+      temperature: 0.3,
+      maxTokens: Math.floor((genOpts.maxTokens ?? 4000) * 0.8),
+    },
+  )
+}
+
 export async function validateApiKey(options: GenerateOptions): Promise<{ ok: boolean; error?: string }> {
   try {
     await generateChat(
