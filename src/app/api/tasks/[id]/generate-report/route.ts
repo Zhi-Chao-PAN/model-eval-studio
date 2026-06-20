@@ -1,10 +1,17 @@
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
-import { analyzeImages, generateChat } from '@/lib/ai'
+import { analyzeImages, summarizeText, generateChat } from '@/lib/ai'
 import { streamChat } from '@/lib/ai-stream'
-import { buildSystemPrompt, buildReportPrompt, buildReportAdjustPrompt } from '@/lib/ai-prompts'
+import {
+  buildSystemPrompt,
+  buildReportPrompt,
+  buildReportAdjustPrompt,
+  buildSingleFileAnalysisPrompt,
+  buildFilesSummaryPrompt,
+} from '@/lib/ai-prompts'
 import { logAudit } from '@/lib/audit'
+import { mapReduceSummarize, estimateTokens } from '@/lib/text-chunker'
 
 type VerificationImage = {
   name: string
@@ -203,23 +210,146 @@ export async function POST(
             verificationSummary = '未提供产物验证截图（可能因产物为非文本类型或截图生成失败）。'
           }
 
-          // Phase 2: report generation (streaming)
-          phase('generating_report', { modelCode: model.modelCode })
-
+          // Phase 1.5: Per-file deep analysis (per-file → summary)
           const analysisContext = task.analysisJson
             ? safeJsonParse(task.analysisJson)?.content || ''
             : ''
+
+          const processText = model.processText || ''
+          let filesAnalysis = ''
+          const textArtifacts = model.artifacts.filter(
+            (a) => (a.parsedText?.length || 0) + (a.textContent?.length || 0) > 0,
+          )
+
+          phase('analyzing_files', {
+            modelCode: model.modelCode,
+            totalFiles: textArtifacts.length,
+          })
+
+          if (textArtifacts.length === 0) {
+            filesAnalysis = '(未上传可解析的文本产物，基于验证截图和硬指标进行评估。'
+          } else {
+            // Process each file individually
+            const perFileResults = []
+            let prevFilesContext = ''
+
+            for (let i = 0; i < textArtifacts.length; i++) {
+              const artifact = textArtifacts[i]
+              const fileContent = artifact.parsedText || artifact.textContent || ''
+              const fileName = artifact.name
+
+              phase('analyzing_file', {
+                modelCode: model.modelCode,
+                current: i + 1,
+                total: textArtifacts.length,
+                fileName,
+              })
+
+              let contentToAnalyze = fileContent
+
+              // If single file is too long, summarize it first
+              if (estimateTokens(fileContent) > 10000) {
+                const compressed = await mapReduceSummarize(
+                  fileContent,
+                  async (chunk, context) => {
+                    const result = await summarizeText(chunk, {
+                      baseUrl: aiConfig.baseUrl,
+                      apiKey: aiConfig.apiKey,
+                      model: aiConfig.model,
+                      provider: aiConfig.provider,
+                      targetLength: '原文的 25%，保留所有关键信息、代码、数据和问题点',
+                      context,
+                    })
+                    totalTokenInput += result.usage?.promptTokens ?? 0
+                    totalTokenOutput += result.usage?.completionTokens ?? 0
+                    return result.content
+                  },
+                  { threshold: 8000, chunkSize: 6000 },
+                )
+                contentToAnalyze = compressed
+              }
+
+              const filePrompt = buildSingleFileAnalysisPrompt({
+                task,
+                fileName,
+                fileContent: contentToAnalyze,
+                userBackground: aiConfig.background,
+                previousFiles: prevFilesContext,
+              })
+
+              const fileResult = await generateChat(
+                [
+                  { role: 'system', content: buildSystemPrompt(aiConfig.background) },
+                  { role: 'user', content: filePrompt },
+                ],
+                {
+                  baseUrl: aiConfig.baseUrl,
+                  apiKey: aiConfig.apiKey,
+                  model: aiConfig.model,
+                  provider: aiConfig.provider,
+                  temperature: 0.4,
+                  maxTokens: Math.floor((aiConfig.maxTokens ?? 4000) * 0.5),
+                },
+              )
+
+              totalTokenInput += fileResult.usage?.promptTokens ?? 0
+              totalTokenOutput += fileResult.usage?.completionTokens ?? 0
+
+              const analysisText = `【文件：${fileName}】\n${fileResult.content}`
+              perFileResults.push(analysisText)
+              prevFilesContext = fileResult.content.slice(0, 2000)
+            }
+
+            filesAnalysis = perFileResults.join('\n\n---\n\n')
+          }
+
+          // Phase 1.8: Summary across all files + trajectory
+          phase('synthesizing', { modelCode: model.modelCode })
+
+          const synthesisPrompt = buildFilesSummaryPrompt({
+            task,
+            modelCode: model.modelCode,
+            hardMetrics,
+            processText,
+            filesAnalysis,
+            userBackground: aiConfig.background,
+            verificationSummary,
+            hasTrajectory: Boolean(processText?.trim()),
+          })
+
+          const synthesisResult = await generateChat(
+            [
+              { role: 'system', content: buildSystemPrompt(aiConfig.background) },
+              { role: 'user', content: synthesisPrompt },
+            ],
+            {
+              baseUrl: aiConfig.baseUrl,
+              apiKey: aiConfig.apiKey,
+              model: aiConfig.model,
+              provider: aiConfig.provider,
+              temperature: 0.5,
+              maxTokens: Math.floor((aiConfig.maxTokens ?? 4000) * 0.6),
+            },
+          )
+
+          totalTokenInput += synthesisResult.usage?.promptTokens ?? 0
+          totalTokenOutput += synthesisResult.usage?.completionTokens ?? 0
+
+          const synthesizedAnalysis = synthesisResult.content
+
+          // Phase 2: report generation (streaming)
+          phase('generating_report', { modelCode: model.modelCode })
 
           const prompt = buildReportPrompt({
             task,
             modelCode: model.modelCode,
             hardMetrics,
-            processText: model.processText || '',
-            artifactsText: buildArtifactsText(model.artifacts),
+            processText,
+            artifactsText: synthesizedAnalysis,
             userBackground: aiConfig.background,
             analysisContext,
             verificationSummary,
-            hasTrajectory: Boolean(model.processText?.trim()),
+            hasTrajectory: Boolean(processText?.trim()),
           })
 
           let reportText = ''

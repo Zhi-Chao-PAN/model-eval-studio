@@ -205,10 +205,96 @@ ${opts.userBackground || '（用户尚未提供个人背景信息）'}
 请根据用户要求修改报告。
 
 硬性要求：
-- 保留 5 个模块：产物效果反馈、模型交付效率是否符合预期、模型的产物质量怎么样、模型的综合表现怎么样、轨迹分析。
+- 保留 5 个模块：产物效果反馈、交付效率、产物质量、综合表现、轨迹分析。
 - 综合评分只能是 1-10 的整数。
 - 交付效率和产物质量评分可以是 1-10 内的整数或 .5 分。
 - 用户只指出某个模块的问题时，只修改对应模块，其它模块保持原意。
 - 继续保持第一人称口吻。
 - 只输出修改后的完整报告文本，不要额外解释。`.trim()
+}
+
+export function buildSingleFileAnalysisPrompt(opts: {
+  task: any
+  fileName: string
+  fileContent: string
+  userBackground: string
+  previousFiles: string
+}): string {
+  return `你是专业的模型产物评测分析师。请对一份模型产物文件进行要点提取和质量分析。
+
+【任务名称】
+${opts.task.title || '（未命名）'}
+
+【任务 prompt】
+${opts.task.description || '（未填写）'}
+
+【题目来源 / 背景说明】
+${opts.task.backgroundUsed || '（未填写）'}
+
+【关于你的评测视角】
+${opts.userBackground || '（用户尚未提供个人背景信息）'}
+
+${opts.previousFiles ? `【之前分析过的其他文件要点（供上下文参考，不要重复分析）】\n${opts.previousFiles.slice(0, 3000)}\n` : ''}
+【当前文件】
+文件名：${opts.fileName}
+文件内容：
+${opts.fileContent}
+
+请提取并分析：
+1. 这份文件的核心内容是什么？（2-3 句话概括）
+2. 文件中体现了模型做对了什么？（具体证据）
+3. 文件中发现了什么错误、遗漏或问题？（具体指出位置和内容）
+4. 代码/文档的质量如何？（结构、规范、可读性）
+5. 这份产物是否符合任务要求？为什么？
+
+要求：
+- 具体、客观，引用原文中的证据
+- 不要空泛的赞美或批评
+- 用中文，分点陈述`.trim()
+}
+
+export function buildFilesSummaryPrompt(opts: {
+  task: any
+  modelCode: string
+  hardMetrics: any
+  processText: string
+  filesAnalysis: string
+  userBackground: string
+  verificationSummary?: string
+  hasTrajectory?: boolean
+}): string {
+  return `你是专业的模型评测专家。以下是对单个模型所有产物文件的逐一分析结果，请你综合这些信息，形成对该模型的完整评估。
+
+【任务名称】
+${opts.task.title || '（未命名）'}
+
+【任务 prompt】
+${opts.task.description || '（未填写）'}
+
+【题目来源 / 背景说明】
+${opts.task.backgroundUsed || '（未填写）'}
+
+【评测视角】
+${opts.userBackground || '（用户尚未提供个人背景信息）'}
+
+【模型】
+${opts.modelCode}
+
+【硬指标数据】
+${opts.hardMetrics ? JSON.stringify(opts.hardMetrics, null, 2) : '未提供'}
+
+【执行轨迹】
+${opts.processText || '未提供轨迹截图'}
+
+【产物验证截图解读】
+${opts.verificationSummary || '未自动生成产物验证截图。'}
+
+【各产物文件的详细分析】
+${opts.filesAnalysis}
+
+请综合以上所有信息，形成对这个模型的完整评估。要求：
+- 结合所有产物文件，不遗漏任何重要问题
+- 区分主要问题和次要问题
+- 有整体判断，不只罗列细节
+- 用中文，条理清晰`.trim()
 }
