@@ -60,7 +60,7 @@ export function ChatPanel({
             </div>
             <div className="text-[13px] font-medium text-gray-300">有问题随时问我</div>
             <div className="text-[11px] leading-relaxed text-gray-500 max-w-xs">
-              我会结合整个任务的历史与当前进度回答。可以继续追问测试思路、截图数据、产物分析或评估报告。
+              我会结合整个任务的历史与当前进度回答。可以继续追问任务设计、截图数据、产物分析或评估报告。
             </div>
           </div>
         )}

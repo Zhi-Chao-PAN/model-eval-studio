@@ -36,6 +36,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0",
+    "workflow": "4.5.0",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"

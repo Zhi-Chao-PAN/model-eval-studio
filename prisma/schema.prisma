@@ -142,6 +142,46 @@ model TaskModel {
   createdAt      DateTime @default(now())
   artifacts      ModelArtifact[]
   reports        ModelReport[]
+  artifactAnalysisRuns ArtifactAnalysisRun[]
+}
+
+model ArtifactAnalysisRun {
+  id                         String   @id @default(cuid())
+  taskModelId                String
+  taskModel                  TaskModel @relation(fields: [taskModelId], references: [id], onDelete: Cascade)
+  workflowRunId              String?  @unique
+  status                     String   @default("QUEUED")
+  currentPhase               String?
+  error                      String?  @db.Text
+  artifactSignature          String?
+  artifactCount              Int?
+  verificationScreenshotUrls String?
+  verificationSummary        String?  @db.Text
+  filesAnalysis              String?  @db.Text
+  nextEventSeq               Int      @default(0)
+  startedAt                  DateTime?
+  completedAt                DateTime?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  events                     ArtifactAnalysisEvent[]
+
+  @@index([taskModelId, createdAt])
+  @@index([status, updatedAt])
+}
+
+model ArtifactAnalysisEvent {
+  id        String   @id @default(cuid())
+  runId     String
+  run       ArtifactAnalysisRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  sequence  Int
+  phase     String
+  status    String
+  label     String
+  detail    String?  @db.Text
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([runId, sequence])
 }
 
 model ModelArtifact {

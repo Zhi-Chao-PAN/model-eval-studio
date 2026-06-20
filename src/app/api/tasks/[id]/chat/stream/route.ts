@@ -68,9 +68,6 @@ export async function POST(
     }
   }
 
-  const taskIdea = getWorkflowContent(task.taskIdeaJson)
-  if (taskIdea) context += `\n\n已生成的测试思路：\n${taskIdea.slice(0, 6000)}`
-
   const analysis = getWorkflowContent(task.analysisJson)
   if (analysis) context += `\n\n已生成的产物分析：\n${analysis.slice(0, 6000)}`
 
