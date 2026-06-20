@@ -56,11 +56,19 @@ const AI_PRESETS: AiPreset[] = [
   },
   {
     id: 'doubao',
-    name: '豆包 Seed 2.0',
+    name: '豆包 火山方舟',
     provider: 'OPENAI_COMPAT',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     modelName: 'doubao-seed-2.0-pro',
-    hint: '默认使用豆包 Seed 2.0 Pro，可手动替换为你自己的接入点 ID',
+    hint: '标准 ARK 接入点',
+  },
+  {
+    id: 'arktest',
+    name: 'ARK Test',
+    provider: 'OPENAI_COMPAT',
+    baseUrl: 'https://sd7k0j05hv504o9evirf0.apigateway-cn-beijing.volcesapi.com/v1',
+    modelName: 'anonymous/',
+    hint: '请替换 baseUrl 前缀为你的专属域名，模型名补全账号名/模型名',
   },
 ]
 
