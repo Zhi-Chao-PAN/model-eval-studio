@@ -157,10 +157,11 @@ function Metadata({ metadata }: { metadata: Record<string, unknown> }) {
   const labels: Record<string, string> = {
     artifactCount: '产物数量',
     artifactNames: '识别到的文件',
-    primaryArtifactName: '已打开主产物',
+    primaryArtifactName: '主产物',
     renderMode: '渲染方式',
     runner: '执行环境',
-    evidenceCount: '核验证据数',
+    evidenceCount: '产物效果截图数',
+    evidenceNames: '截图文件',
     fileName: '文件',
     charactersRead: '已读取字符',
     truncated: '内容截取',

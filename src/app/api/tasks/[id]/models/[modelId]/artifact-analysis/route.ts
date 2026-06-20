@@ -115,7 +115,7 @@ export async function POST(
             phase: 'queued',
             status: ARTIFACT_ANALYSIS_EVENT_STATUS.QUEUED,
             label: '已进入后台分析队列',
-            detail: '任务已提交，正在准备盘点产物并生成核验证据。',
+            detail: '任务已提交，正在准备盘点、解压和分析产物内容。',
           },
         },
       },

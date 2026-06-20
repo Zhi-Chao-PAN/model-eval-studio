@@ -78,12 +78,7 @@ export function parseVerificationEvidence(raw?: string | null): VerificationEvid
 }
 
 export function isAuthenticVerificationEvidence(evidence: VerificationEvidence): boolean {
-  return (
-    evidence.source === 'tester_upload' ||
-    evidence.source === 'screen_capture' ||
-    evidence.source === 'backend_capture' ||
-    evidence.source === 'sandbox_auto'
-  )
+  return evidence.source === 'tester_upload'
 }
 
 export function serializeVerificationEvidence(evidence: VerificationEvidence[]): string {
@@ -100,9 +95,7 @@ export function validateVerificationEvidence(evidence: VerificationEvidence[]): 
     if (image.dataUrl.length > MAX_VERIFICATION_IMAGE_DATA_URL_LENGTH) {
       return '单张验证截图过大，请压缩后重新上传'
     }
-    if (!isAuthenticVerificationEvidence(image)) {
-      return '正式核验证据必须来自测试者上传、窗口捕获或后台代验截图'
-    }
+    if (!isAuthenticVerificationEvidence(image)) return '正式产物效果截图必须来自测试者本地验收后上传'
   }
 
   return null

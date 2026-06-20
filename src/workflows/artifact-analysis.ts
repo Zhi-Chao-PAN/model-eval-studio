@@ -45,13 +45,13 @@ async function inspectArtifacts(input: ArtifactAnalysisRunInput): Promise<void> 
 
 async function captureEvidence(input: ArtifactAnalysisRunInput): Promise<void> {
   'use step'
-  console.log(`[artifact-analysis] capture run=${input.runId}`)
+  console.log(`[artifact-analysis] acceptance evidence run=${input.runId}`)
   await captureArtifactEvidence(input)
 }
 
 async function reviewEvidence(input: ArtifactAnalysisRunInput): Promise<void> {
   'use step'
-  console.log(`[artifact-analysis] visual review run=${input.runId}`)
+  console.log(`[artifact-analysis] acceptance screenshot review run=${input.runId}`)
   await analyzeArtifactEvidence(input)
 }
 

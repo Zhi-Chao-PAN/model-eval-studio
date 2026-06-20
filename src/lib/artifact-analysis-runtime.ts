@@ -6,20 +6,14 @@ import {
   buildSingleFileAnalysisPrompt,
   buildSystemPrompt,
 } from '@/lib/ai-prompts'
-import { captureArtifactScreenshot } from '@/lib/server-artifact-capture'
 import {
   artifactEntryScore,
-  buildLegacyArchivePreview,
   inferArtifactPreviewKind,
-  parseStoredArtifactPreview,
 } from '@/lib/artifact-preview'
 import {
   isAuthenticVerificationEvidence,
-  MAX_VERIFICATION_EVIDENCE,
   parseVerificationEvidence,
   serializeVerificationEvidence,
-  validateVerificationEvidence,
-  type VerificationEvidence,
 } from '@/lib/verification-evidence'
 import {
   artifactAnalysisSignature,
@@ -97,32 +91,6 @@ function looksLikeParserPlaceholder(text: string): boolean {
 function artifactText(artifact: ArtifactLike): string {
   const value = (artifact.textContent || artifact.parsedText || '').trim()
   return looksLikeParserPlaceholder(value) ? '' : value
-}
-
-function artifactScore(artifact: ArtifactLike): number {
-  const stored = parseStoredArtifactPreview(artifact.previewJson)
-  const legacy = !stored && /\.zip$/i.test(artifact.name)
-    ? buildLegacyArchivePreview(artifact.name, artifactText(artifact))
-    : null
-  const preview = stored || legacy
-
-  if (preview) return artifactEntryScore(preview.primaryName, preview.primaryKind, preview.text || '') + 30
-  if (artifact.url?.startsWith('data:image/') || artifact.mimeType?.startsWith('image/')) return 115
-  return artifactEntryScore(artifact.name, inferArtifactPreviewKind(artifact.name), artifactText(artifact))
-}
-
-function chooseArtifact(artifacts: ArtifactLike[]): ArtifactLike | null {
-  return [...artifacts].sort((a, b) => artifactScore(b) - artifactScore(a))[0] || null
-}
-
-function makeEvidenceId(): string {
-  return typeof crypto?.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : 'backend-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
-}
-
-function safeName(value: string): string {
-  return value.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 80) || 'artifact'
 }
 
 function buildArtifactsText(artifacts: ArtifactLike[]): string {
@@ -228,91 +196,9 @@ export async function inspectArtifactInputs(input: ArtifactAnalysisRunInput): Pr
     phase: 'inspect',
     status: ARTIFACT_ANALYSIS_EVENT_STATUS.COMPLETED,
     label: '产物盘点完成',
-    detail: `识别到 ${context.artifacts.length} 个产物，将按内容完整度和可渲染性选择主产物进行核验。`,
+    detail: `识别到 ${context.artifacts.length} 个产物，将继续进行解压、解析和内容分析。`,
     metadata: { artifactCount: context.artifacts.length, artifactNames: names },
   })
-}
-
-async function ensureBackendEvidence(input: {
-  taskTitle: string
-  modelCode: string
-  artifacts: ArtifactLike[]
-  currentRaw?: string | null
-}): Promise<{
-  evidence: VerificationEvidence[]
-  verificationScreenshotUrls: string | null
-  warning?: string
-  primaryArtifactName?: string
-  renderMode?: string
-  runner?: string
-}> {
-  const existing = parseVerificationEvidence(input.currentRaw).filter(isAuthenticVerificationEvidence)
-  const hasAutomaticEvidence = existing.some(image => image.source === 'backend_capture' || image.source === 'sandbox_auto')
-  if (hasAutomaticEvidence || existing.length >= MAX_VERIFICATION_EVIDENCE) {
-    const latest = existing[existing.length - 1]
-    return {
-      evidence: existing,
-      verificationScreenshotUrls: existing.length ? serializeVerificationEvidence(existing) : null,
-      primaryArtifactName: latest?.primaryArtifactName || latest?.artifactName,
-      renderMode: latest?.renderMode,
-      runner: latest?.runner,
-    }
-  }
-
-  const artifact = chooseArtifact(input.artifacts)
-  if (!artifact) {
-    return {
-      evidence: existing,
-      verificationScreenshotUrls: existing.length ? serializeVerificationEvidence(existing) : null,
-      warning: '没有可用于后台代验的产物',
-    }
-  }
-
-  try {
-    const capture = await captureArtifactScreenshot({
-      taskTitle: input.taskTitle,
-      modelCode: input.modelCode,
-      artifact,
-    })
-    const now = new Date()
-    const nextEvidence: VerificationEvidence[] = [
-      ...existing,
-      {
-        id: makeEvidenceId(),
-        name: `后台代验-${safeName(capture.primaryName || artifact.name)}-${now.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`,
-        dataUrl: capture.dataUrl,
-        source: 'backend_capture',
-        artifactId: artifact.id,
-        artifactName: artifact.name,
-        capturedAt: now.toISOString(),
-        runner: capture.runner,
-        runLog: capture.runLog,
-        renderMode: capture.renderMode,
-        primaryArtifactName: capture.primaryName,
-      },
-    ]
-    const validationError = validateVerificationEvidence(nextEvidence)
-    if (validationError) {
-      return {
-        evidence: existing,
-        verificationScreenshotUrls: existing.length ? serializeVerificationEvidence(existing) : null,
-        warning: validationError,
-      }
-    }
-    return {
-      evidence: nextEvidence,
-      verificationScreenshotUrls: serializeVerificationEvidence(nextEvidence),
-      primaryArtifactName: capture.primaryName,
-      renderMode: capture.renderMode,
-      runner: capture.runner,
-    }
-  } catch (error) {
-    return {
-      evidence: existing,
-      verificationScreenshotUrls: existing.length ? serializeVerificationEvidence(existing) : null,
-      warning: artifactAnalysisErrorMessage(error),
-    }
-  }
 }
 
 export async function captureArtifactEvidence(input: ArtifactAnalysisRunInput): Promise<void> {
@@ -320,36 +206,27 @@ export async function captureArtifactEvidence(input: ArtifactAnalysisRunInput): 
     runId: input.runId,
     phase: 'capture',
     status: ARTIFACT_ANALYSIS_EVENT_STATUS.STARTED,
-    label: '正在后台打开并渲染主产物',
-    detail: '将选择最适合展示的产物内容生成核验证据；不会执行不可信代码。',
+    label: '正在读取产物效果截图',
+    detail: '仅读取测试人员本地验收后上传的截图，不再由后台生成正式验收截图。',
   })
 
   const context = await getRunContext(input)
-  const result = await ensureBackendEvidence({
-    taskTitle: context.task.title,
-    modelCode: context.modelCode,
-    artifacts: context.artifacts,
-    currentRaw: context.verificationScreenshotUrls,
+  const evidence = parseVerificationEvidence(context.verificationScreenshotUrls)
+    .filter(isAuthenticVerificationEvidence)
+  const verificationScreenshotUrls = evidence.length ? serializeVerificationEvidence(evidence) : null
+
+  await prisma.artifactAnalysisRun.update({
+    where: { id: input.runId },
+    data: { verificationScreenshotUrls },
   })
 
-  await Promise.all([
-    prisma.taskModel.update({
-      where: { id: context.id },
-      data: { verificationScreenshotUrls: result.verificationScreenshotUrls },
-    }),
-    prisma.artifactAnalysisRun.update({
-      where: { id: input.runId },
-      data: { verificationScreenshotUrls: result.verificationScreenshotUrls },
-    }),
-  ])
-
-  if (result.warning) {
+  if (evidence.length === 0) {
     await appendArtifactAnalysisEvent({
       runId: input.runId,
       phase: 'capture',
       status: ARTIFACT_ANALYSIS_EVENT_STATUS.WARNING,
-      label: '后台代验未生成新截图',
-      detail: result.warning,
+      label: '尚未上传产物效果截图',
+      detail: '官方要求测试人员下载产物到本地并完成验收后上传过程截图；本次预分析会先完成产物解压、解析和内容分析，产物效果反馈需截图补齐。',
     })
     return
   }
@@ -358,9 +235,9 @@ export async function captureArtifactEvidence(input: ArtifactAnalysisRunInput): 
     runId: input.runId,
     phase: 'capture',
     status: ARTIFACT_ANALYSIS_EVENT_STATUS.COMPLETED,
-    label: '产物核验证据已生成',
-    detail: `已打开并渲染 ${result.primaryArtifactName || '主产物'}，截图将作为后续报告的核验依据。`,
-    metadata: { primaryArtifactName: result.primaryArtifactName, renderMode: result.renderMode, runner: result.runner },
+    label: '产物效果截图已读取',
+    detail: `已读取 ${evidence.length} 张测试人员上传的本地验收截图，后续会用于产物效果反馈。`,
+    metadata: { evidenceCount: evidence.length, evidenceNames: evidence.map(item => item.name).slice(0, 6) },
   })
 }
 
@@ -369,7 +246,7 @@ export async function analyzeArtifactEvidence(input: ArtifactAnalysisRunInput): 
     runId: input.runId,
     phase: 'visual_review',
     status: ARTIFACT_ANALYSIS_EVENT_STATUS.STARTED,
-    label: '正在解读核验证据',
+    label: '正在解读产物效果截图',
   })
 
   const [context, run, aiConfig] = await Promise.all([
@@ -383,14 +260,14 @@ export async function analyzeArtifactEvidence(input: ArtifactAnalysisRunInput): 
   const evidence = parseVerificationEvidence(run.verificationScreenshotUrls).filter(isAuthenticVerificationEvidence)
   let verificationSummary = ''
   if (evidence.length === 0) {
-    verificationSummary = '未生成产物核验证据，后续评估将基于已解析的产物内容和硬指标。'
+    verificationSummary = '未上传产物效果截图。产物效果反馈暂不能生成，其余模块会基于已解析的产物内容、任务要求、硬指标和轨迹进行评估。'
   } else {
     try {
       const result = await analyzeImages(
         evidence.map(item => item.dataUrl),
         [
-          '你是一名模型产物验收人员。请基于截图中实际可见的内容写出核验结论。',
-          '后台代验截图仅证明系统打开并渲染了上传产物；不得据此声称执行了不可信代码或验证了截图外的行为。',
+          '你是一名模型产物验收人员。以下图片是测试人员下载产物到本地、实际打开或运行后上传的产物效果截图/验收过程截图。',
+          '请只基于截图中实际可见的内容写出验收结论，不要推断截图之外的行为或运行结果。',
           '请说明截图展示了什么、能证明什么、不能证明什么，以及可见的表面效果。输出一段专业中文结论。',
           '',
           `任务：${context.task.title}`,
@@ -410,7 +287,7 @@ export async function analyzeArtifactEvidence(input: ArtifactAnalysisRunInput): 
       )
       verificationSummary = result.content
     } catch (error) {
-      verificationSummary = `已生成产物核验证据，但视觉解读未完成：${artifactAnalysisErrorMessage(error)}`
+      verificationSummary = `已上传产物效果截图，但视觉解读未完成：${artifactAnalysisErrorMessage(error)}`
     }
   }
 
@@ -422,7 +299,7 @@ export async function analyzeArtifactEvidence(input: ArtifactAnalysisRunInput): 
     runId: input.runId,
     phase: 'visual_review',
     status: ARTIFACT_ANALYSIS_EVENT_STATUS.COMPLETED,
-    label: '核验证据解读完成',
+    label: '产物效果截图解读完成',
     detail: trimForDisplay(verificationSummary),
     metadata: { evidenceCount: evidence.length },
   })
@@ -449,11 +326,11 @@ export async function analyzeArtifactFiles(input: ArtifactAnalysisRunInput): Pro
     phase: 'content_review',
     status: ARTIFACT_ANALYSIS_EVENT_STATUS.STARTED,
     label: '正在拆解产物内容',
-    detail: candidates.length ? `将重点分析 ${candidates.length} 个可解析产物。` : '没有可直接解析的文本产物，将保留核验限制。',
+    detail: candidates.length ? `将重点分析 ${candidates.length} 个可解析产物。` : '没有可直接解析的文本产物，将保留截图与产物内容限制。',
   })
 
   if (candidates.length === 0) {
-    const fallback = '（未上传可解析的文本产物，后续报告将基于产物核验证据和硬指标进行评估。）'
+    const fallback = '（未上传可解析的文本产物，后续报告将基于可用产物效果截图、硬指标和任务信息进行评估。）'
     await appendArtifactAnalysisEvent({
       runId: input.runId,
       phase: 'content_review',
@@ -625,7 +502,7 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     artifactSignature: currentSignature,
     artifactCount: context.artifacts.length,
     verificationScreenshotUrls: run.verificationScreenshotUrls,
-    verificationSummary: run.verificationSummary || '未生成核验证据解读。',
+    verificationSummary: run.verificationSummary || '未上传产物效果截图，暂无法生成产物效果反馈。',
     filesAnalysis,
   }
 
@@ -633,7 +510,7 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     prisma.taskModel.update({
       where: { id: context.id },
       data: {
-        verificationScreenshotUrls: run.verificationScreenshotUrls,
+        ...(run.verificationScreenshotUrls ? { verificationScreenshotUrls: run.verificationScreenshotUrls } : {}),
         artifactAnalysisJson: JSON.stringify(analysis),
       },
     }),
@@ -652,7 +529,7 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     phase: 'complete',
     status: ARTIFACT_ANALYSIS_EVENT_STATUS.COMPLETED,
     label: '产物预分析已完成',
-    detail: '核验证据与分析结论已保存。生成评估报告时会优先复用本次结果。',
+    detail: '产物内容分析结论已保存。生成评估报告时会优先复用本次结果；产物效果反馈仍以测试人员上传的本地验收截图为准。',
   })
 }
 

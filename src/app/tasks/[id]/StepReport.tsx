@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, Activity, Award, Check, Copy,
   FileCheck2, ListChecks, Pencil,
@@ -51,7 +51,7 @@ type ModelSummary = {
 
 const PHASE_TEXT: Record<string, string> = {
   reusing_artifact_analysis: '正在复用已完成的产物预分析...',
-  analyzing_images: '正在解读产物核验证据...',
+  analyzing_images: '正在解读产物效果截图...',
   analyzing_files: '正在逐份分析产物文件...',
   analyzing_file: '正在分析当前产物文件...',
   synthesizing: '正在汇总全部产物分析...',
@@ -112,23 +112,20 @@ export default function StepReport({ task, onRefresh }: Props) {
   const [activeJobs, setActiveJobs] = useState<Record<string, ActiveJob>>({})
   const [adjustText, setAdjustText] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  const [note, setNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [note, setNote] = useState<{ type: 'ok' | 'warn' | 'err'; text: string } | null>(null)
   const [streamPreview, setStreamPreview] = useState<Record<string, string>>({})
   const abortRefs = useRef<Record<string, AbortController>>({})
 
-  const models = task.models || []
-
-  useEffect(() => {
-    if (models.length > 0 && !selectedModelId) setSelectedModelId(models[0].id)
-  }, [models, selectedModelId])
+  const models = useMemo(() => task.models || [], [task.models])
+  const currentModelId = selectedModelId ?? models[0]?.id ?? null
 
   useEffect(() => () => {
     Object.values(abortRefs.current).forEach(ctrl => ctrl.abort())
   }, [])
 
-  const selectedModel = models.find((model: any) => model.id === selectedModelId)
+  const selectedModel = models.find((model: any) => model.id === currentModelId)
   const latestReport = selectedModel?.reports?.[0]
-  const activeJob = selectedModelId ? activeJobs[selectedModelId] : undefined
+  const activeJob = currentModelId ? activeJobs[currentModelId] : undefined
   const isGenerating = Boolean(activeJob && activeJob.mode === 'generate')
   const isAdjusting = Boolean(activeJob && activeJob.mode === 'adjust')
   const testerEvidenceCount = selectedModel
@@ -152,7 +149,7 @@ export default function StepReport({ task, onRefresh }: Props) {
     { ...SECTION_DEFS[4], content: latestReport.trajectoryAnalysis || (selectedModel?.processText ? selectedModel.processText : '未提供轨迹截图。') },
   ] : []
 
-  function showNote(type: 'ok' | 'err', text: string, timeout = type === 'err' ? 8000 : 3000) {
+  function showNote(type: 'ok' | 'warn' | 'err', text: string, timeout = type === 'err' ? 8000 : 3000) {
     setNote({ type, text })
     window.setTimeout(() => setNote(null), timeout)
   }
@@ -261,8 +258,7 @@ export default function StepReport({ task, onRefresh }: Props) {
 
   function generateReport(modelId: string) {
     if (!hasTesterEvidence) {
-      showNote('err', '请先完成后台代验，或上传/捕获至少 1 张核验证据。')
-      return
+      showNote('warn', '未上传产物效果截图，将先生成交付效率、产物质量、综合评价和轨迹分析；产物效果反馈会标记为待补齐。', 6000)
     }
     runReportStream({ modelId, mode: 'generate', body: { modelId } })
   }
@@ -278,7 +274,7 @@ export default function StepReport({ task, onRefresh }: Props) {
     window.setTimeout(() => setCopiedKey(null), 1600)
   }
 
-  const liveStreamText = selectedModelId ? (streamPreview[selectedModelId] || '') : ''
+  const liveStreamText = currentModelId ? (streamPreview[currentModelId] || '') : ''
 
   // Build per-model score summary
   const modelSummaries: ModelSummary[] = models.map((model: any): ModelSummary => {
@@ -295,7 +291,7 @@ export default function StepReport({ task, onRefresh }: Props) {
     }
   })
 
-  const sel = modelSummaries.find((s: ModelSummary) => s.id === selectedModelId)
+  const sel = modelSummaries.find((s: ModelSummary) => s.id === currentModelId)
 
   return (
     <div className="space-y-5 animate-rise">
@@ -309,7 +305,7 @@ export default function StepReport({ task, onRefresh }: Props) {
           <div>
             <h2 className="display text-xl sm:text-2xl tracking-tight">评估报告</h2>
             <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-              基于产物核验证据与上传产物，输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
+              基于本地验收截图与上传产物，输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
             </p>
           </div>
         </div>
@@ -318,7 +314,7 @@ export default function StepReport({ task, onRefresh }: Props) {
         {models.length > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {modelSummaries.map((m: ModelSummary) => {
-              const isActive = selectedModelId === m.id
+              const isActive = currentModelId === m.id
               return (
                 <button
                   key={m.id}
@@ -341,9 +337,13 @@ export default function StepReport({ task, onRefresh }: Props) {
           'flex items-start gap-2 px-4 py-2.5 rounded-xl border text-sm select-text break-words animate-rise',
           note.type === 'ok'
             ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-            : 'bg-red-500/10 border-red-500/20 text-red-300',
+            : note.type === 'warn'
+              ? 'bg-amber-500/10 border-amber-500/20 text-amber-200'
+              : 'bg-red-500/10 border-red-500/20 text-red-300',
         )}>
-          {note.type === 'ok' ? <Check className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+          {note.type === 'ok'
+            ? <Check className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            : <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
           <span>{note.text}</span>
         </div>
       )}
@@ -353,7 +353,7 @@ export default function StepReport({ task, onRefresh }: Props) {
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
           {modelSummaries.map((m: ModelSummary) => {
             const tier = tierClass(m.overall)
-            const isActive = selectedModelId === m.id
+            const isActive = currentModelId === m.id
             return (
               <button
                 key={m.id}
@@ -414,8 +414,7 @@ export default function StepReport({ task, onRefresh }: Props) {
                 variant={latestReport ? 'secondary' : 'primary'}
                 size="sm"
                 onClick={() => generateReport(selectedModel.id)}
-                disabled={!hasTesterEvidence}
-                title={!hasTesterEvidence ? '请先完成后台代验或保存至少 1 张核验证据' : undefined}
+                title={!hasTesterEvidence ? '未上传截图时会先生成除产物效果反馈外的其他模块' : undefined}
               >
                 {latestReport ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
                 {latestReport ? '重新生成' : '生成评估报告'}
@@ -607,9 +606,9 @@ export default function StepReport({ task, onRefresh }: Props) {
                     尚未生成 <span className="mono text-cyan-300">{selectedModel.modelCode}</span> 的评估报告
                   </h4>
                   <p className="text-[13px] text-gray-500 max-w-sm mb-5">
-                    完成后台代验或保存核验证据后，生成包含五大模块的正式评估报告。
+                    可先生成效率、质量、综合与轨迹分析；上传产物效果截图后可补齐产物效果反馈。
                   </p>
-                  <Button onClick={() => generateReport(selectedModel.id)} size="sm" disabled={!hasTesterEvidence}>
+                  <Button onClick={() => generateReport(selectedModel.id)} size="sm">
                     <Sparkles className="h-3.5 w-3.5" />
                     开始生成评估报告
                   </Button>

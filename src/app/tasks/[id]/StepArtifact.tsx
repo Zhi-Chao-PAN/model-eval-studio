@@ -91,8 +91,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         showNote('err', '上传失败: ' + (data.error || '未知错误'))
         return
       }
-      showNote('ok', `已上传 ${files.length} 个产物文件`)
-      onRefresh()
+      showNote('ok', `已上传 ${files.length} 个产物文件，正在自动提交预分析`)
+      await analyzeModelArtifacts(modelId, { automatic: true })
     } finally {
       setUploadingModelId(null)
       input.value = ''
@@ -116,8 +116,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       }
       setTextContent('')
       setSelectedModel(null)
-      showNote('ok', '文本产物已添加')
-      onRefresh()
+      showNote('ok', '文本产物已添加，正在自动提交预分析')
+      await analyzeModelArtifacts(selectedModel, { automatic: true })
     } finally {
       setAddingText(false)
     }
@@ -138,7 +138,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
     onRefresh()
   }
 
-  async function analyzeModelArtifacts(modelId: string) {
+  async function analyzeModelArtifacts(modelId: string, options: { automatic?: boolean } = {}) {
     setStartingModelId(modelId)
     try {
       const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifact-analysis', {
@@ -148,12 +148,16 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       })
       const data = await readJsonResponse(res)
       if (!res.ok) {
-        showNote('err', '预分析失败: ' + (data.error || '未知错误'))
+        showNote('err', (options.automatic ? '自动预分析失败: ' : '预分析失败: ') + (data.error || '未知错误'))
         return
       }
       showNote(
         'ok',
-        data.alreadyRunning ? '该模型正在后台分析，轨迹会自动更新。' : '已提交后台分析，核验与产物拆解轨迹会自动更新。',
+        data.alreadyRunning
+          ? '该模型正在后台分析，轨迹会自动更新。'
+          : options.automatic
+            ? '已自动提交后台产物预分析，轨迹会自动更新。'
+            : '已提交后台产物预分析，拆解轨迹会自动更新。',
       )
       onRefresh()
     } finally {
@@ -224,7 +228,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         <div>
           <h2 className="display text-xl sm:text-2xl tracking-tight">产物提交</h2>
           <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-            为每个待测模型上传或粘贴最终产物，上传完毕后可先完成后台核验与产物预分析。
+            为每个待测模型上传或粘贴最终产物，上传后系统会自动启动后台解压、解析与产物预分析。
           </p>
         </div>
       </div>
@@ -313,9 +317,9 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                       onClick={() => analyzeModelArtifacts(model.id)}
                        loading={startingModelId === model.id}
                        loadingText="正在提交..."
-                       disabled={artifactCount === 0 || isUploading || hasRunningAnalysis}
+                       disabled={artifactCount === 0 || isUploading || isAnalyzing}
                     >
-                      <Sparkles className="h-3 w-3" /> {isAnalyzing ? '后台分析中' : hasFreshAnalysis ? '重新分析' : '上传完毕，开始分析'}
+                      <Sparkles className="h-3 w-3" /> {isAnalyzing ? '后台分析中' : hasFreshAnalysis ? '重新分析' : '开始预分析'}
                     </Button>
                     <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
                       <Plus className="h-3 w-3" /> 粘贴文本
