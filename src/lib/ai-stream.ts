@@ -63,9 +63,59 @@ async function* streamOpenAI(
     stream_options: { include_usage: true },
   } as any)) as any
 
+  // 用于过滤 <think> 标签中的思考内容
+  let inThinkBlock = false
+  let thinkBuffer = ''
+
   for await (const chunk of stream) {
-    const delta = chunk.choices?.[0]?.delta?.content
-    if (delta) yield { type: 'delta', content: delta }
+    const delta = chunk.choices?.[0]?.delta
+    // 跳过 reasoning / thinking 内容，只输出实际回答
+    const content = delta?.content
+    const reasoning = delta?.reasoning_content
+    if (reasoning) continue
+    if (!content) {
+      // 检查 usage
+      if ((chunk as any).usage) {
+        const u = (chunk as any).usage
+        yield {
+          type: 'usage',
+          usage: {
+            promptTokens: u.prompt_tokens ?? 0,
+            completionTokens: u.completion_tokens ?? 0,
+            totalTokens: u.total_tokens ?? 0,
+          },
+        }
+      }
+      continue
+    }
+
+    // 过滤 <think>...</think> 标签中的思考内容
+    let filtered = ''
+    let i = 0
+    while (i < content.length) {
+      if (!inThinkBlock) {
+        const thinkStart = content.indexOf('<think>', i)
+        if (thinkStart === -1) {
+          filtered += content.slice(i)
+          break
+        }
+        filtered += content.slice(i, thinkStart)
+        inThinkBlock = true
+        i = thinkStart + 7 // '<think>'.length
+      } else {
+        const thinkEnd = content.indexOf('</think>', i)
+        if (thinkEnd === -1) {
+          // think 块还没结束，跳过剩余内容
+          break
+        }
+        inThinkBlock = false
+        i = thinkEnd + 8 // '</think>'.length
+      }
+    }
+
+    if (filtered) {
+      yield { type: 'delta', content: filtered }
+    }
 
     // Some providers include usage on the final chunk
     if ((chunk as any).usage) {
@@ -124,6 +174,9 @@ async function* streamAnthropic(
   let inputTokens = 0
   let outputTokens = 0
 
+  // 过滤 <think> 标签
+  let inThinkBlock = false
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
@@ -143,7 +196,29 @@ async function* streamAnthropic(
         // Content block delta
         if (type === 'content_block_delta') {
           const delta = parsed.delta?.text
-          if (delta) yield { type: 'delta', content: delta }
+          if (delta) {
+            // 过滤 <think> 标签
+            let filtered = ''
+            let i = 0
+            while (i < delta.length) {
+              if (!inThinkBlock) {
+                const thinkStart = delta.indexOf('<think>', i)
+                if (thinkStart === -1) {
+                  filtered += delta.slice(i)
+                  break
+                }
+                filtered += delta.slice(i, thinkStart)
+                inThinkBlock = true
+                i = thinkStart + 7
+              } else {
+                const thinkEnd = delta.indexOf('</think>', i)
+                if (thinkEnd === -1) break
+                inThinkBlock = false
+                i = thinkEnd + 8
+              }
+            }
+            if (filtered) yield { type: 'delta', content: filtered }
+          }
         }
 
         // Message start - contains input tokens
