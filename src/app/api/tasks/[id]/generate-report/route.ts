@@ -65,12 +65,6 @@ export async function POST(
 
   const testerEvidence = parseVerificationEvidence(model.verificationScreenshotUrls)
     .filter(isAuthenticVerificationEvidence)
-  if (!adjustInstruction && testerEvidence.length === 0) {
-    return new Response(
-      JSON.stringify({ error: '请先完成后台代验，或上传/捕获至少 1 张核验证据后再生成报告。' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } },
-    )
-  }
 
   const aiConfig = await getUserAiConfig(session.userId)
   if (!aiConfig) {
@@ -96,8 +90,8 @@ export async function POST(
       try {
         send('start', { ts: startedAtInner })
 
-        // Only stored, source-marked evidence is eligible for report analysis.
-        let verificationScreenshotUrls = model.verificationScreenshotUrls || null
+        // Only tester-uploaded local acceptance screenshots are eligible for report analysis.
+        let verificationScreenshotUrls = testerEvidence.length ? serializeVerificationEvidence(testerEvidence) : null
         let verificationSummary = ''
 
         if (adjustInstruction && model.reports.length > 0) {
@@ -110,7 +104,7 @@ export async function POST(
             ? serializeVerificationEvidence(reportEvidence)
             : null
           verificationSummary = reportEvidence.length
-            ? current.verificationSummary || '已提供产物核验证据，但未保留截图解读。'
+            ? current.verificationSummary || '已提供产物效果截图，但未保留截图解读。'
             : missingEvidenceSummary()
 
           phase('adjusting_report', { modelCode: model.modelCode })
@@ -187,22 +181,26 @@ export async function POST(
             hasImages: verificationEvidence.length > 0,
           })
           if (preAnalysis) {
-            verificationScreenshotUrls = preAnalysis.verificationScreenshotUrls || verificationScreenshotUrls
-            verificationSummary = preAnalysis.verificationSummary
+            const preAnalysisEvidence = parseVerificationEvidence(preAnalysis.verificationScreenshotUrls)
+              .filter(isAuthenticVerificationEvidence)
+            verificationScreenshotUrls = preAnalysisEvidence.length
+              ? serializeVerificationEvidence(preAnalysisEvidence)
+              : verificationScreenshotUrls
+            verificationSummary = preAnalysisEvidence.length || verificationEvidence.length
+              ? preAnalysis.verificationSummary
+              : missingEvidenceSummary(storedEvidence.length > 0)
           } else if (verificationEvidence.length > 0) {
             try {
               const imgResult = await analyzeImages(
                 verificationEvidence.map((image) => image.dataUrl),
                 [
-                  '你是模型产物验收员。以下证据可能来自后台代验截图、测试者上传截图或窗口捕获。',
-                  '后台代验截图只能证明系统打开并渲染了上传产物的可见内容；测试者上传/窗口捕获只能证明截图中出现的实际核验画面。',
-                  '它们可以证明截图中出现的界面、文本、数据或工具结果，但不能证明截图之外的行为。',
-                  '截图只能证明画面中实际出现的内容，严禁据此补全截图之外的行为或运行结果。',
-                  '不能根据文件名或想象补全运行结果。',
+                  '你是模型产物验收员。以下图片是测试人员下载产物到本地、实际打开或运行后上传的产物效果截图/验收过程截图。',
+                  '这些截图只能证明画面中实际出现的内容；不要推断截图之外的运行行为，也不要根据文件名或想象补全运行结果。',
+                  '重点判断：截图是否展示了产物被实际打开、运行或查看；产物效果是否满足任务目标；是否存在明显错误、空白、乱码、格式错乱或功能缺失。',
                   `证据来源：${describeEvidenceSources(verificationEvidence)}`,
                   '请仔细阅读截图中的内容（文件名、文本内容、代码、数据等），判断：',
-                  '1. 截图显示了什么内容？是否足以证明产物被实际打开和核验？',
-                  '2. 从截图中可以看到产物的表面效果如何？是否存在明显错误、缺失、乱码、格式问题？',
+                  '1. 截图显示了什么内容？是否足以证明我已经实际验收产物？',
+                  '2. 从截图中可以看到产物效果如何？是否存在明显错误、缺失、乱码、格式问题？',
                   '3. 结合产物文本内容，给出初步验收结论：产物是否符合任务预期？有哪些亮点或问题？',
                   '请输出 1 段中文结论，客观具体，不夸大不回避问题。',
                   '',
@@ -227,7 +225,7 @@ export async function POST(
                 totalTokenOutput += imgResult.usage.completionTokens
               }
             } catch (err: any) {
-              verificationSummary = '已提供产物核验证据，但视觉解读失败：' + (err?.message || String(err))
+              verificationSummary = '已提供产物效果截图，但视觉解读失败：' + (err?.message || String(err))
             }
           } else {
             verificationSummary = missingEvidenceSummary(storedEvidence.length > 0)
@@ -261,7 +259,7 @@ export async function POST(
           })
 
           if (textArtifacts.length === 0) {
-            filesAnalysis = '（未上传可解析的文本产物，基于产物核验证据和硬指标进行评估。）'
+            filesAnalysis = '（未上传可解析的文本产物，基于产物效果截图和硬指标进行评估。）'
           } else {
             const perFileResults = await Promise.all(textArtifacts.map(async (artifact, i) => {
               const fileContent = artifact.parsedText || artifact.textContent || ''
@@ -463,22 +461,14 @@ function buildArtifactsText(artifacts: Array<{ name: string; parsedText?: string
 }
 
 function describeEvidenceSources(evidence: VerificationEvidence[]): string {
-  const captured = evidence.filter(image => image.source === 'screen_capture').length
   const uploaded = evidence.filter(image => image.source === 'tester_upload').length
-  const backend = evidence.filter(image => image.source === 'backend_capture').length
-  const sandbox = evidence.filter(image => image.source === 'sandbox_auto').length
-  const parts: string[] = []
-  if (backend) parts.push(`${backend} 张后台代验截图`)
-  if (sandbox) parts.push(`${sandbox} 张沙箱代验截图`)
-  if (captured) parts.push(`${captured} 张浏览器窗口捕获`)
-  if (uploaded) parts.push(`${uploaded} 张测试人员上传截图`)
-  return parts.join('，') || '未标记来源'
+  return uploaded ? `${uploaded} 张测试人员本地验收截图` : '未上传产物效果截图'
 }
 
 function missingEvidenceSummary(hasLegacyPreview = false): string {
   return hasLegacyPreview
-    ? '仅检测到历史自动预览图，未提供可作为证据的产物核验截图。产物效果反馈只能基于上传产物文本和任务要求判断。'
-    : '未提供产物核验证据。产物效果反馈只能基于上传产物文本和任务要求判断。'
+    ? '仅检测到历史自动预览图，未提供测试人员本地验收后的产物效果截图。产物效果反馈暂不能生成，其余模块可基于产物内容、任务要求、硬指标和轨迹进行评估。'
+    : '未提供产物效果截图。产物效果反馈暂不能生成，其余模块可基于产物内容、任务要求、硬指标和轨迹进行评估。'
 }
 
 // Keep the old format/parse helpers below for reuse (same as before)

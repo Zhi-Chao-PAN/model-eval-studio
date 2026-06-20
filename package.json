@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "@sparticuz/chromium": "^149.0.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -29,8 +28,6 @@
     "officeparser": "^7.2.1",
     "openai": "^6.43.0",
     "pdf-parse": "^2.4.5",
-    "playwright-core": "^1.61.0",
-    "puppeteer-core": "^25.1.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
