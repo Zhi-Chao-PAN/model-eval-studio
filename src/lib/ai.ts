@@ -15,10 +15,21 @@ export interface GenerateOptions {
   maxTokens?: number
 }
 
+export interface AiUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+export interface GenerateResult {
+  content: string
+  usage: AiUsage | null
+}
+
 export async function generateChat(
   messages: AiMessage[],
   options: GenerateOptions
-): Promise<string> {
+): Promise<GenerateResult> {
   const { baseUrl, apiKey, model, provider, temperature = 0.7, maxTokens = 4000 } = options
 
   if (provider === 'ANTHROPIC_COMPAT') {
@@ -31,7 +42,7 @@ export async function generateChat(
 async function generateChatOpenai(
   messages: AiMessage[],
   options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number }
-): Promise<string> {
+): Promise<GenerateResult> {
   const openai = new OpenAI({
     baseURL: options.baseUrl,
     apiKey: options.apiKey,
@@ -44,13 +55,22 @@ async function generateChatOpenai(
     max_tokens: options.maxTokens,
   })
 
-  return response.choices[0]?.message?.content || ''
+  const content = response.choices[0]?.message?.content || ''
+  const usage = response.usage
+    ? {
+        promptTokens: response.usage.prompt_tokens,
+        completionTokens: response.usage.completion_tokens,
+        totalTokens: response.usage.total_tokens,
+      }
+    : null
+
+  return { content, usage }
 }
 
 async function generateChatAnthropic(
   messages: AiMessage[],
   options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number }
-): Promise<string> {
+): Promise<GenerateResult> {
   const systemMsgs = messages.filter((m) => m.role === 'system').map((m) => m.content)
   const nonSystemMsgs = messages.filter((m) => m.role !== 'system')
 
@@ -85,7 +105,16 @@ async function generateChatAnthropic(
   }
 
   const data = await res.json()
-  return data.content?.[0]?.text || ''
+  const content = data.content?.[0]?.text || ''
+  const usage = data.usage
+    ? {
+        promptTokens: data.usage.input_tokens ?? 0,
+        completionTokens: data.usage.output_tokens ?? 0,
+        totalTokens: (data.usage.input_tokens ?? 0) + (data.usage.output_tokens ?? 0),
+      }
+    : null
+
+  return { content, usage }
 }
 
 export async function validateApiKey(options: GenerateOptions): Promise<{ ok: boolean; error?: string }> {
@@ -116,7 +145,7 @@ export async function analyzeImages(
   imageUrls: string[],
   prompt: string,
   options: GenerateOptions
-): Promise<string> {
+): Promise<GenerateResult> {
   if (options.provider === 'ANTHROPIC_COMPAT') {
     throw new Error('图片分析仅支持 OpenAI 兼容模式，请在设置中切换 provider 后重试')
   }
@@ -125,7 +154,7 @@ export async function analyzeImages(
     throw new Error('至少需要 1 张图片')
   }
 
-  const content: any[] = [
+  const messageContent: any[] = [
     { type: 'text', text: prompt },
     ...imageUrls.map((url) => ({
       type: 'image_url',
@@ -135,7 +164,7 @@ export async function analyzeImages(
 
   const body = {
     model: options.model,
-    messages: [{ role: 'user', content }],
+    messages: [{ role: 'user', content: messageContent }],
     temperature: options.temperature ?? 0.3,
     max_tokens: options.maxTokens ?? 4000,
     max_completion_tokens: options.maxTokens ?? 4000,
@@ -165,5 +194,15 @@ export async function analyzeImages(
   const data = await res.json()
   // Strip <think>...</think> blocks from output (MiniMax M3 reasoning chatter)
   const raw = data?.choices?.[0]?.message?.content || ''
-  return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+  const content = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+
+  const usage = data.usage
+    ? {
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+        totalTokens: data.usage.total_tokens ?? 0,
+      }
+    : null
+
+  return { content, usage }
 }

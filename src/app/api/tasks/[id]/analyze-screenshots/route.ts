@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
 import { buildScreenshotAnalysisPrompt, buildDashboardAnalysisPrompt } from '@/lib/ai-prompts'
+import { logAudit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -40,11 +41,15 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) {
     return new Response(JSON.stringify({ error: '未登录' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
   }
   const { id } = await params
+
+  let tokenInput: number | null = null
+  let tokenOutput: number | null = null
 
   let images: string[] = []
   let type: 'process' | 'dashboard' = 'process'
@@ -139,8 +144,18 @@ export async function POST(
           else if (res.status === 404) hint = 'Base URL 或模型名称错误'
           else if (res.status === 429) hint = '触发限流，请稍后重试'
           else if (res.status >= 500) hint = '视觉模型服务端异常，请稍后重试'
-        send('error', { status: res.status, message: ('URL: ' + fullUrl + '  ERR: ' + (errText || hint || '视觉模型调用失败')).slice(0, 800), hint })
+          const errMsg = ('URL: ' + fullUrl + '  ERR: ' + (errText || hint || '视觉模型调用失败')).slice(0, 800)
+          send('error', { status: res.status, message: errMsg, hint })
           controller.close()
+          logAudit(request, {
+            action: 'AI_SCREENSHOT_ANALYZE',
+            userId: session.userId,
+            taskId: id,
+            status: 'error',
+            error: errMsg,
+            durationMs: Date.now() - startedAt,
+            detail: { imageCount: images.length, type },
+          })
           return
         }
 
@@ -173,6 +188,11 @@ export async function POST(
               if (delta) {
                 fullText += delta
                 send('delta', { text: delta })
+              }
+              // Capture token usage from final chunk
+              if (payload.usage) {
+                tokenInput = payload.usage.prompt_tokens ?? null
+                tokenOutput = payload.usage.completion_tokens ?? null
               }
             } catch {}
           }
@@ -262,6 +282,17 @@ export async function POST(
         send('error', { message: e?.message || String(e) })
       } finally {
         try { controller.close() } catch {}
+        logAudit(request, {
+          action: 'AI_SCREENSHOT_ANALYZE',
+          userId: session.userId,
+          taskId: id,
+          status: finishReason === 'length' ? 'error' : (images.length > 0 ? 'success' : 'error'),
+          error: finishReason === 'length' ? '输出长度上限' : null,
+          tokenInput,
+          tokenOutput,
+          durationMs: Date.now() - startedAt,
+          detail: { imageCount: images.length, type },
+        })
       }
     },
   })

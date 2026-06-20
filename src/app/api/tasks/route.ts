@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
+import { logAudit } from '@/lib/audit'
 
 // 获取当前用户的任务列表
 export async function GET() {
@@ -33,35 +34,59 @@ export async function GET() {
 
 // 创建新任务
 export async function POST(request: Request) {
+  const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) {
     return NextResponse.json({ error: '未登录' }, { status: 401 })
   }
 
-  const { title, category, requirementType, requirementName, description } = await request.json()
-  if (!title) {
-    return NextResponse.json({ error: '任务名称必填' }, { status: 400 })
-  }
+  let status: 'success' | 'error' = 'error'
+  let errorMsg: string | null = null
+  let taskId: string | null = null
+  let title = ''
 
-  // 获取用户背景作为默认
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { background: true },
-  })
+  try {
+    const body = await request.json()
+    title = body.title || ''
+    const { category, requirementType, requirementName, description } = body
 
-  const task = await prisma.task.create({
-    data: {
+    if (!title) {
+      errorMsg = '任务名称必填'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    // 获取用户背景作为默认
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { background: true },
+    })
+
+    const task = await prisma.task.create({
+      data: {
+        userId: session.userId,
+        title,
+        category,
+        requirementType,
+        requirementName,
+        description,
+        backgroundUsed: user?.background || '',
+        status: 'DRAFT',
+        currentStep: 'INFO',
+      },
+    })
+
+    taskId = task.id
+    status = 'success'
+    return NextResponse.json({ task })
+  } finally {
+    logAudit(request, {
+      action: 'TASK_CREATE',
       userId: session.userId,
-      title,
-      category,
-      requirementType,
-      requirementName,
-      description,
-      backgroundUsed: user?.background || '',
-      status: 'DRAFT',
-      currentStep: 'INFO',
-    },
-  })
-
-  return NextResponse.json({ task })
+      taskId,
+      status,
+      error: errorMsg,
+      durationMs: Date.now() - startedAt,
+      detail: { title },
+    })
+  }
 }

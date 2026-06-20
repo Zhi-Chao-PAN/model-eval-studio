@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { parseFile, parseZip, sanitizeParsedText } from '@/lib/file-parser'
+import { logAudit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 
@@ -26,13 +27,24 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; modelId: string }> },
 ) {
+  const startedAt = Date.now()
+  let userId: string | null = null
+  let taskId: string | null = null
+  let status: 'success' | 'error' = 'error'
+  let errorMsg: string | null = null
+  let artifactCount = 0
+  let modelCode = ''
+
   try {
     const session = await requireAuth()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    userId = session.userId
 
     const { id, modelId } = await params
+    taskId = id
     const model = await requireOwnedModel(session.userId, id, modelId)
     if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
+    modelCode = model.modelCode
 
     const contentType = request.headers.get('content-type') || ''
 
@@ -51,18 +63,22 @@ export async function POST(
           parsedText: parsedText || null,
         },
       })
+      artifactCount = 1
+      status = 'success'
       return NextResponse.json({ artifact })
     }
 
     if (!contentType.includes('multipart/form-data')) {
-      return NextResponse.json({ error: '不支持的 Content-Type' }, { status: 400 })
+      errorMsg = '不支持的 Content-Type'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
     const formData = await request.formData()
     const files = formData.getAll('files').filter((value): value is File => value instanceof File)
 
     if (files.length === 0) {
-      return NextResponse.json({ error: '请上传文件' }, { status: 400 })
+      errorMsg = '请上传文件'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
     const created = []
@@ -72,8 +88,6 @@ export async function POST(
       let parsedText = ''
       let urlValue = ''
 
-      // For image files, store a data URL so the client can render the actual
-      // image in verification screenshots. Cap at 4 MB to avoid DB bloat.
       const isImage = file.type?.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name)
       if (isImage && file.size <= 4 * 1024 * 1024) {
         const mime = file.type || 'application/octet-stream'
@@ -110,10 +124,23 @@ export async function POST(
       created.push(artifact)
     }
 
+    artifactCount = created.length
+    status = 'success'
     return NextResponse.json({ artifacts: created })
   } catch (error: unknown) {
+    errorMsg = errorMessage(error)
     console.error('Artifact save failed:', error)
-    return NextResponse.json({ error: '产物保存失败：' + errorMessage(error) }, { status: 500 })
+    return NextResponse.json({ error: '产物保存失败：' + errorMsg }, { status: 500 })
+  } finally {
+    logAudit(request, {
+      action: 'ARTIFACT_UPLOAD',
+      userId,
+      taskId,
+      status,
+      error: errorMsg,
+      durationMs: Date.now() - startedAt,
+      detail: { artifactCount, modelCode },
+    })
   }
 }
 
@@ -121,11 +148,20 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string; modelId: string }> },
 ) {
+  const startedAt = Date.now()
+  let userId: string | null = null
+  let taskId: string | null = null
+  let status: 'success' | 'error' = 'error'
+  let errorMsg: string | null = null
+  let artifactName = ''
+
   try {
     const session = await requireAuth()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    userId = session.userId
 
     const { id, modelId } = await params
+    taskId = id
     const body = await request.json()
     const artifactId = body.artifactId
 
@@ -138,12 +174,28 @@ export async function DELETE(
         },
       },
     })
-    if (!artifact) return NextResponse.json({ error: '文件不存在' }, { status: 404 })
+    if (!artifact) {
+      errorMsg = '文件不存在'
+      return NextResponse.json({ error: errorMsg }, { status: 404 })
+    }
+    artifactName = artifact.name
 
     await prisma.modelArtifact.delete({ where: { id: artifactId } })
+    status = 'success'
     return NextResponse.json({ ok: true })
   } catch (error: unknown) {
+    errorMsg = errorMessage(error)
     console.error('Artifact delete failed:', error)
-    return NextResponse.json({ error: '产物删除失败：' + errorMessage(error) }, { status: 500 })
+    return NextResponse.json({ error: '产物删除失败：' + errorMsg }, { status: 500 })
+  } finally {
+    logAudit(request, {
+      action: 'ARTIFACT_DELETE',
+      userId,
+      taskId,
+      status,
+      error: errorMsg,
+      durationMs: Date.now() - startedAt,
+      detail: { artifactName },
+    })
   }
 }

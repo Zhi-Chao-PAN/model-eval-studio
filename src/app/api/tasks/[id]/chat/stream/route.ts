@@ -4,6 +4,7 @@ import { getUserAiConfig } from '@/lib/user-ai'
 import { streamChat } from '@/lib/ai-stream'
 import { buildSystemPrompt } from '@/lib/ai-prompts'
 import { filterConversationMessages, getWorkflowContent } from '@/lib/task-messages'
+import { logAudit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,16 +13,16 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) {
     return new Response(JSON.stringify({ error: '未登录' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
   }
   const { id } = await params
-  const { message, step, modelId } = await request.json()
 
-  if (!message || !step) {
-    return new Response(JSON.stringify({ error: 'message 和 step 必填' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
-  }
+  let tokenInput: number | null = null
+  let tokenOutput: number | null = null
+  let userMessageText = ''
 
   const task = await prisma.task.findFirst({
     where: { id, userId: session.userId, status: { not: 'DELETED' } },
@@ -37,6 +38,14 @@ export async function POST(
   const aiConfig = await getUserAiConfig(session.userId)
   if (!aiConfig) {
     return new Response(JSON.stringify({ error: '请先在设置中配置 AI 模型' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+
+  const body = await request.json()
+  const { message, step, modelId } = body
+  userMessageText = message || ''
+
+  if (!message || !step) {
+    return new Response(JSON.stringify({ error: 'message 和 step 必填' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
   }
 
   const history = await prisma.taskMessage.findMany({
@@ -86,6 +95,7 @@ export async function POST(
 
   const encoder = new TextEncoder()
   let fullText = ''
+  let streamError: string | null = null
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -97,7 +107,7 @@ export async function POST(
         send('user-message', { message: userMsg })
         send('start', { ts: Date.now() })
 
-        for await (const delta of streamChat(messages, {
+        for await (const chunk of streamChat(messages, {
           baseUrl: aiConfig.baseUrl,
           apiKey: aiConfig.apiKey,
           model: aiConfig.model,
@@ -105,8 +115,13 @@ export async function POST(
           temperature: 0.7,
           maxTokens: 2000,
         })) {
-          fullText += delta
-          send('delta', { text: delta })
+          if (chunk.type === 'delta') {
+            fullText += chunk.content
+            send('delta', { text: chunk.content })
+          } else if (chunk.type === 'usage') {
+            tokenInput = chunk.usage.promptTokens
+            tokenOutput = chunk.usage.completionTokens
+          }
         }
 
         const assistantMsg = await prisma.taskMessage.create({
@@ -115,9 +130,22 @@ export async function POST(
 
         send('done', { full: fullText, message: assistantMsg })
       } catch (e: any) {
-        send('error', { message: e?.message || String(e) })
+        streamError = e?.message || String(e)
+        send('error', { message: streamError })
       } finally {
         controller.close()
+        // Audit log after stream completes
+        logAudit(request, {
+          action: 'AI_CHAT',
+          userId: session.userId,
+          taskId: id,
+          status: streamError ? 'error' : 'success',
+          error: streamError,
+          tokenInput,
+          tokenOutput,
+          durationMs: Date.now() - startedAt,
+          detail: { preview: userMessageText.slice(0, 100) },
+        })
       }
     },
   })
