@@ -9,6 +9,7 @@ import {
   type TaskType,
 } from '@/lib/ai-prompts'
 import { logAudit } from '@/lib/audit'
+import { parseDesignOutput } from '@/lib/design-output'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -131,6 +132,7 @@ export async function POST(
           full: fullText,
           prompt: parsedPrompt,
           background: parsedBackground,
+          thinking: parseDesignOutput(fullText).thinking,
         })
       } catch (e: any) {
         streamError = e?.message || String(e)
@@ -160,38 +162,4 @@ export async function POST(
       'X-Accel-Buffering': 'no',
     },
   })
-}
-
-// 解析 AI 输出的两部分：任务 Prompt 和 背景说明
-function parseDesignOutput(text: string): { prompt: string; background: string } {
-  // 尝试多种分隔模式
-  const patterns = [
-    /第一部分[：:].*?任务.*?Prompt.*?\n([\s\S]*?)\n---*\s*\n第二部分[：:].*?背景/g,
-    /任务 Prompt[：:]?\n([\s\S]*?)\n---*\s*\n(?:题目来源|背景)/g,
-    /---\s*\n(.*)/g,
-  ]
-
-  // 简单粗暴：找 "---" 分隔线
-  const separatorIndex = text.indexOf('\n---')
-  if (separatorIndex !== -1) {
-    const firstPart = text.slice(0, separatorIndex).trim()
-    const secondPart = text.slice(separatorIndex).trim()
-    // 清理第一部分的标题
-    const prompt = firstPart
-      .replace(/^.*?第一部分[：:].*$/m, '')
-      .replace(/^.*?任务\s*Prompt[：:].*$/m, '')
-      .trim()
-    // 清理第二部分的标题
-    const background = secondPart
-      .replace(/^-+\s*$/m, '')
-      .replace(/^.*?第二部分[：:].*$/m, '')
-      .replace(/^.*?(?:题目来源|背景说明)[：:].*$/m, '')
-      .trim()
-    if (prompt || background) {
-      return { prompt: prompt || text, background: background || '' }
-    }
-  }
-
-  // fallback：全部当作 prompt
-  return { prompt: text, background: '' }
 }

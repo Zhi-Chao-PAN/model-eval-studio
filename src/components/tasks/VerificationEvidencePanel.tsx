@@ -2,8 +2,8 @@
 
 import { ChangeEvent, useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, Camera, Eye, FileImage, FileText,
-  Loader2, MonitorUp, Trash2, Upload, X,
+  AlertTriangle, Camera, ExternalLink, Eye, FileImage, FileText,
+  Loader2, MonitorUp, Sparkles, Trash2, Upload, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +14,11 @@ import {
   serializeVerificationEvidence,
   type VerificationEvidence,
 } from '@/lib/verification-evidence'
+import {
+  buildLegacyArchivePreview,
+  buildPreviewFrameDocument,
+  parseStoredArtifactPreview,
+} from '@/lib/artifact-preview'
 
 type ArtifactLike = {
   id: string
@@ -23,6 +28,7 @@ type ArtifactLike = {
   parsedText?: string | null
   textContent?: string | null
   size?: number | null
+  previewJson?: string | null
 }
 
 type ModelLike = {
@@ -60,11 +66,11 @@ function isImageArtifact(artifact: ArtifactLike): boolean {
   )
 }
 
-function sourceLabel(source: VerificationEvidence['source']): string {
-  if (source === 'backend_capture') return '后台截图'
-  if (source === 'sandbox_auto') return '沙箱核验'
-  if (source === 'screen_capture') return '窗口捕获'
-  if (source === 'tester_upload') return '测试上传'
+function sourceLabel(image: VerificationEvidence): string {
+  if (image.source === 'backend_capture') return '后台代验'
+  if (image.source === 'sandbox_auto') return '沙箱代验'
+  if (image.source === 'screen_capture') return '窗口捕获'
+  if (image.source === 'tester_upload') return '测试者上传'
   return '历史预览'
 }
 
@@ -188,7 +194,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
 
   async function addEvidence(dataUrl: string, source: VerificationEvidence['source'], artifact?: ArtifactLike | null) {
     if (authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE) {
-      onNotice('err', `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张真实验证截图`)
+      onNotice('err', `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张核验证据`)
       return
     }
     const now = new Date()
@@ -196,7 +202,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
       ...authenticEvidence,
       {
         id: makeEvidenceId(),
-        name: `${source === 'screen_capture' ? '窗口捕获' : '验证截图'}-${now.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`,
+        name: `${source === 'screen_capture' ? '窗口捕获' : source === 'tester_upload' ? '上传截图' : '核验截图'}-${now.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`,
         dataUrl,
         source,
         artifactId: artifact?.id,
@@ -204,7 +210,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
         capturedAt: now.toISOString(),
       },
     ]
-    await persist(next, '真实验证截图已保存')
+    await persist(next, '核验证据已保存')
   }
 
   async function handleFileInput(event: ChangeEvent<HTMLInputElement>) {
@@ -214,7 +220,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
 
     const remaining = MAX_VERIFICATION_EVIDENCE - authenticEvidence.length
     if (remaining <= 0) {
-      onNotice('err', `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张真实验证截图`)
+      onNotice('err', `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张核验证据`)
       return
     }
 
@@ -241,7 +247,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(payload.error || '保存验证截图失败')
       setEvidence(next)
-      onNotice('ok', `已保存 ${additions.length} 张真实验证截图`)
+      onNotice('ok', `已保存 ${additions.length} 张核验证据`)
       onRefresh()
     } catch (error) {
       onNotice('err', errorText(error))
@@ -264,7 +270,11 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
 
   async function handleBackendCapture(artifact?: ArtifactLike | null) {
     if (authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE) {
-      onNotice('err', `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张真实核验证据`)
+      onNotice('err', `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张核验证据`)
+      return
+    }
+    if (artifacts.length === 0) {
+      onNotice('err', '请先上传模型产物，再生成后台代验截图')
       return
     }
 
@@ -276,14 +286,11 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
         body: JSON.stringify({ artifactId: artifact?.id }),
       })
       const payload = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(payload.error || '后台自动截图失败')
+      if (!res.ok) throw new Error(payload.error || '后台代验截图失败')
 
-      const nextRaw = payload.model?.verificationScreenshotUrls || serializeVerificationEvidence([
-        ...authenticEvidence,
-        payload.evidence,
-      ].filter(Boolean))
-      setEvidence(parseVerificationEvidence(nextRaw))
-      onNotice('ok', artifact ? '该产物的后台自动截图已保存' : '后台自动截图已保存')
+      const nextEvidence = parseVerificationEvidence(payload.model?.verificationScreenshotUrls)
+      if (nextEvidence.length > 0) setEvidence(nextEvidence)
+      onNotice('ok', artifact ? '已生成此产物的后台代验截图' : '后台代验截图已生成')
       onRefresh()
     } catch (error) {
       onNotice('err', errorText(error))
@@ -302,6 +309,25 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
 
   const viewerText = viewerArtifact ? artifactText(viewerArtifact) : ''
   const isViewerImage = viewerArtifact ? isImageArtifact(viewerArtifact) && viewerArtifact.url?.startsWith('data:image/') : false
+  const viewerPreview = viewerArtifact
+    ? parseStoredArtifactPreview(viewerArtifact.previewJson) || (
+      /\.zip$/i.test(viewerArtifact.name) ? buildLegacyArchivePreview(viewerArtifact.name, viewerText) : null
+    )
+    : null
+
+  function openArtifactWindow() {
+    if (!viewerArtifact) return
+    if (isViewerImage && viewerArtifact.url) {
+      window.open(viewerArtifact.url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const content = viewerPreview
+      ? buildPreviewFrameDocument(viewerPreview)
+      : `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>body{margin:0;padding:40px;font:14px/1.7 "Microsoft YaHei",sans-serif;white-space:pre-wrap;color:#172033}</style></head><body>${viewerText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body></html>`
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/html;charset=utf-8' }))
+    window.open(url, '_blank', 'noopener,noreferrer')
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
 
   return (
     <>
@@ -313,11 +339,11 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
             </div>
             <div>
               <h4 className="text-[13px] font-medium text-white">产物核验证据</h4>
-              <p className="text-[10px] text-gray-500 mt-0.5">{authenticEvidence.length} / {MAX_VERIFICATION_EVIDENCE} 张真实截图</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">{authenticEvidence.length} / {MAX_VERIFICATION_EVIDENCE} 张核验证据，至少 1 张</p>
             </div>
           </div>
           <Badge variant={authenticEvidence.length ? 'success' : 'muted'} className="text-[10px]">
-            {authenticEvidence.length ? '已取证' : '待取证'}
+            {authenticEvidence.length ? '已具备证据' : '待核验'}
           </Badge>
         </div>
 
@@ -347,10 +373,10 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
             size="sm"
             onClick={() => handleBackendCapture(null)}
             loading={autoCapturing}
-            loadingText="后台截图中..."
-            disabled={saving || capturing || artifacts.length === 0 || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
+            loadingText="代验中..."
+            disabled={saving || capturing || autoCapturing || artifacts.length === 0 || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
           >
-            <Camera className="h-3.5 w-3.5" /> 后台自动截图
+            <Sparkles className="h-3.5 w-3.5" /> 一键后台代验
           </Button>
           <Button
             variant="secondary"
@@ -358,7 +384,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
             onClick={() => handleCapture(null)}
             loading={capturing}
             loadingText="捕获中..."
-            disabled={saving || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
+            disabled={saving || autoCapturing || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
           >
             <MonitorUp className="h-3.5 w-3.5" /> 捕获实际窗口
           </Button>
@@ -370,10 +396,10 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
               multiple
               className="sr-only"
               onChange={handleFileInput}
-              disabled={saving || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
+              disabled={saving || autoCapturing || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
             />
             <span className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-xs font-medium text-white transition-colors hover:bg-white/[0.1]">
-              <Upload className="h-3.5 w-3.5" /> 上传真实截图
+              <Upload className="h-3.5 w-3.5" /> 上传截图
             </span>
           </label>
           {saving && <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />}
@@ -392,7 +418,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
                   <img src={image.dataUrl} alt={image.name} className="h-full w-full object-cover" />
                 </button>
                 <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-1 bg-gradient-to-t from-black/85 to-transparent px-1.5 py-1.5 pointer-events-none">
-                  <span className="min-w-0 truncate text-[9px] text-gray-200">{sourceLabel(image.source)}</span>
+                  <span className="min-w-0 truncate text-[9px] text-gray-200">{sourceLabel(image)}</span>
                   <button
                     type="button"
                     onClick={() => removeEvidence(image.id)}
@@ -409,7 +435,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
         ) : (
           <div className="rounded-lg border border-dashed border-white/[0.08] px-3 py-5 text-center">
             <FileImage className="mx-auto h-4 w-4 text-gray-600 mb-1.5" />
-            <p className="text-[11px] text-gray-500">尚无真实产物验证截图</p>
+            <p className="text-[11px] text-gray-500">可一键后台代验，也可上传或捕获实际截图</p>
           </div>
         )}
 
@@ -417,7 +443,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-2">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-300 mt-0.5 flex-shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] text-amber-100">检测到 {legacyEvidence.length} 张历史自动预览，已不计入本次核验。</p>
+              <p className="text-[11px] text-amber-100">检测到 {legacyEvidence.length} 张历史自动预览，已不计入正式证据；可重新生成后台代验截图。</p>
             </div>
             <button type="button" onClick={clearLegacyEvidence} disabled={saving} className="p-1 text-amber-200 hover:text-white" title="清除历史预览">
               <Trash2 className="h-3.5 w-3.5" />
@@ -444,6 +470,19 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
             <div className="min-h-0 flex-1 overflow-auto bg-[#0c0d11] p-4 scrollbar-thin">
               {isViewerImage ? (
                 <img src={viewerArtifact.url || ''} alt={viewerArtifact.name} className="mx-auto max-h-[62vh] max-w-full object-contain" />
+              ) : viewerPreview ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/[0.05] px-3 py-2 text-[11px]">
+                    <span className="truncate text-cyan-100">主产物：{viewerPreview.primaryName}</span>
+                    <span className="text-gray-500">{viewerPreview.renderMode === 'legacy-extract' ? '历史内容提取预览' : '源文件结构化预览'}</span>
+                  </div>
+                  <iframe
+                    sandbox=""
+                    srcDoc={buildPreviewFrameDocument(viewerPreview)}
+                    title={`${viewerPreview.primaryName} 结构化预览`}
+                    className="h-[60vh] w-full rounded-md border border-white/10 bg-white"
+                  />
+                </div>
               ) : viewerText ? (
                 <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-6 text-gray-200">
                   {viewerText.slice(0, MAX_PREVIEW_TEXT_LENGTH)}
@@ -453,32 +492,41 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
                 <div className="flex min-h-64 flex-col items-center justify-center text-center">
                   <FileText className="mb-3 h-7 w-7 text-gray-600" />
                   <p className="text-sm text-gray-300">该产物没有可直接展示的解析内容</p>
-                  <p className="mt-1 max-w-md text-xs leading-relaxed text-gray-500">请在本地打开对应文件或工具，再捕获实际运行窗口作为验证证据。</p>
+                  <p className="mt-1 max-w-md text-xs leading-relaxed text-gray-500">可以先尝试后台代验；如果产物需要真实交互或外部环境，再捕获实际运行窗口作为补充证据。</p>
                 </div>
               )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
               <span className="text-[11px] text-gray-500">来源：{viewerText || isViewerImage ? '系统内核验视图' : '外部实际运行窗口'}</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleBackendCapture(viewerArtifact)}
-                loading={autoCapturing}
-                loadingText="后台截图中..."
-                disabled={saving || capturing || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
-              >
-                <Camera className="h-3.5 w-3.5" /> 后台截图此产物
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => handleCapture(viewerArtifact)}
-                loading={capturing}
-                loadingText="捕获中..."
-                disabled={saving || autoCapturing || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
-              >
-                <Camera className="h-3.5 w-3.5" /> 捕获当前核验
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => handleBackendCapture(viewerArtifact)}
+                  loading={autoCapturing}
+                  loadingText="代验中..."
+                  disabled={saving || capturing || autoCapturing || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> 后台代验此产物
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={openArtifactWindow}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> 独立窗口打开
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleCapture(viewerArtifact)}
+                  loading={capturing}
+                  loadingText="捕获中..."
+                  disabled={saving || autoCapturing || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
+                >
+                  <Camera className="h-3.5 w-3.5" /> 捕获实际窗口
+                </Button>
+              </div>
             </div>
           </div>
         </div>

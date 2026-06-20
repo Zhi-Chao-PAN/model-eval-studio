@@ -13,6 +13,7 @@ export interface StreamOptions {
   provider: AiProvider
   temperature?: number
   maxTokens?: number
+  timeoutMs?: number
 }
 
 export interface StreamUsage {
@@ -35,23 +36,24 @@ export async function* streamChat(
   messages: StreamMessage[],
   options: StreamOptions,
 ): AsyncGenerator<StreamChunk, void, unknown> {
-  const { baseUrl, apiKey, model, provider, temperature = 0.7, maxTokens = 4000 } = options
+  const { baseUrl, apiKey, model, provider, temperature = 0.7, maxTokens = 4000, timeoutMs = 90_000 } = options
 
   if (provider === 'ANTHROPIC_COMPAT') {
-    yield* streamAnthropic(messages, { baseUrl, apiKey, model, temperature, maxTokens })
+    yield* streamAnthropic(messages, { baseUrl, apiKey, model, temperature, maxTokens, timeoutMs })
     return
   }
 
-  yield* streamOpenAI(messages, { baseUrl, apiKey, model, temperature, maxTokens })
+  yield* streamOpenAI(messages, { baseUrl, apiKey, model, temperature, maxTokens, timeoutMs })
 }
 
 async function* streamOpenAI(
   messages: StreamMessage[],
-  options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number },
+  options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number; timeoutMs: number },
 ): AsyncGenerator<StreamChunk, void, unknown> {
   const openai = new OpenAI({
     baseURL: options.baseUrl,
     apiKey: options.apiKey,
+    timeout: options.timeoutMs,
   })
 
   const stream = (await openai.chat.completions.create({
@@ -63,58 +65,27 @@ async function* streamOpenAI(
     stream_options: { include_usage: true },
   } as any)) as any
 
-  // 用于过滤 <think> 标签中的思考内容
-  let inThinkBlock = false
-  let thinkBuffer = ''
+  let reasoningOpen = false
 
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta
-    // 跳过 reasoning / thinking 内容，只输出实际回答
     const content = delta?.content
     const reasoning = delta?.reasoning_content
-    if (reasoning) continue
-    if (!content) {
-      // 检查 usage
-      if ((chunk as any).usage) {
-        const u = (chunk as any).usage
-        yield {
-          type: 'usage',
-          usage: {
-            promptTokens: u.prompt_tokens ?? 0,
-            completionTokens: u.completion_tokens ?? 0,
-            totalTokens: u.total_tokens ?? 0,
-          },
-        }
+
+    if (reasoning) {
+      if (!reasoningOpen) {
+        reasoningOpen = true
+        yield { type: 'delta', content: '<think>' }
       }
-      continue
+      yield { type: 'delta', content: reasoning }
     }
 
-    // 过滤 <think>...</think> 标签中的思考内容
-    let filtered = ''
-    let i = 0
-    while (i < content.length) {
-      if (!inThinkBlock) {
-        const thinkStart = content.indexOf('<think>', i)
-        if (thinkStart === -1) {
-          filtered += content.slice(i)
-          break
-        }
-        filtered += content.slice(i, thinkStart)
-        inThinkBlock = true
-        i = thinkStart + 7 // '<think>'.length
-      } else {
-        const thinkEnd = content.indexOf('</think>', i)
-        if (thinkEnd === -1) {
-          // think 块还没结束，跳过剩余内容
-          break
-        }
-        inThinkBlock = false
-        i = thinkEnd + 8 // '</think>'.length
+    if (content) {
+      if (reasoningOpen) {
+        reasoningOpen = false
+        yield { type: 'delta', content: '</think>\n' }
       }
-    }
-
-    if (filtered) {
-      yield { type: 'delta', content: filtered }
+      yield { type: 'delta', content }
     }
 
     // Some providers include usage on the final chunk
@@ -130,11 +101,13 @@ async function* streamOpenAI(
       }
     }
   }
+
+  if (reasoningOpen) yield { type: 'delta', content: '</think>' }
 }
 
 async function* streamAnthropic(
   messages: StreamMessage[],
-  options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number },
+  options: { baseUrl: string; apiKey: string; model: string; temperature: number; maxTokens: number; timeoutMs: number },
 ): AsyncGenerator<StreamChunk, void, unknown> {
   const systemMsgs = messages.filter((m) => m.role === 'system').map((m) => m.content)
   const nonSystemMsgs = messages.filter((m) => m.role !== 'system')
@@ -159,6 +132,7 @@ async function* streamAnthropic(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(options.timeoutMs),
   })
 
   if (!res.ok) {
@@ -174,8 +148,7 @@ async function* streamAnthropic(
   let inputTokens = 0
   let outputTokens = 0
 
-  // 过滤 <think> 标签
-  let inThinkBlock = false
+  let reasoningOpen = false
 
   while (true) {
     const { done, value } = await reader.read()
@@ -195,29 +168,21 @@ async function* streamAnthropic(
 
         // Content block delta
         if (type === 'content_block_delta') {
-          const delta = parsed.delta?.text
-          if (delta) {
-            // 过滤 <think> 标签
-            let filtered = ''
-            let i = 0
-            while (i < delta.length) {
-              if (!inThinkBlock) {
-                const thinkStart = delta.indexOf('<think>', i)
-                if (thinkStart === -1) {
-                  filtered += delta.slice(i)
-                  break
-                }
-                filtered += delta.slice(i, thinkStart)
-                inThinkBlock = true
-                i = thinkStart + 7
-              } else {
-                const thinkEnd = delta.indexOf('</think>', i)
-                if (thinkEnd === -1) break
-                inThinkBlock = false
-                i = thinkEnd + 8
-              }
+          const reasoning = parsed.delta?.thinking
+          const text = parsed.delta?.text
+          if (reasoning) {
+            if (!reasoningOpen) {
+              reasoningOpen = true
+              yield { type: 'delta', content: '<think>' }
             }
-            if (filtered) yield { type: 'delta', content: filtered }
+            yield { type: 'delta', content: reasoning }
+          }
+          if (text) {
+            if (reasoningOpen) {
+              reasoningOpen = false
+              yield { type: 'delta', content: '</think>\n' }
+            }
+            yield { type: 'delta', content: text }
           }
         }
 
@@ -233,6 +198,10 @@ async function* streamAnthropic(
 
         // Message stop - emit final usage
         if (type === 'message_stop') {
+          if (reasoningOpen) {
+            reasoningOpen = false
+            yield { type: 'delta', content: '</think>' }
+          }
           yield {
             type: 'usage',
             usage: {

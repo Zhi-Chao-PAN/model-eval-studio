@@ -3,11 +3,15 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle2, FileText, Package,
-  Plus, Trash2, UploadCloud, Loader2, X,
+  Plus, Sparkles, Trash2, UploadCloud, Loader2, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  isFreshModelArtifactAnalysis,
+  parseStoredModelArtifactAnalysis,
+} from '@/lib/model-artifact-analysis'
 
 interface Props {
   task: any
@@ -18,6 +22,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [textContent, setTextContent] = useState('')
   const [uploadingModelId, setUploadingModelId] = useState<string | null>(null)
+  const [analyzingModelId, setAnalyzingModelId] = useState<string | null>(null)
   const [addingText, setAddingText] = useState(false)
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
@@ -122,6 +127,26 @@ export default function StepArtifact({ task, onRefresh }: Props) {
     onRefresh()
   }
 
+  async function analyzeModelArtifacts(modelId: string) {
+    setAnalyzingModelId(modelId)
+    try {
+      const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifact-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) {
+        showNote('err', '预分析失败: ' + (data.error || '未知错误'))
+        return
+      }
+      showNote('ok', '产物预分析已完成，后续生成评估报告会优先复用这次结果')
+      onRefresh()
+    } finally {
+      setAnalyzingModelId(null)
+    }
+  }
+
   async function addModelManual() {
     const inputCodes = [...new Set(
       newModelCode
@@ -185,7 +210,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         <div>
           <h2 className="display text-xl sm:text-2xl tracking-tight">产物提交</h2>
           <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-            为每个待测模型上传或粘贴最终产物，第五阶段会基于这些产物生成正式评估报告。
+            为每个待测模型上传或粘贴最终产物，上传完毕后可先完成后台核验与产物预分析。
           </p>
         </div>
       </div>
@@ -238,6 +263,10 @@ export default function StepArtifact({ task, onRefresh }: Props) {
           {models.map((model: any) => {
             const artifactCount = model.artifacts?.length || 0
             const isUploading = uploadingModelId === model.id
+            const isAnalyzing = analyzingModelId === model.id
+            const artifactAnalysis = parseStoredModelArtifactAnalysis(model.artifactAnalysisJson)
+            const hasFreshAnalysis = isFreshModelArtifactAnalysis(artifactAnalysis, model.artifacts || [])
+            const hasStaleAnalysis = Boolean(artifactAnalysis && !hasFreshAnalysis)
             return (
               <div key={model.id} className="panel p-4">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -255,8 +284,24 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                     <Badge variant="muted" className="text-[10px]">
                       {artifactCount} 个文件
                     </Badge>
+                    {hasFreshAnalysis && (
+                      <Badge variant="success" className="text-[10px]">已预分析</Badge>
+                    )}
+                    {hasStaleAnalysis && (
+                      <Badge variant="warn" className="text-[10px]">需重新分析</Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <Button
+                      variant={hasFreshAnalysis ? 'secondary' : 'primary'}
+                      size="sm"
+                      onClick={() => analyzeModelArtifacts(model.id)}
+                      loading={isAnalyzing}
+                      loadingText="分析中..."
+                      disabled={artifactCount === 0 || isUploading || Boolean(analyzingModelId)}
+                    >
+                      <Sparkles className="h-3 w-3" /> {hasFreshAnalysis ? '重新分析' : '上传完毕，开始分析'}
+                    </Button>
                     <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
                       <Plus className="h-3 w-3" /> 粘贴文本
                     </Button>

@@ -138,6 +138,7 @@ model TaskModel {
   processText    String?
   screenshotUrls String?
   verificationScreenshotUrls String?
+  artifactAnalysisJson String?
   createdAt      DateTime @default(now())
   artifacts      ModelArtifact[]
   reports        ModelReport[]
@@ -153,6 +154,7 @@ model ModelArtifact {
   mimeType  String?
   size      Int?
   parsedText String?
+  previewJson String?
   createdAt DateTime @default(now())
 }
 
