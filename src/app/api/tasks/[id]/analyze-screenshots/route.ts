@@ -117,8 +117,8 @@ export async function POST(
         const requestBody: Record<string, unknown> = {
           model: aiConfig.model,
           messages: [{ role: 'user', content: userContent }],
-          max_tokens: 12000,
-          max_completion_tokens: 12000,
+          max_tokens: aiConfig.maxTokens,
+          max_completion_tokens: aiConfig.maxTokens,
           temperature: 0.1,
           stream: true,
         }

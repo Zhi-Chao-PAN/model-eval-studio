@@ -56,11 +56,11 @@ const AI_PRESETS: AiPreset[] = [
   },
   {
     id: 'doubao',
-    name: '豆包 火山方舟',
+    name: '豆包 Seed 2.0',
     provider: 'OPENAI_COMPAT',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    modelName: '',
-    hint: '模型名需填入你在火山方舟创建的接入点 ID（ep-xxxxxxx）',
+    modelName: 'doubao-seed-2.0-pro',
+    hint: '默认使用豆包 Seed 2.0 Pro，可手动替换为你自己的接入点 ID',
   },
 ]
 
@@ -72,6 +72,7 @@ export default function SettingsPage() {
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [modelName, setModelName] = useState('')
+  const [maxTokens, setMaxTokens] = useState('')
   const [hasApiKey, setHasApiKey] = useState(false)
   const [savingAi, setSavingAi] = useState(false)
   const [aiSaved, setAiSaved] = useState(false)
@@ -93,6 +94,7 @@ export default function SettingsPage() {
       setProvider(aiData.config.provider)
       setBaseUrl(aiData.config.baseUrl || '')
       setModelName(aiData.config.modelName || '')
+      setMaxTokens(aiData.config.maxTokens?.toString() || '')
       setHasApiKey(aiData.config.hasApiKey)
     }
     setLoaded(true)
@@ -116,7 +118,10 @@ export default function SettingsPage() {
     await fetch('/api/user/ai-config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, baseUrl, apiKey, modelName }),
+      body: JSON.stringify({
+        provider, baseUrl, apiKey, modelName,
+        maxTokens: maxTokens ? Number(maxTokens) : undefined,
+      }),
     })
     setSavingAi(false); setAiSaved(true); setHasApiKey(true)
     setTimeout(() => setAiSaved(false), 2000)
@@ -127,7 +132,10 @@ export default function SettingsPage() {
     await fetch('/api/user/ai-config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, baseUrl, apiKey: apiKey || undefined, modelName }),
+      body: JSON.stringify({
+        provider, baseUrl, apiKey: apiKey || undefined, modelName,
+        maxTokens: maxTokens ? Number(maxTokens) : undefined,
+      }),
     })
     const res = await fetch('/api/user/ai-config/validate', { method: 'POST' })
     const data = await res.json()
@@ -243,9 +251,20 @@ export default function SettingsPage() {
                 placeholder="gpt-4o / claude-3.5-sonnet / deepseek-chat" className="mono" />
               {baseUrl.includes('volces.com') && (
                 <p className="text-[11px] text-amber-400 mt-1">
-                  火山方舟：请填入你在控制台创建的推理接入点 ID（格式如 <code className="mono">ep-xxxxxxx</code>）
+                  火山方舟：默认使用 doubao-seed-2.0-pro，也可填入你自己的接入点 ID（<code className="mono">ep-xxxxxxx</code>）
                 </p>
               )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                最大输出 Token
+                <span className="text-[10px] text-gray-500 font-normal">控制单次 AI 回复的长度上限</span>
+              </Label>
+              <Input type="number" value={maxTokens} onChange={e => setMaxTokens(e.target.value)}
+                placeholder="4000" className="mono" min={1} />
+              <p className="text-[11px] text-gray-500 mt-1">
+                留空则使用默认值 4000；长上下文模型可适当调大（如 16000 / 32000 / 200000）
+              </p>
             </div>
 
             <div className="flex items-center gap-2 pt-1 flex-wrap">

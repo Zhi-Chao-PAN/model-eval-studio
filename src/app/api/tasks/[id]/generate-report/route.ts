@@ -113,7 +113,7 @@ export async function POST(
               model: aiConfig.model,
               provider: aiConfig.provider,
               temperature: 0.6,
-              maxTokens: 3500,
+              maxTokens: aiConfig.maxTokens,
             },
           )) {
             if (chunk.type === 'delta') {
@@ -234,7 +234,7 @@ export async function POST(
               model: aiConfig.model,
               provider: aiConfig.provider,
               temperature: 0.7,
-              maxTokens: 4500,
+              maxTokens: aiConfig.maxTokens,
             },
           )) {
             if (chunk.type === 'delta') {

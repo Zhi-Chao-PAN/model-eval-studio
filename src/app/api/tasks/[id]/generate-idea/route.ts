@@ -61,7 +61,7 @@ export async function POST(
         model: aiConfig.model,
         provider: aiConfig.provider as any,
         temperature: 0.7,
-        maxTokens: 3000,
+        maxTokens: aiConfig.maxTokens,
       }
     )
 
