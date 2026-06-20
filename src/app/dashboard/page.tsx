@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  Plus, Search, FlaskConical, FileText, Brain, Image as ImageIcon,
+  Plus, Search, FlaskConical, FileText, Image as ImageIcon, Wand2,
   Package, FileCheck2, Loader2, ArrowRight, Trash2, Circle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -23,15 +23,15 @@ interface Task {
 }
 
 const STEPS = [
+  { key: 'DESIGN', icon: Wand2 },
   { key: 'INFO', icon: FileText },
-  { key: 'IDEA', icon: Brain },
   { key: 'SCREENSHOT', icon: ImageIcon },
   { key: 'ARTIFACT', icon: Package },
   { key: 'REPORT', icon: FileCheck2 },
 ] as const
 
 const stepLabels: Record<string, string> = {
-  INFO: '任务信息', IDEA: '测试思路', SCREENSHOT: '看板识别', ARTIFACT: '产物分析', REPORT: '评估报告',
+  DESIGN: '任务设计', INFO: '任务信息', SCREENSHOT: '看板识别', ARTIFACT: '产物分析', REPORT: '评估报告',
 }
 
 const statusMeta: Record<string, { label: string; variant: any }> = {

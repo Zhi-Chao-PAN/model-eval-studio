@@ -27,6 +27,11 @@ export async function GET(
         include: {
           artifacts: { orderBy: { createdAt: 'asc' } },
           reports: { orderBy: { createdAt: 'desc' }, take: 1 },
+          artifactAnalysisRuns: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: { events: { orderBy: { sequence: 'asc' } } },
+          },
         },
       },
       messages: {
@@ -72,7 +77,7 @@ export async function PUT(
     const allowed = [
       'title', 'category', 'requirementType', 'requirementName',
       'description', 'backgroundUsed', 'currentStep', 'status',
-      'taskIdeaJson', 'analysisJson',
+      'analysisJson',
     ]
 
     const updateData: any = {}

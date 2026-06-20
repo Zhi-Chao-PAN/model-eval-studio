@@ -1,6 +1,6 @@
 'use client'
 import {
-  FileText, Brain, Image as ImageIcon, Package, FileCheck2, ChevronRight, Check,
+  FileText, Image as ImageIcon, Package, FileCheck2, ChevronRight, Check,
   Wand2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils'
 const ICONS: Record<string, any> = {
   DESIGN: Wand2,
   INFO: FileText,
-  IDEA: Brain,
   SCREENSHOT: ImageIcon,
   ARTIFACT: Package,
   REPORT: FileCheck2,
@@ -18,7 +17,6 @@ const ICONS: Record<string, any> = {
 const ACCENTS: Record<string, string> = {
   DESIGN: 'from-amber-500 to-orange-500',
   INFO: 'from-indigo-500 to-blue-500',
-  IDEA: 'from-violet-500 to-fuchsia-500',
   SCREENSHOT: 'from-fuchsia-500 to-pink-500',
   ARTIFACT: 'from-pink-500 to-rose-500',
   REPORT: 'from-cyan-500 to-blue-500',

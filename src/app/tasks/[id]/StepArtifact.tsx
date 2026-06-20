@@ -12,6 +12,7 @@ import {
   isFreshModelArtifactAnalysis,
   parseStoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
+import { ArtifactAnalysisTrace } from '@/components/tasks/ArtifactAnalysisTrace'
 
 interface Props {
   task: any
@@ -22,7 +23,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [textContent, setTextContent] = useState('')
   const [uploadingModelId, setUploadingModelId] = useState<string | null>(null)
-  const [analyzingModelId, setAnalyzingModelId] = useState<string | null>(null)
+  const [startingModelId, setStartingModelId] = useState<string | null>(null)
   const [addingText, setAddingText] = useState(false)
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
@@ -31,10 +32,20 @@ export default function StepArtifact({ task, onRefresh }: Props) {
   const noteTimerRef = useRef<number | null>(null)
 
   const models = task.models || []
+  const hasRunningAnalysis = models.some((model: any) => {
+    const status = model.artifactAnalysisRuns?.[0]?.status
+    return status === 'QUEUED' || status === 'RUNNING'
+  })
 
   useEffect(() => () => {
     if (noteTimerRef.current) window.clearTimeout(noteTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    if (!hasRunningAnalysis) return
+    const timer = window.setInterval(onRefresh, 1_500)
+    return () => window.clearInterval(timer)
+  }, [hasRunningAnalysis, onRefresh])
 
   function askConfirm(title: string, message: string): boolean {
     return window.confirm(title + '\n\n' + message)
@@ -128,7 +139,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
   }
 
   async function analyzeModelArtifacts(modelId: string) {
-    setAnalyzingModelId(modelId)
+    setStartingModelId(modelId)
     try {
       const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifact-analysis', {
         method: 'POST',
@@ -140,10 +151,13 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         showNote('err', '预分析失败: ' + (data.error || '未知错误'))
         return
       }
-      showNote('ok', '产物预分析已完成，后续生成评估报告会优先复用这次结果')
+      showNote(
+        'ok',
+        data.alreadyRunning ? '该模型正在后台分析，轨迹会自动更新。' : '已提交后台分析，核验与产物拆解轨迹会自动更新。',
+      )
       onRefresh()
     } finally {
-      setAnalyzingModelId(null)
+      setStartingModelId(null)
     }
   }
 
@@ -263,7 +277,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
           {models.map((model: any) => {
             const artifactCount = model.artifacts?.length || 0
             const isUploading = uploadingModelId === model.id
-            const isAnalyzing = analyzingModelId === model.id
+            const latestAnalysisRun = model.artifactAnalysisRuns?.[0] || null
+            const isAnalyzing = startingModelId === model.id || latestAnalysisRun?.status === 'QUEUED' || latestAnalysisRun?.status === 'RUNNING'
             const artifactAnalysis = parseStoredModelArtifactAnalysis(model.artifactAnalysisJson)
             const hasFreshAnalysis = isFreshModelArtifactAnalysis(artifactAnalysis, model.artifacts || [])
             const hasStaleAnalysis = Boolean(artifactAnalysis && !hasFreshAnalysis)
@@ -296,11 +311,11 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                       variant={hasFreshAnalysis ? 'secondary' : 'primary'}
                       size="sm"
                       onClick={() => analyzeModelArtifacts(model.id)}
-                      loading={isAnalyzing}
-                      loadingText="分析中..."
-                      disabled={artifactCount === 0 || isUploading || Boolean(analyzingModelId)}
+                       loading={startingModelId === model.id}
+                       loadingText="正在提交..."
+                       disabled={artifactCount === 0 || isUploading || hasRunningAnalysis}
                     >
-                      <Sparkles className="h-3 w-3" /> {hasFreshAnalysis ? '重新分析' : '上传完毕，开始分析'}
+                      <Sparkles className="h-3 w-3" /> {isAnalyzing ? '后台分析中' : hasFreshAnalysis ? '重新分析' : '上传完毕，开始分析'}
                     </Button>
                     <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
                       <Plus className="h-3 w-3" /> 粘贴文本
@@ -320,7 +335,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                           multiple
                           accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.zip"
                           onChange={(event) => handleFileUpload(event, model.id)}
-                          disabled={uploadingModelId !== null}
+                           disabled={uploadingModelId !== null || isAnalyzing}
                         />
                       </label>
                     )}
@@ -350,6 +365,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                     尚未上传该模型的产物
                   </div>
                 )}
+                <ArtifactAnalysisTrace run={latestAnalysisRun} modelCode={model.modelCode} />
               </div>
             )
           })}

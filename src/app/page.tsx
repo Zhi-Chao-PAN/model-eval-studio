@@ -94,8 +94,8 @@ export default function Home() {
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {[
-              { n: '01', icon: FlaskConical, title: '任务信息', desc: '评估目标、用户、约束', color: 'from-blue-500 to-indigo-500' },
-              { n: '02', icon: Sparkles, title: '测试思路', desc: 'AI 生成维度与场景', color: 'from-violet-500 to-purple-500' },
+              { n: '01', icon: Sparkles, title: '任务设计', desc: '明确评测题目与交付标准', color: 'from-amber-500 to-orange-500' },
+              { n: '02', icon: FlaskConical, title: '任务信息', desc: '评估目标、用户、约束', color: 'from-blue-500 to-indigo-500' },
               { n: '03', icon: ImageIcon, title: '看板识别', desc: '截图自动提取硬指标', color: 'from-fuchsia-500 to-pink-500' },
               { n: '04', icon: Package, title: '产物分析', desc: '上传各模型输出产物', color: 'from-pink-500 to-rose-500' },
               { n: '05', icon: FileCheck2, title: '评估报告', desc: '结构化 Markdown', color: 'from-cyan-500 to-blue-500' },
