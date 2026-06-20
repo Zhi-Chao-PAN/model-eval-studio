@@ -1,7 +1,12 @@
 export const MAX_VERIFICATION_EVIDENCE = 4
 export const MAX_VERIFICATION_IMAGE_DATA_URL_LENGTH = 1_400_000
 
-export type VerificationEvidenceSource = 'tester_upload' | 'screen_capture' | 'legacy_auto'
+export type VerificationEvidenceSource =
+  | 'tester_upload'
+  | 'screen_capture'
+  | 'backend_capture'
+  | 'sandbox_auto'
+  | 'legacy_auto'
 
 export type VerificationEvidence = {
   id: string
@@ -11,6 +16,9 @@ export type VerificationEvidence = {
   artifactId?: string
   artifactName?: string
   capturedAt?: string
+  runner?: string
+  verificationUrl?: string
+  runLog?: string
 }
 
 type StoredEvidence = Partial<VerificationEvidence> & {
@@ -24,7 +32,10 @@ function isImageDataUrl(value: unknown): value is string {
 }
 
 function toSource(value: unknown): VerificationEvidenceSource {
-  return value === 'tester_upload' || value === 'screen_capture'
+  return value === 'tester_upload' ||
+    value === 'screen_capture' ||
+    value === 'backend_capture' ||
+    value === 'sandbox_auto'
     ? value
     : 'legacy_auto'
 }
@@ -40,6 +51,9 @@ function normalizeEvidence(value: StoredEvidence, index: number): VerificationEv
     artifactId: typeof value.artifactId === 'string' ? value.artifactId : undefined,
     artifactName: typeof value.artifactName === 'string' ? value.artifactName : undefined,
     capturedAt: typeof value.capturedAt === 'string' ? value.capturedAt : undefined,
+    runner: typeof value.runner === 'string' ? value.runner.slice(0, 120) : undefined,
+    verificationUrl: typeof value.verificationUrl === 'string' ? value.verificationUrl.slice(0, 500) : undefined,
+    runLog: typeof value.runLog === 'string' ? value.runLog.slice(0, 2000) : undefined,
   }
 }
 
@@ -60,7 +74,12 @@ export function parseVerificationEvidence(raw?: string | null): VerificationEvid
 }
 
 export function isAuthenticVerificationEvidence(evidence: VerificationEvidence): boolean {
-  return evidence.source === 'tester_upload' || evidence.source === 'screen_capture'
+  return (
+    evidence.source === 'tester_upload' ||
+    evidence.source === 'screen_capture' ||
+    evidence.source === 'backend_capture' ||
+    evidence.source === 'sandbox_auto'
+  )
 }
 
 export function serializeVerificationEvidence(evidence: VerificationEvidence[]): string {

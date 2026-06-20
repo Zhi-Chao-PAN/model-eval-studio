@@ -61,6 +61,8 @@ function isImageArtifact(artifact: ArtifactLike): boolean {
 }
 
 function sourceLabel(source: VerificationEvidence['source']): string {
+  if (source === 'backend_capture') return '后台截图'
+  if (source === 'sandbox_auto') return '沙箱核验'
   if (source === 'screen_capture') return '窗口捕获'
   if (source === 'tester_upload') return '测试上传'
   return '历史预览'
@@ -151,6 +153,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
   const [viewerArtifact, setViewerArtifact] = useState<ArtifactLike | null>(null)
   const [saving, setSaving] = useState(false)
   const [capturing, setCapturing] = useState(false)
+  const [autoCapturing, setAutoCapturing] = useState(false)
 
   useEffect(() => {
     setEvidence(parseVerificationEvidence(model.verificationScreenshotUrls || fallbackEvidenceRaw))
@@ -259,6 +262,36 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
     }
   }
 
+  async function handleBackendCapture(artifact?: ArtifactLike | null) {
+    if (authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE) {
+      onNotice('err', `每个模型最多保留 ${MAX_VERIFICATION_EVIDENCE} 张真实核验证据`)
+      return
+    }
+
+    setAutoCapturing(true)
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/models/${model.id}/verification/auto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifactId: artifact?.id }),
+      })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(payload.error || '后台自动截图失败')
+
+      const nextRaw = payload.model?.verificationScreenshotUrls || serializeVerificationEvidence([
+        ...authenticEvidence,
+        payload.evidence,
+      ].filter(Boolean))
+      setEvidence(parseVerificationEvidence(nextRaw))
+      onNotice('ok', artifact ? '该产物的后台自动截图已保存' : '后台自动截图已保存')
+      onRefresh()
+    } catch (error) {
+      onNotice('err', errorText(error))
+    } finally {
+      setAutoCapturing(false)
+    }
+  }
+
   async function removeEvidence(id: string) {
     await persist(authenticEvidence.filter(image => image.id !== id), '验证截图已移除')
   }
@@ -309,6 +342,16 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
         )}
 
         <div className="flex flex-wrap items-center gap-2 mb-3">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => handleBackendCapture(null)}
+            loading={autoCapturing}
+            loadingText="后台截图中..."
+            disabled={saving || capturing || artifacts.length === 0 || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
+          >
+            <Camera className="h-3.5 w-3.5" /> 后台自动截图
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -415,14 +458,24 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
               <span className="text-[11px] text-gray-500">来源：{viewerText || isViewerImage ? '系统内核验视图' : '外部实际运行窗口'}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleBackendCapture(viewerArtifact)}
+                loading={autoCapturing}
+                loadingText="后台截图中..."
+                disabled={saving || capturing || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
+              >
+                <Camera className="h-3.5 w-3.5" /> 后台截图此产物
+              </Button>
               <Button
                 size="sm"
                 onClick={() => handleCapture(viewerArtifact)}
                 loading={capturing}
                 loadingText="捕获中..."
-                disabled={saving || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
+                disabled={saving || autoCapturing || authenticEvidence.length >= MAX_VERIFICATION_EVIDENCE}
               >
                 <Camera className="h-3.5 w-3.5" /> 捕获当前核验
               </Button>

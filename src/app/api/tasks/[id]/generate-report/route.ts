@@ -158,7 +158,7 @@ export async function POST(
             ? serializeVerificationEvidence(verificationEvidence)
             : null
 
-          // Phase 1: analyze tester-provided or user-captured evidence only.
+          // Phase 1: analyze stored, source-marked verification evidence only.
           phase('analyzing_images', {
             modelCode: model.modelCode,
             hasImages: verificationEvidence.length > 0,
@@ -168,9 +168,10 @@ export async function POST(
               const imgResult = await analyzeImages(
                 verificationEvidence.map((image) => image.dataUrl),
                 [
-                  '你是模型产物验收员。以下是测试人员上传或通过浏览器窗口捕获的真实产物核验证据。',
+                  '你是模型产物验收员。以下是测试人员上传、浏览器窗口捕获、后台自动截图或隔离沙箱核验得到的真实产物核验证据。',
                   '它们可以证明截图中出现的界面、文本、数据或工具结果，但不能证明截图之外的行为。',
-                  '严禁把截图说成系统自动执行了工具，也不能根据文件名或想象补全运行结果。',
+                  '后台自动截图只代表系统用受控浏览器打开并截取了可渲染产物内容；除非证据来源明确为“沙箱核验”且日志显示已运行，否则严禁写成系统自动执行了工具。',
+                  '不能根据文件名或想象补全运行结果。',
                   `证据来源：${describeEvidenceSources(verificationEvidence)}`,
                   '请仔细阅读截图中的内容（文件名、文本内容、代码、数据等），判断：',
                   '1. 截图显示了什么内容？是否足以证明产物被实际打开和核验？',
@@ -436,9 +437,13 @@ function buildArtifactsText(artifacts: Array<{ name: string; parsedText?: string
 function describeEvidenceSources(evidence: VerificationEvidence[]): string {
   const captured = evidence.filter(image => image.source === 'screen_capture').length
   const uploaded = evidence.filter(image => image.source === 'tester_upload').length
+  const backend = evidence.filter(image => image.source === 'backend_capture').length
+  const sandbox = evidence.filter(image => image.source === 'sandbox_auto').length
   const parts: string[] = []
   if (captured) parts.push(`${captured} 张浏览器窗口捕获`)
   if (uploaded) parts.push(`${uploaded} 张测试人员上传截图`)
+  if (backend) parts.push(`${backend} 张后台自动截图`)
+  if (sandbox) parts.push(`${sandbox} 张隔离沙箱核验截图`)
   return parts.join('，') || '未标记来源'
 }
 
