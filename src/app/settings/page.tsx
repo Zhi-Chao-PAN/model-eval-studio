@@ -154,7 +154,7 @@ export default function SettingsPage() {
   if (!loaded) return <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 text-gray-500 animate-spin" /></div>
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-6xl">
       <div className="flex items-center gap-3 mb-8">
         <div className="h-10 w-10 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center">
           <SettingsIcon className="h-5 w-5 text-indigo-300" />
@@ -165,70 +165,43 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="grid gap-4">
-        {/* Account */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-[14px]">
-              <UserIcon className="h-4 w-4 text-gray-400" /> 账户信息
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-indigo-500/30 to-fuchsia-500/30 border border-white/10 flex items-center justify-center text-lg font-semibold text-white">
-                {me?.username?.slice(0, 1).toUpperCase()}
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left column: AI Config (2/3 width) */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* AI Config Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-[14px]">
+                <Key className="h-4 w-4 text-gray-400" /> AI 模型配置
+              </CardTitle>
+              <p className="text-xs text-gray-500 mt-1">
+                填写自己的 API Key，所有调用走你的额度。密钥服务端加密存储。
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Quick Presets */}
               <div>
-                <div className="font-medium text-white flex items-center gap-2">
-                  {me?.username}
-                  {me?.role === 'ADMIN' && (
-                    <Badge variant="primary" className="flex items-center gap-1">
-                      <ShieldCheck className="h-3 w-3" /> 管理员
-                    </Badge>
-                  )}
-                </div>
-                <div className="text-xs text-gray-500 mt-0.5 mono">
-                  注册 {me?.createdAt ? new Date(me.createdAt).toLocaleDateString('zh-CN') : '-'}
+                <Label className="flex items-center gap-1.5 mb-2">
+                  <Wand2 className="h-3.5 w-3.5 text-indigo-400" /> 快速选择
+                  <span className="text-[11px] text-gray-500 font-normal ml-1">点击自动填充，之后可手动修改</span>
+                </Label>
+                <div className="flex flex-wrap gap-2">
+                  {AI_PRESETS.map(preset => (
+                    <button
+                      key={preset.id}
+                      onClick={() => {
+                        setProvider(preset.provider)
+                        setBaseUrl(preset.baseUrl)
+                        setModelName(preset.modelName)
+                        setValidateResult(null)
+                      }}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white/[0.04] border border-white/10 text-[12px] text-gray-300 hover:bg-white/[0.08] hover:text-white hover:border-indigo-500/40 transition-colors"
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* AI Config */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-[14px]">
-              <Key className="h-4 w-4 text-gray-400" /> AI 模型配置
-            </CardTitle>
-            <p className="text-xs text-gray-500 mt-1">
-              填写自己的 API Key，所有调用走你的额度。密钥服务端加密存储。
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Quick Presets */}
-            <div>
-              <Label className="flex items-center gap-1.5 mb-2">
-                <Wand2 className="h-3.5 w-3.5 text-indigo-400" /> 快速选择
-                <span className="text-[11px] text-gray-500 font-normal ml-1">点击自动填充，之后可手动修改</span>
-              </Label>
-              <div className="flex flex-wrap gap-2">
-                {AI_PRESETS.map(preset => (
-                  <button
-                    key={preset.id}
-                    onClick={() => {
-                      setProvider(preset.provider)
-                      setBaseUrl(preset.baseUrl)
-                      setModelName(preset.modelName)
-                      setValidateResult(null)
-                    }}
-                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white/[0.04] border border-white/10 text-[12px] text-gray-300 hover:bg-white/[0.08] hover:text-white hover:border-indigo-500/40 transition-colors"
-                  >
-                    {preset.name}
-                  </button>
-                ))}
-              </div>
-            </div>
 
             <div className="space-y-1.5">
               <Label>协议格式</Label>
@@ -299,28 +272,61 @@ export default function SettingsPage() {
             )}
           </CardContent>
         </Card>
+        </div>
 
-        {/* Background */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-[14px]">
-              <FlaskConical className="h-4 w-4 text-gray-400" /> 个人背景
-            </CardTitle>
-            <p className="text-xs text-gray-500 mt-1">
-              告诉 AI 你的身份与偏好，AI 在分析时会据此调整叙述风格与视角。
-            </p>
-          </CardHeader>
-          <CardContent>
-            <Textarea value={background} onChange={e => setBackground(e.target.value)} rows={4}
-              placeholder="例如：我是后端工程师，主要写 Go / Python，关注代码质量与性能，偏好简洁专业的回答..." />
-            <div className="flex items-center gap-3 mt-3">
-              <Button onClick={saveBackground} loading={savingBg}>
-                <Save className="h-3.5 w-3.5" /> 保存
-              </Button>
-              {bgSaved && <span className="text-emerald-400 text-xs flex items-center gap-1"><Check className="h-3 w-3" /> 已保存</span>}
-            </div>
-          </CardContent>
-        </Card>
+        {/* Right column: Account + Background (1/3 width) */}
+        <div className="space-y-6">
+          {/* Account Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-[14px]">
+                <UserIcon className="h-4 w-4 text-gray-400" /> 账户信息
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4">
+                <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-indigo-500/30 to-fuchsia-500/30 border border-white/10 flex items-center justify-center text-lg font-semibold text-white">
+                  {me?.username?.slice(0, 1).toUpperCase()}
+                </div>
+                <div>
+                  <div className="font-medium text-white flex items-center gap-2">
+                    {me?.username}
+                    {me?.role === 'ADMIN' && (
+                      <Badge variant="primary" className="flex items-center gap-1">
+                        <ShieldCheck className="h-3 w-3" /> 管理员
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5 mono">
+                    注册 {me?.createdAt ? new Date(me.createdAt).toLocaleDateString('zh-CN') : '-'}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Background Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-[14px]">
+                <FlaskConical className="h-4 w-4 text-gray-400" /> 个人背景
+              </CardTitle>
+              <p className="text-xs text-gray-500 mt-1">
+                告诉 AI 你的身份与偏好，AI 在分析时会据此调整叙述风格与视角。
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Textarea value={background} onChange={e => setBackground(e.target.value)} rows={6}
+                placeholder="例如：我是后端工程师，主要写 Go / Python，关注代码质量与性能，偏好简洁专业的回答..." />
+              <div className="flex items-center gap-3 mt-3">
+                <Button onClick={saveBackground} loading={savingBg}>
+                  <Save className="h-3.5 w-3.5" /> 保存
+                </Button>
+                {bgSaved && <span className="text-emerald-400 text-xs flex items-center gap-1"><Check className="h-3 w-3" /> 已保存</span>}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )
