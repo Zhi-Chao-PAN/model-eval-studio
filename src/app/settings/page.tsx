@@ -2,12 +2,67 @@
 import { useEffect, useState } from 'react'
 import {
   Settings as SettingsIcon, Key, Save, Check, User as UserIcon, FlaskConical,
-  CheckCircle2, XCircle, Loader2, Sparkles, ShieldCheck,
+  CheckCircle2, XCircle, Loader2, Sparkles, ShieldCheck, Wand2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label, Textarea, Select } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+
+interface AiPreset {
+  id: string
+  name: string
+  provider: 'OPENAI_COMPAT' | 'ANTHROPIC_COMPAT'
+  baseUrl: string
+  modelName: string
+  hint?: string
+}
+
+const AI_PRESETS: AiPreset[] = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    provider: 'OPENAI_COMPAT',
+    baseUrl: 'https://api.deepseek.com/v1',
+    modelName: 'deepseek-v4-pro',
+  },
+  {
+    id: 'minimax',
+    name: 'MiniMax 海螺',
+    provider: 'OPENAI_COMPAT',
+    baseUrl: 'https://api.minimax.chat/v1',
+    modelName: 'abab7-chat',
+  },
+  {
+    id: 'kimi',
+    name: 'Kimi 月之暗面',
+    provider: 'OPENAI_COMPAT',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    modelName: 'moonshot-v1-128k',
+  },
+  {
+    id: 'zhipu',
+    name: '智谱 ChatGLM',
+    provider: 'OPENAI_COMPAT',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    modelName: 'glm-4-plus',
+  },
+  {
+    id: 'qwen',
+    name: '通义千问',
+    provider: 'OPENAI_COMPAT',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    modelName: 'qwen-plus',
+  },
+  {
+    id: 'doubao',
+    name: '豆包 火山方舟',
+    provider: 'OPENAI_COMPAT',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    modelName: '',
+    hint: '模型名需填入你在火山方舟创建的接入点 ID（ep-xxxxxxx）',
+  },
+]
 
 export default function SettingsPage() {
   const [background, setBackground] = useState('')
@@ -135,6 +190,30 @@ export default function SettingsPage() {
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Quick Presets */}
+            <div>
+              <Label className="flex items-center gap-1.5 mb-2">
+                <Wand2 className="h-3.5 w-3.5 text-indigo-400" /> 快速选择
+                <span className="text-[11px] text-gray-500 font-normal ml-1">点击自动填充，之后可手动修改</span>
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {AI_PRESETS.map(preset => (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      setProvider(preset.provider)
+                      setBaseUrl(preset.baseUrl)
+                      setModelName(preset.modelName)
+                      setValidateResult(null)
+                    }}
+                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white/[0.04] border border-white/10 text-[12px] text-gray-300 hover:bg-white/[0.08] hover:text-white hover:border-indigo-500/40 transition-colors"
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label>协议格式</Label>
               <Select value={provider} onChange={e => setProvider(e.target.value)}>
@@ -162,6 +241,11 @@ export default function SettingsPage() {
               <Label>模型名称</Label>
               <Input value={modelName} onChange={e => setModelName(e.target.value)}
                 placeholder="gpt-4o / claude-3.5-sonnet / deepseek-chat" className="mono" />
+              {baseUrl.includes('volces.com') && (
+                <p className="text-[11px] text-amber-400 mt-1">
+                  火山方舟：请填入你在控制台创建的推理接入点 ID（格式如 <code className="mono">ep-xxxxxxx</code>）
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-2 pt-1 flex-wrap">
