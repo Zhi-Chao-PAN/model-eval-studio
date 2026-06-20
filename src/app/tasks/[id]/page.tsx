@@ -11,6 +11,7 @@ import StepIdea from './StepIdea'
 import StepScreenshot from './StepScreenshot'
 import StepArtifact from './StepArtifact'
 import StepReport from './StepReport'
+import StepDesign from './StepDesign'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -20,7 +21,8 @@ import { filterConversationMessages } from '@/lib/task-messages'
 import { cn } from '@/lib/utils'
 
 const STEPS = [
-  { key: 'INFO', label: '任务信息', desc: '填写任务基本信息' },
+  { key: 'DESIGN', label: '任务设计', desc: 'AI 辅助设计评测题' },
+  { key: 'INFO', label: '任务信息', desc: '确认任务基本信息' },
   { key: 'IDEA', label: '测试思路', desc: 'AI 生成测试思路' },
   { key: 'SCREENSHOT', label: '看板识别', desc: '上传执行过程 & 看板' },
   { key: 'ARTIFACT', label: '产物分析', desc: '上传各模型产物' },
@@ -210,6 +212,7 @@ export default function TaskPage() {
   function renderStepContent() {
     if (!task) return null
     switch (currentStep) {
+      case 'DESIGN': return <StepDesign task={task} onUpdate={handleTaskUpdate} onGoToInfo={() => goToStep('INFO')} />
       case 'INFO': return <StepInfo task={task} onUpdate={handleTaskUpdate} />
       case 'IDEA': return <StepIdea task={task} />
       case 'SCREENSHOT': return <StepScreenshot task={task} onRefresh={() => loadTask({ forceStep: 'SCREENSHOT' })} />

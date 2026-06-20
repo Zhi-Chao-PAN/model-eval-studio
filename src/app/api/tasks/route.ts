@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         description,
         backgroundUsed: user?.background || '',
         status: 'DRAFT',
-        currentStep: 'INFO',
+        currentStep: 'DESIGN',
       },
     })
 
