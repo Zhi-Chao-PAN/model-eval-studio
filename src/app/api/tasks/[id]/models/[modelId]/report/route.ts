@@ -6,6 +6,7 @@ import {
   serializeVerificationEvidence,
   validateVerificationEvidence,
 } from '@/lib/verification-evidence'
+import { getNextReportVersion } from '@/lib/report-versioning'
 
 export async function GET(
   _request: Request,
@@ -17,7 +18,7 @@ export async function GET(
 
   const model = await prisma.taskModel.findFirst({
     where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
-    include: { reports: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    include: { reports: { orderBy: { version: 'desc' }, take: 1 } },
   })
   if (!model) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
 
@@ -72,9 +73,14 @@ export async function POST(
     return NextResponse.json({ error: err?.message || '评分校验失败' }, { status: 400 })
   }
 
+  const version = await getNextReportVersion(modelId)
+
   const report = await prisma.modelReport.create({
     data: {
       taskModelId: modelId,
+      version,
+      source: 'MANUAL',
+      editedById: session.userId,
       productFeedback: productFeedback || '',
       verificationScreenshotUrls: storedEvidence,
       verificationSummary: verificationSummary || null,

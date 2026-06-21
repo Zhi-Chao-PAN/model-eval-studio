@@ -1,13 +1,20 @@
 'use client'
-import { useState } from 'react'
-import { FileText, Save, Sparkles, Check } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { FileText, Save, Sparkles, Check, Scale, ChevronDown, ChevronUp, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea, Label } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import type { RubricData, RubricDimension } from '@/lib/rubric-templates'
 
 interface Props {
   task: any
   onUpdate: (data: any) => void
 }
+
+const TEMPLATE_OPTIONS = [
+  { key: 'CODING', label: '代码开发评测（5+3+2）', desc: '需求完成度 + 代码质量 + 轨迹质量' },
+  { key: 'AGENT', label: 'Agent 智能体评测（6 维度加权）', desc: '指令遵循+规划+工具+推理+幻觉+交付' },
+]
 
 export default function StepInfo({ task, onUpdate }: Props) {
   const [form, setForm] = useState({
@@ -18,6 +25,33 @@ export default function StepInfo({ task, onUpdate }: Props) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+
+  const [rubric, setRubric] = useState<RubricData | null>(null)
+  const [rubricLoading, setRubricLoading] = useState(true)
+  const [rubricExpanded, setRubricExpanded] = useState(true)
+  const [rubricSaving, setRubricSaving] = useState(false)
+  const [rubricSaved, setRubricSaved] = useState(false)
+  const [isCustom, setIsCustom] = useState(false)
+
+  useEffect(() => {
+    loadRubric()
+  }, [task.id])
+
+  async function loadRubric() {
+    setRubricLoading(true)
+    try {
+      const res = await fetch('/api/tasks/' + task.id + '/rubric')
+      const data = await res.json()
+      if (data.rubric) {
+        setRubric(data.rubric)
+        setIsCustom(data.isCustom || false)
+      }
+    } catch (e) {
+      console.error('加载评分规则失败', e)
+    } finally {
+      setRubricLoading(false)
+    }
+  }
 
   async function save() {
     setSaving(true); setError('')
@@ -36,6 +70,103 @@ export default function StepInfo({ task, onUpdate }: Props) {
       }
     } catch (e: any) { setError(e.message || String(e)) }
     finally { setSaving(false) }
+  }
+
+  async function switchTemplate(templateKey: string) {
+    if (!rubric) return
+    setRubricSaving(true)
+    try {
+      // 先拉取预设模板的完整数据
+      const templatesRes = await fetch('/api/rubrics/templates')
+      const templatesData = await templatesRes.json()
+      const template = templatesData.templates?.find((t: any) => t.key === templateKey)
+      if (!template) throw new Error('模板不存在')
+
+      // 这里需要获取模板的完整 rubric 数据，简化处理：直接保存选中模板的类型
+      // 实际应用中可以从前端缓存或重新构造
+      const newRubric: RubricData = {
+        templateType: templateKey as RubricData['templateType'],
+        dimensions: rubric.dimensions, // 先用旧的，稍后从模板数据更新
+        overallFormula: rubric.overallFormula,
+      }
+
+      // 由于 /api/rubrics/templates 返回的是摘要信息，这里需要完整数据
+      // 重新从服务端获取完整 rubric（带 isCustom: false 时会返回默认模板）
+      const defaultRes = await fetch('/api/tasks/' + task.id + '/rubric')
+      const defaultData = await defaultRes.json()
+
+      // 简化：直接将 rubric 保存为选中的模板类型，使用默认模板的维度
+      // 实际做法：调用 PUT /rubric 保存自定义配置
+      if (defaultData.rubric && defaultData.rubric.templateType === templateKey) {
+        // 如果任务当前 category 对应的默认模板就是目标模板，直接删除自定义 rubric 即可
+        if (isCustom) {
+          // 保存为默认模板（即删除自定义记录——但没有 DELETE 接口，用 PUT 存默认模板数据）
+          const saveRes = await fetch('/api/tasks/' + task.id + '/rubric', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rubric: defaultData.rubric }),
+          })
+          const saveData = await saveRes.json()
+          if (saveData.rubric) {
+            setRubric(saveData.rubric)
+            setIsCustom(saveData.isCustom || false)
+          }
+        }
+      } else {
+        // 需要保存为该模板类型的自定义配置
+        // 从预设模板构造完整 rubric
+        const templateRubric = await getFullTemplateRubric(templateKey)
+        if (templateRubric) {
+          const saveRes = await fetch('/api/tasks/' + task.id + '/rubric', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rubric: templateRubric }),
+          })
+          const saveData = await saveRes.json()
+          if (saveData.rubric) {
+            setRubric(saveData.rubric)
+            setIsCustom(saveData.isCustom || false)
+          }
+        }
+      }
+
+      setRubricSaved(true)
+      setTimeout(() => setRubricSaved(false), 1500)
+    } catch (e: any) {
+      console.error('切换模板失败', e)
+    } finally {
+      setRubricSaving(false)
+    }
+  }
+
+  // 从预设模板构造完整 rubric（客户端版本，与服务端一致）
+  function getFullTemplateRubric(templateKey: string): RubricData | null {
+    if (templateKey === 'CODING') {
+      return {
+        templateType: 'CODING',
+        dimensions: [
+          { key: 'requirementCompletion', label: '需求完成度', weight: 5, description: '决定「能不能用」', scoreRange: [0, 5] },
+          { key: 'codeQuality', label: '代码质量', weight: 3, description: '决定「敢不敢合、好不好维护」', scoreRange: [0, 3] },
+          { key: 'trajectoryQuality', label: '轨迹质量', weight: 2, description: '决定「过程是否可信」', scoreRange: [0, 2] },
+        ],
+        overallFormula: '综合评分 = 需求完成度 + 代码质量 + 轨迹质量（满分 10 分）',
+      }
+    }
+    if (templateKey === 'AGENT') {
+      return {
+        templateType: 'AGENT',
+        dimensions: [
+          { key: 'instructionFollowing', label: '指令理解与遵循度', weight: 2.5, description: '是否准确理解并完成用户意图', scoreRange: [0, 2.5] },
+          { key: 'planningAbility', label: '规划能力', weight: 2, description: '任务拆解和执行规划是否合理', scoreRange: [0, 2] },
+          { key: 'toolUsage', label: '工具调用', weight: 1.5, description: '工具使用是否正确高效', scoreRange: [0, 1.5] },
+          { key: 'reasoning', label: '推理与判断', weight: 1.5, description: '推理过程是否合理', scoreRange: [0, 1.5] },
+          { key: 'hallucination', label: '幻觉检测', weight: 1.5, description: '是否出现严重幻觉', scoreRange: [0, 1.5] },
+          { key: 'deliveryQuality', label: '交付结果', weight: 1, description: '最终交付物是否符合要求', scoreRange: [0, 1] },
+        ],
+        overallFormula: '综合评分 = 各维度加权求和（满分 10 分）',
+      }
+    }
+    return null
   }
 
   return (
@@ -107,6 +238,99 @@ export default function StepInfo({ task, onUpdate }: Props) {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* 评分规则卡片 */}
+      <div className="panel p-5">
+        <div
+          className="flex items-center gap-3 cursor-pointer select-none"
+          onClick={() => setRubricExpanded(!rubricExpanded)}
+        >
+          <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+            <Scale className="h-4.5 w-4.5 text-emerald-300" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-sm">评分规则</h3>
+              {!rubricLoading && rubric && (
+                <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                  {rubric.templateType === 'CODING' ? '代码开发' : rubric.templateType === 'AGENT' ? 'Agent 智能体' : '自定义'}
+                  {isCustom ? ' · 已自定义' : ' · 默认模板'}
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {rubricLoading ? '加载中...' : rubric ? `${rubric.dimensions.length} 个评分维度，满分 10 分` : '未设置'}
+            </p>
+          </div>
+          {rubricExpanded ? (
+            <ChevronUp className="h-4 w-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-gray-500" />
+          )}
+        </div>
+
+        {rubricExpanded && !rubricLoading && rubric && (
+          <div className="mt-4 space-y-4 border-t border-white/[0.07] pt-4">
+            <div className="space-y-2">
+              <Label>评分模板</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {TEMPLATE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => switchTemplate(opt.key)}
+                    disabled={rubricSaving}
+                    className={`text-left p-3 rounded-xl border transition-all ${
+                      rubric.templateType === opt.key
+                        ? 'border-emerald-500/50 bg-emerald-500/10'
+                        : 'border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="text-sm font-medium">{opt.label}</div>
+                    <div className="text-[11px] text-gray-400 mt-1">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>评分维度</Label>
+                <span className="text-[11px] text-gray-500">{rubric.overallFormula}</span>
+              </div>
+              <div className="space-y-1.5">
+                {rubric.dimensions.map((dim: RubricDimension, idx: number) => (
+                  <div key={dim.key} className="flex items-center gap-3 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.05]">
+                    <span className="text-xs text-gray-500 w-5 text-center">{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{dim.label}</div>
+                      <div className="text-[11px] text-gray-500 truncate">{dim.description}</div>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] h-5 flex-shrink-0">
+                      {dim.weight} 分
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[11px] text-gray-500 pt-1">
+              <Settings2 className="h-3.5 w-3.5" />
+              <span>评分规则将用于 AI 自动生成评估报告的评分参考。如需修改维度权重，请联系管理员。</span>
+            </div>
+
+            {rubricSaving && (
+              <div className="text-xs text-emerald-400 flex items-center gap-1">
+                <Save className="h-3 w-3 animate-pulse" /> 保存中...
+              </div>
+            )}
+            {rubricSaved && (
+              <div className="text-xs text-emerald-400 flex items-center gap-1">
+                <Check className="h-3 w-3" /> 评分规则已更新
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-3 pt-1">

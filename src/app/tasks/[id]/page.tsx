@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Download, Trash2, Loader2, Check,
+  ArrowLeft, Download, Trash2, Loader2, Check, Share2,
   AlertTriangle, Sparkles, X, FileJson, FileSpreadsheet, ChevronDown,
 } from 'lucide-react'
 import StepInfo from './StepInfo'
@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DesktopStepSidebar, MobileStepBar } from '@/components/tasks/StepSidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
+import { SharePanel } from '@/components/tasks/SharePanel'
 import { filterConversationMessages } from '@/lib/task-messages'
 import { cn } from '@/lib/utils'
 import {
@@ -72,6 +73,7 @@ export default function TaskPage() {
   const [streamingContent, setStreamingContent] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
   const [chatOpen, setChatOpen] = useState(true)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -385,6 +387,9 @@ export default function TaskPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 self-start sm:self-auto">
+          <Button variant="secondary" size="sm" onClick={() => setShareOpen(true)}>
+            <Share2 className="h-3.5 w-3.5" /> 共享
+          </Button>
           <div className="relative" ref={exportMenuRef}>
             <Button variant="secondary" size="sm" onClick={() => setExportMenuOpen(v => !v)}>
               <Download className="h-3.5 w-3.5" /> 导出
@@ -485,6 +490,11 @@ export default function TaskPage() {
             />
           </div>
         </>
+      )}
+
+      {/* 共享面板 */}
+      {shareOpen && (
+        <SharePanel taskId={taskId} onClose={() => setShareOpen(false)} />
       )}
     </div>
   )

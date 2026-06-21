@@ -13,28 +13,11 @@ import {
 import { artifactAnalysisWorkflow } from '@/workflows/artifact-analysis'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError } from '@/lib/api-error'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
-
-async function findOwnedModel(taskId: string, modelId: string, userId: string) {
-  return prisma.taskModel.findFirst({
-    where: {
-      id: modelId,
-      taskId,
-      task: { userId, status: { not: 'DELETED' } },
-    },
-    include: {
-      artifacts: { orderBy: { createdAt: 'asc' } },
-      artifactAnalysisRuns: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        include: { events: { orderBy: { sequence: 'asc' } } },
-      },
-    },
-  })
-}
 
 export async function GET(
   _request: Request,
@@ -44,7 +27,22 @@ export async function GET(
   if (!session) return apiError('未登录', 401)
 
   const { id, modelId } = await params
-  const model = await findOwnedModel(id, modelId, session.userId)
+
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'VIEWER')
+  if (denied) return apiError(denied.error, denied.status)
+
+  const model = await prisma.taskModel.findFirst({
+    where: { id: modelId, taskId: id },
+    include: {
+      artifacts: { orderBy: { createdAt: 'asc' } },
+      artifactAnalysisRuns: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        include: { events: { orderBy: { sequence: 'asc' } } },
+      },
+    },
+  })
   if (!model) return apiError('模型不存在', 404)
 
   return NextResponse.json({
@@ -89,7 +87,24 @@ export async function POST(
       return rateLimitResponse(rateLimit)
     }
 
-    const model = await findOwnedModel(id, modelId, session.userId)
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'EDITOR')
+    if (denied) {
+      auditError = denied.error
+      return apiError(denied.error, denied.status)
+    }
+
+    const model = await prisma.taskModel.findFirst({
+      where: { id: modelId, taskId: id },
+      include: {
+        artifacts: { orderBy: { createdAt: 'asc' } },
+        artifactAnalysisRuns: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { events: { orderBy: { sequence: 'asc' } } },
+        },
+      },
+    })
     if (!model) {
       auditError = '模型不存在'
       return apiError(auditError, 404)

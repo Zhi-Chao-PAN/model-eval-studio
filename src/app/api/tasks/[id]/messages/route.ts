@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { TaskStep } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 const ALLOWED_ROLES = new Set(['user', 'assistant', 'system'])
 const MAX_MESSAGE_LENGTH = 100_000
@@ -16,10 +17,9 @@ export async function GET(
   }
   const { id } = await params
 
-  const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId, status: { not: 'DELETED' } },
-  })
-  if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'VIEWER')
+  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status })
 
   const messages = await prisma.taskMessage.findMany({
     where: { taskId: id },
@@ -61,10 +61,9 @@ export async function POST(
     return NextResponse.json({ error: '消息内容过长' }, { status: 413 })
   }
 
-  const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId, status: { not: 'DELETED' } },
-  })
-  if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'EDITOR')
+  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status })
 
   if (modelId) {
     const model = await prisma.taskModel.findFirst({
