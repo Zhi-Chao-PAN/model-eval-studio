@@ -9,6 +9,7 @@ import { buildScreenshotAnalysisPrompt, buildDashboardAnalysisPrompt } from '@/l
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError } from '@/lib/api-error'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { storeArtifactFile, deleteArtifactFile } from '@/lib/artifact-storage'
 import {
   parseTrajectoryScreenshots,
@@ -137,8 +138,12 @@ export async function POST(
     return apiError(imageValidationError, 400, 'invalid_images')
   }
 
-  const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId, status: { not: 'DELETED' } },
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'EDITOR')
+  if (denied) return apiError(denied.error, denied.status)
+
+  const task = await prisma.task.findUnique({
+    where: { id },
     include: { models: true },
   })
   if (!task) {

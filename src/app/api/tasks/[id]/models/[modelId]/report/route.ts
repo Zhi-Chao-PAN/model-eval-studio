@@ -7,20 +7,25 @@ import {
   validateVerificationEvidence,
 } from '@/lib/verification-evidence'
 import { getNextReportVersion } from '@/lib/report-versioning'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ id: string; modelId: string }> }
+  { params }: { params: Promise<{ id: string; modelId: string }> },
 ) {
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id, modelId } = await params
 
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'VIEWER')
+  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status })
+
   const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
+    where: { id: modelId, taskId: id },
     include: { reports: { orderBy: { version: 'desc' }, take: 1 } },
   })
-  if (!model) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+  if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
 
   return NextResponse.json({ report: model.reports[0] || null })
 }
@@ -45,10 +50,14 @@ export async function POST(
     trajectoryAnalysis,
   } = await request.json()
 
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'EDITOR')
+  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status })
+
   const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
+    where: { id: modelId, taskId: id },
   })
-  if (!model) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+  if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
 
   let storedEvidence: string | null = null
   if (verificationScreenshotUrls !== undefined && verificationScreenshotUrls !== null && verificationScreenshotUrls !== '') {

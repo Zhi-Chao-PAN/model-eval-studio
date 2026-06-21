@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { hasStoredArtifactFile, readArtifactFile } from '@/lib/artifact-storage'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 
@@ -32,14 +33,19 @@ export async function GET(
   if (!session) return Response.json({ error: '未登录' }, { status: 401 })
 
   const { id, modelId, artifactId } = await params
+
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'VIEWER')
+  if (denied) return Response.json({ error: denied.error }, { status: denied.status })
+
+  const model = await prisma.taskModel.findFirst({
+    where: { id: modelId, taskId: id },
+    select: { id: true },
+  })
+  if (!model) return Response.json({ error: '模型不存在' }, { status: 404 })
+
   const artifact = await prisma.modelArtifact.findFirst({
-    where: {
-      id: artifactId,
-      taskModel: {
-        id: modelId,
-        task: { id, userId: session.userId, status: { not: 'DELETED' } },
-      },
-    },
+    where: { id: artifactId, taskModelId: modelId },
   })
   if (!artifact) return Response.json({ error: '文件不存在' }, { status: 404 })
 

@@ -7,27 +7,27 @@ import {
   serializeVerificationEvidence,
   validateVerificationEvidence,
 } from '@/lib/verification-evidence'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 // 列出该任务的所有待测模型
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id } = await params
 
-  const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId, status: { not: 'DELETED' } },
-  })
-  if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'VIEWER')
+  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status })
 
   const models = await prisma.taskModel.findMany({
     where: { taskId: id },
     orderBy: { createdAt: 'asc' },
     include: {
       artifacts: { orderBy: { createdAt: 'asc' } },
-      reports: { orderBy: { createdAt: 'desc' }, take: 1 },
+      reports: { orderBy: { version: 'desc' }, take: 1 },
     },
   })
   return NextResponse.json({ models })
@@ -51,9 +51,14 @@ export async function POST(
     const body = await request.json()
     const modelCodes = body.modelCodes
 
-    const task = await prisma.task.findFirst({
-      where: { id, userId: session.userId, status: { not: 'DELETED' } },
-    })
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'EDITOR')
+    if (denied) {
+      errorMsg = denied.error
+      return NextResponse.json({ error: denied.error }, { status: denied.status })
+    }
+
+    const task = await prisma.task.findUnique({ where: { id } })
     if (!task) {
       errorMsg = '任务不存在'
       return NextResponse.json({ error: errorMsg }, { status: 404 })
@@ -139,8 +144,15 @@ export async function PUT(
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'EDITOR')
+    if (denied) {
+      errorMsg = denied.error
+      return NextResponse.json({ error: denied.error }, { status: denied.status })
+    }
+
     const model = await prisma.taskModel.findFirst({
-      where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
+      where: { id: modelId, taskId: id },
     })
     if (!model) {
       errorMsg = '模型不存在'

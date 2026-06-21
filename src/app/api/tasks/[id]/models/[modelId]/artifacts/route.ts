@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/session'
 import { buildFilePreview, parseFile, parseZip, sanitizeParsedText } from '@/lib/file-parser'
 import { deleteArtifactFile, storeArtifactFile } from '@/lib/artifact-storage'
 import { logAudit } from '@/lib/audit'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 
@@ -30,12 +31,9 @@ function isImageFile(file: File): boolean {
   return file.type?.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name)
 }
 
-async function requireOwnedModel(userId: string, taskId: string, modelId: string) {
+async function requireModel(taskId: string, modelId: string) {
   return prisma.taskModel.findFirst({
-    where: {
-      id: modelId,
-      task: { userId, id: taskId, status: { not: 'DELETED' } },
-    },
+    where: { id: modelId, taskId },
   })
 }
 
@@ -59,7 +57,15 @@ export async function POST(
 
     const { id, modelId } = await params
     taskId = id
-    const model = await requireOwnedModel(session.userId, id, modelId)
+
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'EDITOR')
+    if (denied) {
+      errorMsg = denied.error
+      return NextResponse.json({ error: denied.error }, { status: denied.status })
+    }
+
+    const model = await requireModel(id, modelId)
     if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
     modelCode = model.modelCode
 
@@ -242,14 +248,18 @@ export async function DELETE(
     const body = await request.json()
     const artifactId = body.artifactId
 
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'EDITOR')
+    if (denied) {
+      errorMsg = denied.error
+      return NextResponse.json({ error: denied.error }, { status: denied.status })
+    }
+
+    const model = await requireModel(id, modelId)
+    if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
+
     const artifact = await prisma.modelArtifact.findFirst({
-      where: {
-        id: artifactId,
-        taskModel: {
-          id: modelId,
-          task: { userId: session.userId, id, status: { not: 'DELETED' } },
-        },
-      },
+      where: { id: artifactId, taskModelId: modelId },
     })
     if (!artifact) {
       errorMsg = '文件不存在'

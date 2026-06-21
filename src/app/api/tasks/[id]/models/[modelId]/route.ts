@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export async function DELETE(
   request: Request,
@@ -18,15 +19,15 @@ export async function DELETE(
   let modelCode = ''
 
   try {
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'EDITOR')
+    if (denied) {
+      errorMsg = denied.error
+      return NextResponse.json({ error: denied.error }, { status: denied.status })
+    }
+
     const model = await prisma.taskModel.findFirst({
-      where: {
-        id: modelId,
-        task: {
-          id,
-          userId: session.userId,
-          status: { not: 'DELETED' },
-        },
-      },
+      where: { id: modelId, taskId: id },
       select: { id: true, modelCode: true, artifacts: { select: { url: true } } },
     })
     if (!model) {
