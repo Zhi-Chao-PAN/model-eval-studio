@@ -18,6 +18,8 @@ import {
 } from '@/lib/verification-evidence'
 import {
   artifactAnalysisSignature,
+  FILE_ANALYSIS_LIMIT,
+  FILE_ANALYSIS_CHAR_LIMIT,
   MODEL_ARTIFACT_ANALYSIS_VERSION,
   type StoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
@@ -60,8 +62,6 @@ type ArtifactLike = {
   createdAt?: Date | string | null
 }
 
-export const FILE_ANALYSIS_LIMIT = 4
-export const FILE_ANALYSIS_CHAR_LIMIT = 32_000
 const AUXILIARY_CALL_TIMEOUT_MS = 45_000
 
 function trimForDisplay(value: string, limit = 560): string {

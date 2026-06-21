@@ -9,11 +9,12 @@ import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
+  FILE_ANALYSIS_LIMIT,
+  FILE_ANALYSIS_CHAR_LIMIT,
   isFreshModelArtifactAnalysis,
   parseStoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
 import { ArtifactAnalysisTrace } from '@/components/tasks/ArtifactAnalysisTrace'
-import { FILE_ANALYSIS_LIMIT, FILE_ANALYSIS_CHAR_LIMIT } from '@/lib/artifact-analysis-runtime'
 
 interface Props {
   task: any

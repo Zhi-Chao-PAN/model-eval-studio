@@ -1,5 +1,11 @@
 export const MODEL_ARTIFACT_ANALYSIS_VERSION = 2
 
+// 产物分析的文件数量和字符数上限
+// 常量放在这里是因为需要同时被服务端（artifact-analysis-runtime）
+// 和客户端（StepArtifact 显示覆盖范围提示）引用
+export const FILE_ANALYSIS_LIMIT = 4
+export const FILE_ANALYSIS_CHAR_LIMIT = 32_000
+
 export type ArtifactAnalysisArtifact = {
   id: string
   name: string
