@@ -8,6 +8,7 @@ import {
 } from '@/lib/verification-evidence'
 import { getNextReportVersion } from '@/lib/report-versioning'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
 
 export async function GET(
   _request: Request,
@@ -56,8 +57,22 @@ export async function POST(
 
   const model = await prisma.taskModel.findFirst({
     where: { id: modelId, taskId: id },
+    select: { id: true, taskId: true },
   })
   if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
+
+  // 基本类型校验（文本字段必须是 string，避免 JSON/number 灌入）
+  const asString = (v: unknown): string => {
+    if (v == null) return ''
+    if (typeof v === 'string') return v
+    return String(v)
+  }
+  const pfText = asString(productFeedback)
+  const ocText = asString(overallComment)
+  const ecText = asString(efficiencyComment)
+  const qcText = asString(qualityComment)
+  const taText = trajectoryAnalysis == null ? '' : asString(trajectoryAnalysis)
+  const vsText = verificationSummary == null ? null : asString(verificationSummary)
 
   let storedEvidence: string | null = null
   if (verificationScreenshotUrls !== undefined && verificationScreenshotUrls !== null && verificationScreenshotUrls !== '') {
@@ -90,16 +105,16 @@ export async function POST(
       version,
       source: 'MANUAL',
       editedById: session.userId,
-      productFeedback: productFeedback || '',
+      productFeedback: clampRequiredText(pfText, DB_TEXT_LIMITS.COMMENT),
       verificationScreenshotUrls: storedEvidence,
-      verificationSummary: verificationSummary || null,
+      verificationSummary: clampDbText(vsText, DB_TEXT_LIMITS.VERIFICATION),
       overallScore: validatedOverallScore,
-      overallComment: overallComment || '',
+      overallComment: clampRequiredText(ocText, DB_TEXT_LIMITS.COMMENT),
       efficiencyScore: validatedEfficiencyScore,
-      efficiencyComment: efficiencyComment || '',
+      efficiencyComment: clampRequiredText(ecText, DB_TEXT_LIMITS.COMMENT),
       qualityScore: validatedQualityScore,
-      qualityComment: qualityComment || '',
-      trajectoryAnalysis: trajectoryAnalysis || '未提供轨迹截图。',
+      qualityComment: clampRequiredText(qcText, DB_TEXT_LIMITS.COMMENT),
+      trajectoryAnalysis: clampDbText(taText || '未提供轨迹截图。', DB_TEXT_LIMITS.ANALYSIS),
     },
   })
 
