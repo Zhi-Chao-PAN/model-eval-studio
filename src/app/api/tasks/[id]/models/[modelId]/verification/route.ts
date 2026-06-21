@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 
@@ -16,15 +17,14 @@ export async function GET(
   const { id, modelId } = await params
 
   try {
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'VIEWER')
+    if (denied) {
+      return NextResponse.json({ error: denied.error }, { status: denied.status })
+    }
+
     const model = await prisma.taskModel.findFirst({
-      where: {
-        id: modelId,
-        task: {
-          id,
-          userId: session.userId,
-          status: { not: 'DELETED' },
-        },
-      },
+      where: { id: modelId, taskId: id },
       select: {
         id: true,
         verificationScreenshotUrls: true,

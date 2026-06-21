@@ -32,6 +32,7 @@ import {
 } from '@/lib/report-parser'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError } from '@/lib/api-error'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -65,13 +66,17 @@ export async function POST(
   const modelId = body.modelId
   const adjustInstruction = body.adjustInstruction
 
-  const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId, status: { not: 'DELETED' } },
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'EDITOR')
+  if (denied) return apiError(denied.error, denied.status)
+
+  const task = await prisma.task.findUnique({
+    where: { id },
     include: {
       models: {
         include: {
           artifacts: true,
-          reports: { orderBy: { createdAt: 'desc' }, take: 1 },
+          reports: { orderBy: { version: 'desc' }, take: 1 },
         },
       },
     },

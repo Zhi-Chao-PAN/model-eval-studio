@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { apiError, errorMessage } from '@/lib/api-error'
 import { createReportRevision } from '@/lib/report-versioning'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 // 获取单条报告详情（含生成依据快照）
 export async function GET(
@@ -13,11 +14,15 @@ export async function GET(
   if (!session) return apiError('未登录', 401)
   const { id, modelId, reportId } = await params
 
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'VIEWER')
+  if (denied) return apiError(denied.error, denied.status)
+
   const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
+    where: { id: modelId, taskId: id },
     select: { id: true },
   })
-  if (!model) return apiError('任务不存在', 404)
+  if (!model) return apiError('模型不存在', 404)
 
   const report = await prisma.modelReport.findFirst({
     where: { id: reportId, taskModelId: modelId },
@@ -55,11 +60,15 @@ export async function POST(
   if (!session) return apiError('未登录', 401)
   const { id, modelId, reportId } = await params
 
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'EDITOR')
+  if (denied) return apiError(denied.error, denied.status)
+
   const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, task: { userId: session.userId, id, status: { not: 'DELETED' } } },
+    where: { id: modelId, taskId: id },
     select: { id: true },
   })
-  if (!model) return apiError('任务不存在', 404)
+  if (!model) return apiError('模型不存在', 404)
 
   const existingReport = await prisma.modelReport.findFirst({
     where: { id: reportId, taskModelId: modelId },
