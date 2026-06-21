@@ -9,7 +9,17 @@
  * 目的：防止 Preview Deployment 误改生产数据库。
  */
 
+const path = require('path')
+const fs = require('fs')
 const { execSync } = require('child_process')
+
+const projectRoot = path.resolve(__dirname, '..')
+
+// 优先使用本地 node_modules/.bin/prisma，避免 npx 临时下载/版本不一致
+const localPrismaBin = path.join(projectRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'prisma.cmd' : 'prisma')
+const prismaBin = fs.existsSync(localPrismaBin)
+  ? localPrismaBin
+  : 'prisma' // fallback: 期望 PATH 中有 prisma（pnpm exec/全局安装）
 
 const isProduction = process.env.VERCEL_ENV === 'production'
 const isForced = process.env.FORCE_MIGRATE === '1'
@@ -35,13 +45,28 @@ if (!hasDbUrl) {
   process.exit(0)
 }
 
+const timeoutMs = Number(process.env.MIGRATE_TIMEOUT_MS) || 120_000
+
 try {
-  execSync('npx prisma migrate deploy', {
+  execSync('"' + prismaBin + '" migrate deploy', {
+    cwd: projectRoot,
     stdio: 'inherit',
     env: process.env,
+    timeout: timeoutMs,
   })
   console.log('[migrate] ✅ 数据库迁移完成')
 } catch (err) {
   console.error('[migrate] ❌ 数据库迁移失败')
+  if (err && err.stderr) {
+    // 把 stderr 打出来方便排查
+    console.error('[migrate] stderr:')
+    try { console.error(err.stderr.toString()) } catch (_) { /* ignore */ }
+  }
+  if (err && err.stdout) {
+    try { console.error(err.stdout.toString()) } catch (_) { /* ignore */ }
+  }
+  if (err && err.killed) {
+    console.error('[migrate] 迁移进程超时被终止（timeout=' + timeoutMs + 'ms），可通过 MIGRATE_TIMEOUT_MS 调整')
+  }
   process.exit(1)
 }

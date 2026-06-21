@@ -46,11 +46,14 @@ export function encrypt(plaintext: string): string {
 }
 
 export function decrypt(ciphertext: string): string {
-  const [ivStr, tagStr, dataStr] = ciphertext.split(':')
-  if (!ivStr || !tagStr || !dataStr) throw new Error('Invalid encrypted format')
+  const parts = ciphertext.split(':')
+  if (parts.length !== 3) throw new Error('Invalid encrypted format')
+  const [ivStr, tagStr, dataStr] = parts
+  if (!ivStr || !tagStr) throw new Error('Invalid encrypted format')
+  // dataStr 允许为空字符串（空明文情形）
   const iv = Buffer.from(ivStr, ENCODING)
   const tag = Buffer.from(tagStr, ENCODING)
-  const data = Buffer.from(dataStr, ENCODING)
+  const data = Buffer.from(dataStr || '', ENCODING)
   const key = getKey()
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv)
   decipher.setAuthTag(tag)

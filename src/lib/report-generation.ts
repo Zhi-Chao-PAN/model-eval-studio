@@ -50,6 +50,7 @@ import {
   buildGenerationSnapshot,
   buildGenerationConfig,
 } from '@/lib/report-versioning'
+import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
 
 const AUXILIARY_CALL_TIMEOUT_MS = 45_000
 const REPORT_CALL_TIMEOUT_MS = 90_000
@@ -419,16 +420,16 @@ export async function generateReportForModel(
       taskModelId: model.id,
       version,
       source: 'AI_GENERATED',
-      productFeedback: parsed.productFeedback,
+      productFeedback: clampRequiredText(parsed.productFeedback, DB_TEXT_LIMITS.COMMENT),
       verificationScreenshotUrls,
-      verificationSummary,
+      verificationSummary: clampDbText(verificationSummary, DB_TEXT_LIMITS.VERIFICATION),
       overallScore: parsed.overallScore,
-      overallComment: parsed.overallComment,
+      overallComment: clampRequiredText(parsed.overallComment, DB_TEXT_LIMITS.COMMENT),
       efficiencyScore: parsed.efficiencyScore,
-      efficiencyComment: parsed.efficiencyComment,
+      efficiencyComment: clampRequiredText(parsed.efficiencyComment, DB_TEXT_LIMITS.COMMENT),
       qualityScore: parsed.qualityScore,
-      qualityComment: parsed.qualityComment,
-      trajectoryAnalysis: parsed.trajectoryAnalysis,
+      qualityComment: clampRequiredText(parsed.qualityComment, DB_TEXT_LIMITS.COMMENT),
+      trajectoryAnalysis: clampDbText(parsed.trajectoryAnalysis, DB_TEXT_LIMITS.ANALYSIS),
       generationSnapshot,
       generationConfig,
     },
