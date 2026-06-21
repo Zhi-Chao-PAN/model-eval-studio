@@ -459,12 +459,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
 
                 <div>
                   <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-xs text-gray-400">题目来源 / 背景说明</Label>
-                      <div className="text-[10px] text-amber-400/70 mt-0.5">
-                        请用第一人称"我"来描述，模拟评测者真实的项目背景和诉求
-                      </div>
-                    </div>
+                    <Label className="text-xs text-gray-400">题目来源 / 背景说明</Label>
                     <button
                       onClick={() => copyToClipboard(generatedBackground, 'background')}
                       disabled={!generatedBackground}
