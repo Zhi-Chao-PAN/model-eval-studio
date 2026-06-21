@@ -187,8 +187,44 @@ export async function GET(
 
   const task = await prisma.task.findUnique({
     where: { id },
-    include: {
-      models: { include: { reports: { orderBy: { version: 'desc' }, take: 1 } } },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      requirementType: true,
+      status: true,
+      currentStep: true,
+      createdAt: true,
+      updatedAt: true,
+      models: {
+        select: {
+          id: true,
+          modelCode: true,
+          displayName: true,
+          hardMetricsJson: true,
+          reports: {
+            // 导出只需要最新一版报告的可读字段，不拉 generationSnapshot/generationConfig（@db.Text 大字段）
+            select: {
+              id: true,
+              version: true,
+              source: true,
+              createdAt: true,
+              productFeedback: true,
+              verificationSummary: true,
+              efficiencyScore: true,
+              efficiencyComment: true,
+              qualityScore: true,
+              qualityComment: true,
+              overallScore: true,
+              overallComment: true,
+              trajectoryAnalysis: true,
+            },
+            orderBy: { version: 'desc' },
+            take: 1,
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   })
   if (!task) {
