@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, FlaskConical, FileText, Image as ImageIcon, Wand2,
   Package, FileCheck2, Loader2, ArrowRight, Trash2, Circle,
+  AlertTriangle, RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -54,13 +55,24 @@ export default function DashboardPage() {
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'mine' | 'shared'>('mine')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   async function loadTasks() {
+    setLoadError(null)
     try {
       const res = await fetch('/api/tasks')
-      let data; try { data = await res.json(); } catch { throw new Error('服务器返回了非预期内容（HTTP ' + res.status + '）') }
+      if (!res.ok) {
+        let msg = '加载任务失败（HTTP ' + res.status + '）'
+        try { const d = await res.json(); if (d.error) msg = d.error } catch { /* ignore */ }
+        throw new Error(msg)
+      }
+      let data
+      try { data = await res.json() } catch { throw new Error('服务器返回了非预期内容') }
       if (data.tasks) setTasks(data.tasks)
       if (data.sharedTasks) setSharedTasks(data.sharedTasks)
+    } catch (e: any) {
+      setLoadError(e?.message || '加载任务失败，请重试')
     } finally { setLoading(false) }
   }
 
@@ -70,23 +82,38 @@ export default function DashboardPage() {
     e.preventDefault()
     if (!newTitle.trim()) return
     setCreating(true)
+    setActionError(null)
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newTitle.trim() }),
       })
-      const data = await res.json()
-      if (data.task) router.push('/tasks/' + data.task.id)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.task) {
+        setActionError(data.error || '创建任务失败')
+        return
+      }
+      router.push('/tasks/' + data.task.id)
+    } catch (err: any) {
+      setActionError(err?.message || '创建任务失败，请重试')
     } finally { setCreating(false) }
   }
 
   async function handleDelete(id: string, title: string) {
-    if (!window.confirm('确认删除任务「' + title + '」？\\n\\n删除后无法恢复，确定继续？')) return
+    if (!window.confirm('确认删除任务「' + title + '」？\n\n删除后无法恢复，确定继续？')) return
     setDeletingId(id)
+    setActionError(null)
     try {
-      await fetch('/api/tasks/' + id, { method: 'DELETE' })
+      const res = await fetch('/api/tasks/' + id, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setActionError(data.error || '删除失败')
+        return
+      }
       await loadTasks()
+    } catch (err: any) {
+      setActionError(err?.message || '删除失败，请重试')
     } finally { setDeletingId(null) }
   }
 
@@ -165,6 +192,24 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {actionError && (
+        <div className="mb-4 panel p-3 border-red-500/30 bg-red-500/5 flex items-center gap-2 text-sm text-red-300">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          <span className="flex-1">{actionError}</span>
+          <button onClick={() => setActionError(null)} className="text-red-400/70 hover:text-red-300 text-xs">关闭</button>
+        </div>
+      )}
+
+      {loadError && !loading && (
+        <div className="panel p-6 border-amber-500/30 bg-amber-500/5 text-center">
+          <AlertTriangle className="h-8 w-8 mx-auto text-amber-400 mb-2" />
+          <p className="text-sm text-amber-200 mb-3">{loadError}</p>
+          <Button size="sm" variant="secondary" onClick={() => { setLoading(true); loadTasks() }}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" /> 重试
+          </Button>
+        </div>
+      )}
+
       {loading ? (
         <div className="grid gap-3">
           {[0,1,2].map(i => (
@@ -179,7 +224,7 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : loadError ? null : filtered.length === 0 ? (
         <EmptyState onNew={() => setShowNew(true)} hasSearch={!!search} />
       ) : (
         <div className="space-y-2">

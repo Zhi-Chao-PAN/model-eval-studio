@@ -81,6 +81,7 @@ model User {
   auditLogs     AuditLog[]
   sharedTasks   TaskCollaborator[]
   createdShares TaskShare[] @relation("TaskShareCreator")
+  editedReports ModelReport[] @relation("ReportEditor")
 }
 
 model InviteCode {
@@ -217,7 +218,10 @@ model ModelReport {
   version             Int      @default(1)
   source              String   @default("AI_GENERATED") // AI_GENERATED | AI_ADJUSTED | MANUAL
   parentReportId      String?  // 上一版本 ID，形成修订链
+  parentReport        ModelReport? @relation("ReportRevision", fields: [parentReportId], references: [id], onDelete: SetNull)
+  childReports        ModelReport[] @relation("ReportRevision")
   editedById          String?  // 人工修订者用户 ID
+  editedBy            User?    @relation("ReportEditor", fields: [editedById], references: [id], onDelete: SetNull)
   editNote            String?  // 修订说明
   productFeedback     String
   verificationScreenshotUrls String?
@@ -235,7 +239,8 @@ model ModelReport {
   updatedAt           DateTime @updatedAt
 
   @@index([taskModelId, createdAt])
-  @@index([taskModelId, version])
+  @@unique([taskModelId, version])
+  @@index([parentReportId])
 }
 
 model TaskMessage {
@@ -249,6 +254,7 @@ model TaskMessage {
   createdAt DateTime @default(now())
 
   @@index([taskId, createdAt])
+  @@index([modelId])
 }
 
 model AuditLog {
@@ -272,6 +278,7 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@index([createdAt])
+  @@index([taskId])
 }
 
 model EvaluationRubric {
@@ -283,8 +290,6 @@ model EvaluationRubric {
   overallFormula String?  // 综合分计算公式描述
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-
-  @@index([taskId])
 }
 
 model RateLimitBucket {
@@ -306,7 +311,7 @@ model TaskShare {
   expiresAt   DateTime?
   createdAt   DateTime @default(now())
   createdById String
-  createdBy   User     @relation("TaskShareCreator", fields: [createdById], references: [id])
+  createdBy   User     @relation("TaskShareCreator", fields: [createdById], references: [id], onDelete: Cascade)
 
   @@index([taskId])
 }

@@ -82,6 +82,9 @@ export default function TaskPage() {
   const autoReportedRef = useRef<Set<string>>(new Set())
   const [autoReportNote, setAutoReportNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const autoReportNoteTimerRef = useRef<number | null>(null)
+  const [messagesError, setMessagesError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [stepError, setStepError] = useState<string | null>(null)
 
   async function readJsonResponse(res: Response) {
     const text = await res.text().catch(() => '')
@@ -118,9 +121,18 @@ export default function TaskPage() {
   }
 
   async function loadMessages() {
-    const res = await fetch('/api/tasks/' + taskId + '/messages')
-    const data = await readJsonResponse(res)
-    if (res.ok && data.messages) setMessages(data.messages)
+    setMessagesError(null)
+    try {
+      const res = await fetch('/api/tasks/' + taskId + '/messages')
+      const data = await readJsonResponse(res)
+      if (!res.ok) {
+        setMessagesError(data.error || '消息加载失败')
+        return
+      }
+      if (data.messages) setMessages(data.messages)
+    } catch (e: any) {
+      setMessagesError(e?.message || '消息加载失败')
+    }
   }
 
   // ---- auto-report: 产物分析完成后自动生成报告 ----
@@ -222,12 +234,16 @@ export default function TaskPage() {
     if (stepKey === currentStep) return
     loadTaskSeqRef.current += 1
     setCurrentStep(stepKey)
+    setStepError(null)
     fetch('/api/tasks/' + taskId, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentStep: stepKey }),
     }).then(readJsonResponse).then(data => {
       if (data.task) setTask((previous: unknown) => mergeTaskUpdate(previous, data.task))
+      else setStepError(data.error || '步骤切换失败')
+    }).catch((err: Error) => {
+      setStepError(err.message || '步骤切换失败')
     })
   }
 
@@ -294,11 +310,24 @@ export default function TaskPage() {
   async function handleDelete() {
     if (!deleteConfirm) {
       setDeleteConfirm(true)
+      setDeleteError(null)
       setTimeout(() => setDeleteConfirm(false), 3000)
       return
     }
-    await fetch('/api/tasks/' + taskId, { method: 'DELETE' })
-    router.push('/dashboard')
+    try {
+      const res = await fetch('/api/tasks/' + taskId, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await readJsonResponse(res)
+        setDeleteError(data.error || '删除失败')
+        setDeleteConfirm(false)
+        return
+      }
+      router.push('/dashboard')
+      router.refresh()
+    } catch (e: any) {
+      setDeleteError(e?.message || '删除失败，请重试')
+      setDeleteConfirm(false)
+    }
   }
 
   function handleExport(format: 'zip' | 'json' | 'csv') {
@@ -361,6 +390,28 @@ export default function TaskPage() {
             : 'bg-red-500/20 border-red-500/30 text-red-200',
         )}>
           {autoReportNote.text}
+        </div>
+      )}
+
+      {/* Inline error banners */}
+      {stepError && (
+        <div className="mb-4 panel p-3 border-red-500/30 bg-red-500/5 flex items-center gap-2 text-sm text-red-300">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          <span className="flex-1">{stepError}</span>
+          <button onClick={() => setStepError(null)} className="text-red-400/70 hover:text-red-300 text-xs">关闭</button>
+        </div>
+      )}
+      {deleteError && (
+        <div className="mb-4 panel p-3 border-red-500/30 bg-red-500/5 flex items-center gap-2 text-sm text-red-300">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          <span className="flex-1">{deleteError}</span>
+          <button onClick={() => setDeleteError(null)} className="text-red-400/70 hover:text-red-300 text-xs">关闭</button>
+        </div>
+      )}
+      {messagesError && (
+        <div className="mb-4 text-xs text-amber-400/80 flex items-center gap-1.5">
+          <AlertTriangle className="h-3 w-3" /> 对话历史加载失败：{messagesError}
+          <button onClick={loadMessages} className="underline hover:text-amber-300 ml-1">重试</button>
         </div>
       )}
       {/* Top header bar */}

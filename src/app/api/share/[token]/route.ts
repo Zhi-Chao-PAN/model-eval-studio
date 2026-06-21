@@ -2,6 +2,30 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { apiError } from '@/lib/api-error'
 
+// 公开只读页允许返回的报告字段（白名单，禁止泄露 generationSnapshot / generationConfig 等内部字段）
+const PUBLIC_REPORT_SELECT = {
+  id: true,
+  version: true,
+  source: true,
+  overallScore: true,
+  efficiencyScore: true,
+  qualityScore: true,
+  productFeedback: true,
+  efficiencyComment: true,
+  qualityComment: true,
+  overallComment: true,
+  trajectoryAnalysis: true,
+  createdAt: true,
+} as const
+
+// 公开只读页允许返回的模型字段（白名单）
+const PUBLIC_MODEL_SELECT = {
+  id: true,
+  modelCode: true,
+  displayName: true,
+  createdAt: true,
+} as const
+
 // 通过公开链接获取任务信息（只读，无需登录）
 export async function GET(
   _request: Request,
@@ -28,13 +52,9 @@ export async function GET(
           },
           models: {
             select: {
-              id: true,
-              modelCode: true,
-              displayName: true,
-              hardMetricsJson: true,
-              processText: true,
-              createdAt: true,
+              ...PUBLIC_MODEL_SELECT,
               reports: {
+                select: PUBLIC_REPORT_SELECT,
                 orderBy: { version: 'desc' },
                 take: 1,
               },
@@ -42,6 +62,7 @@ export async function GET(
                 select: { id: true, name: true, mimeType: true, size: true, createdAt: true },
               },
             },
+            orderBy: { createdAt: 'asc' },
           },
         },
       },
@@ -50,6 +71,11 @@ export async function GET(
 
   if (!share || !share.task || share.task.status === 'DELETED') {
     return apiError('共享链接无效或已过期', 404)
+  }
+
+  // 防御纵深：只允许 VIEW 类型的共享访问
+  if (share.accessType !== 'VIEW') {
+    return apiError('共享链接无效', 404)
   }
 
   // 检查是否过期

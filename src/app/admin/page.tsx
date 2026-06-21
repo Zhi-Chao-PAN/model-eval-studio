@@ -97,6 +97,8 @@ export default function AdminPage() {
   const [expiresInDays, setExpiresInDays] = useState(7)
   const [generating, setGenerating] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
   // Audit state
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
@@ -111,15 +113,26 @@ export default function AdminPage() {
   const [auditStatus, setAuditStatus] = useState<string>('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
+  function flash(type: 'ok' | 'err', text: string) {
+    setActionMsg({ type, text })
+    setTimeout(() => setActionMsg(null), 3000)
+  }
+
   async function loadInvites() {
-    const res = await fetch('/api/admin/invites')
-    const data = await res.json()
-    if (data.invites) setInvites(data.invites)
+    try {
+      const res = await fetch('/api/admin/invites')
+      if (!res.ok) throw new Error('邀请码列表加载失败（HTTP ' + res.status + '）')
+      const data = await res.json()
+      if (data.invites) setInvites(data.invites)
+    } catch (e: any) { setLoadError(e?.message || '加载失败') }
   }
   async function loadUsers() {
-    const res = await fetch('/api/admin/users')
-    const data = await res.json()
-    if (data.users) setUsers(data.users)
+    try {
+      const res = await fetch('/api/admin/users')
+      if (!res.ok) throw new Error('用户列表加载失败（HTTP ' + res.status + '）')
+      const data = await res.json()
+      if (data.users) setUsers(data.users)
+    } catch (e: any) { setLoadError(e?.message || '加载失败') }
   }
   async function loadAuditLogs() {
     setAuditLoading(true)
@@ -156,12 +169,18 @@ export default function AdminPage() {
 
   useEffect(() => {
     setLoading(true)
+    setLoadError(null)
     ;(async () => {
       // 初始加载：用户和邀请码是轻量数据，并行加载，确保顶部统计卡片有数据
-      const loads: Promise<any>[] = [loadInvites(), loadUsers()]
-      if (tab === 'audit') loads.push(loadAuditLogs())
-      await Promise.all(loads)
-      setLoading(false)
+      try {
+        const loads: Promise<any>[] = [loadInvites(), loadUsers()]
+        if (tab === 'audit') loads.push(loadAuditLogs())
+        await Promise.all(loads)
+      } catch (e: any) {
+        setLoadError(e?.message || '数据加载失败')
+      } finally {
+        setLoading(false)
+      }
     })()
   }, [tab])
 
@@ -189,24 +208,47 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count, maxUses, expiresAt }),
       })
-      const data = await res.json()
-      if (data.invites) setInvites([...data.invites, ...invites])
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '生成失败（HTTP ' + res.status + '）')
+      if (data.invites) {
+        setInvites([...data.invites, ...invites])
+        flash('ok', '已生成 ' + data.invites.length + ' 个邀请码')
+      }
+    } catch (e: any) {
+      flash('err', e?.message || '生成邀请码失败')
     } finally { setGenerating(false) }
   }
 
   async function toggle(id: string) {
-    await fetch('/api/admin/invites', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, action: 'toggle' }),
-    })
-    loadInvites()
+    try {
+      const res = await fetch('/api/admin/invites', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'toggle' }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || '切换失败')
+      }
+      loadInvites()
+    } catch (e: any) {
+      flash('err', e?.message || '切换邀请码状态失败')
+    }
   }
 
   async function copy(text: string, id: string) {
-    await navigator.clipboard.writeText(text)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 1600)
+    const done = () => { setCopiedId(id); setTimeout(() => setCopiedId(null), 1600) }
+    if (navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(text); done(); return } catch { /* fall through */ }
+    }
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+      document.body.appendChild(ta); ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      done()
+    } catch { flash('err', '复制失败，请手动复制') }
   }
 
   const used = invites.reduce((s, i) => s + i.usedCount, 0)
@@ -249,6 +291,26 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+
+      {/* Action message */}
+      {actionMsg && (
+        <div className={cn(
+          'fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md max-w-sm text-sm border',
+          actionMsg.type === 'ok'
+            ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-200'
+            : 'bg-red-500/20 border-red-500/30 text-red-200',
+        )}>{actionMsg.text}</div>
+      )}
+
+      {loadError && !loading && (
+        <div className="panel p-6 border-amber-500/30 bg-amber-500/5 text-center">
+          <AlertTriangle className="h-8 w-8 mx-auto text-amber-400 mb-2" />
+          <p className="text-sm text-amber-200 mb-3">{loadError}</p>
+          <Button size="sm" variant="secondary" onClick={() => window.location.reload()}>
+            刷新重试
+          </Button>
+        </div>
+      )}
 
       {/* === TABS === */}
       <div className="inline-flex p-1 rounded-xl bg-white/[0.04] border border-white/5">

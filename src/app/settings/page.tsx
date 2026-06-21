@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import {
   Settings as SettingsIcon, Key, Save, Check, User as UserIcon, FlaskConical,
-  CheckCircle2, XCircle, Loader2, Sparkles, ShieldCheck, Wand2,
+  CheckCircle2, XCircle, Loader2, Sparkles, ShieldCheck, Wand2, AlertTriangle, RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label, Textarea, Select } from '@/components/ui/input'
@@ -88,24 +88,39 @@ export default function SettingsPage() {
   const [validateResult, setValidateResult] = useState<{ ok: boolean; error?: string } | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [me, setMe] = useState<any>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [bgError, setBgError] = useState<string | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   async function load() {
-    const res = await fetch('/api/auth/me')
-    const data = await res.json()
-    if (data.user) {
-      setMe(data.user)
-      setBackground(data.user.background || '')
+    setLoadError(null)
+    try {
+      const [meRes, aiRes] = await Promise.all([
+        fetch('/api/auth/me'),
+        fetch('/api/user/ai-config'),
+      ])
+      const [data, aiData] = await Promise.all([
+        meRes.json().catch(() => ({})),
+        aiRes.json().catch(() => ({})),
+      ])
+      if (!meRes.ok) throw new Error(data.error || '账户信息加载失败（HTTP ' + meRes.status + '）')
+      if (data.user) {
+        setMe(data.user)
+        setBackground(data.user.background || '')
+      }
+      if (!aiRes.ok) throw new Error(aiData.error || 'AI 配置加载失败（HTTP ' + aiRes.status + '）')
+      if (aiData.config) {
+        setProvider(aiData.config.provider)
+        setBaseUrl(aiData.config.baseUrl || '')
+        setModelName(aiData.config.modelName || '')
+        setMaxTokens(aiData.config.maxTokens?.toString() || '')
+        setHasApiKey(aiData.config.hasApiKey)
+      }
+    } catch (err: any) {
+      setLoadError(err?.message || '加载失败，请重试')
+    } finally {
+      setLoaded(true)
     }
-    const aiRes = await fetch('/api/user/ai-config')
-    const aiData = await aiRes.json()
-    if (aiData.config) {
-      setProvider(aiData.config.provider)
-      setBaseUrl(aiData.config.baseUrl || '')
-      setModelName(aiData.config.modelName || '')
-      setMaxTokens(aiData.config.maxTokens?.toString() || '')
-      setHasApiKey(aiData.config.hasApiKey)
-    }
-    setLoaded(true)
   }
 
   useEffect(() => { load() }, [])
@@ -113,6 +128,7 @@ export default function SettingsPage() {
   async function saveBackground() {
     setSavingBg(true)
     setBgSaved(false)
+    setBgError(null)
     try {
       const res = await fetch('/api/user/background', {
         method: 'PUT',
@@ -126,7 +142,7 @@ export default function SettingsPage() {
       setBgSaved(true)
       setTimeout(() => setBgSaved(false), 2000)
     } catch (err) {
-      alert('保存失败：' + (err instanceof Error ? err.message : String(err)))
+      setBgError(err instanceof Error ? err.message : String(err))
     } finally {
       setSavingBg(false)
     }
@@ -135,6 +151,7 @@ export default function SettingsPage() {
   async function saveAiConfig() {
     setSavingAi(true)
     setAiSaved(false)
+    setAiError(null)
     try {
       const res = await fetch('/api/user/ai-config', {
         method: 'PUT',
@@ -150,9 +167,10 @@ export default function SettingsPage() {
       }
       setAiSaved(true)
       setHasApiKey(true)
+      setApiKey('')
       setTimeout(() => setAiSaved(false), 2000)
     } catch (err) {
-      alert('保存失败：' + (err instanceof Error ? err.message : String(err)))
+      setAiError(err instanceof Error ? err.message : String(err))
     } finally {
       setSavingAi(false)
     }
@@ -186,6 +204,19 @@ export default function SettingsPage() {
   }
 
   if (!loaded) return <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 text-gray-500 animate-spin" /></div>
+
+  if (loadError) {
+    return (
+      <div className="panel p-10 text-center max-w-md mx-auto mt-10">
+        <AlertTriangle className="h-10 w-10 mx-auto text-amber-400 mb-3" />
+        <h2 className="text-lg font-medium mb-1">设置加载失败</h2>
+        <p className="text-sm text-gray-400 mb-4">{loadError}</p>
+        <Button size="sm" onClick={() => { setLoaded(false); setLoadError(null); load() }}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1" /> 重试
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-6xl">
@@ -292,6 +323,14 @@ export default function SettingsPage() {
               {aiSaved && <span className="text-emerald-400 text-xs flex items-center gap-1"><Check className="h-3 w-3" /> 已保存</span>}
             </div>
 
+            {aiError && (
+              <div className="text-sm px-3 py-2 rounded-lg border bg-red-500/10 text-red-300 border-red-500/20 flex items-center gap-2">
+                <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <span className="flex-1">{aiError}</span>
+                <button onClick={() => setAiError(null)} className="text-red-400/70 hover:text-red-300 text-xs">关闭</button>
+              </div>
+            )}
+
             {validateResult && (
               <div className={`text-sm px-3 py-2 rounded-lg border flex items-start gap-2 ${
                 validateResult.ok
@@ -358,6 +397,13 @@ export default function SettingsPage() {
                 </Button>
                 {bgSaved && <span className="text-emerald-400 text-xs flex items-center gap-1"><Check className="h-3 w-3" /> 已保存</span>}
               </div>
+              {bgError && (
+                <div className="mt-3 text-sm px-3 py-2 rounded-lg border bg-red-500/10 text-red-300 border-red-500/20 flex items-center gap-2">
+                  <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span className="flex-1">{bgError}</span>
+                  <button onClick={() => setBgError(null)} className="text-red-400/70 hover:text-red-300 text-xs">关闭</button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
