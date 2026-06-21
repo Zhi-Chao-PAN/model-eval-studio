@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && node scripts/migrate-if-production.js && next build",
     "start": "next start",
     "lint": "eslint src",
     "test": "tsx --test src/lib/*.test.ts",
@@ -12,6 +12,9 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:reset": "prisma migrate reset",
     "init:admin": "tsx scripts/init-admin.ts"
   },
   "dependencies": {

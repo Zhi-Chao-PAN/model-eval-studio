@@ -114,6 +114,8 @@ model Task {
   messages        TaskMessage[]
   taskIdeaJson    String?
   analysisJson    String?
+
+  @@index([userId, updatedAt])
 }
 
 model TaskAttachment {
@@ -184,7 +186,6 @@ model ArtifactAnalysisEvent {
   metadata  Json?
   createdAt DateTime @default(now())
 
-  @@index([runId, sequence])
   @@unique([runId, sequence])
 }
 
@@ -200,6 +201,8 @@ model ModelArtifact {
   parsedText String?
   previewJson String?
   createdAt DateTime @default(now())
+
+  @@index([taskModelId, createdAt])
 }
 
 model ModelReport {
@@ -218,6 +221,8 @@ model ModelReport {
   trajectoryAnalysis String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+
+  @@index([taskModelId, createdAt])
 }
 
 model TaskMessage {
@@ -229,6 +234,8 @@ model TaskMessage {
   step      TaskStep
   modelId   String?
   createdAt DateTime @default(now())
+
+  @@index([taskId, createdAt])
 }
 
 model AuditLog {
