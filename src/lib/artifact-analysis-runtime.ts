@@ -110,11 +110,14 @@ function buildArtifactsText(artifacts: ArtifactLike[]): string {
 }
 
 async function getRunContext(input: ArtifactAnalysisRunInput) {
+  // 注意：不在此处校验 task.userId === input.userId，因为协作者（EDITOR）也有权触发分析。
+  // 触发权限已由 API 路由层通过 getTaskAccess+requireAccess('EDITOR') 把关。
+  // input.userId 仅用于读取触发者自己的 AI 配置，不作为所有权断言。
   const model = await prisma.taskModel.findFirst({
     where: {
       id: input.modelId,
       taskId: input.taskId,
-      task: { userId: input.userId, status: { not: 'DELETED' } },
+      task: { status: { not: 'DELETED' } },
     },
     include: {
       task: true,

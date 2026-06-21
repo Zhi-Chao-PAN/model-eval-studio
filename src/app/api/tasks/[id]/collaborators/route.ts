@@ -22,7 +22,7 @@ export async function GET(
     where: { taskId: id },
     include: {
       user: {
-        select: { id: true, username: true, role: true },
+        select: { id: true, username: true },
       },
     },
     orderBy: { createdAt: 'asc' },
@@ -87,7 +87,7 @@ export async function POST(
         role,
       },
       include: {
-        user: { select: { id: true, username: true, role: true } },
+        user: { select: { id: true, username: true } },
       },
     })
 

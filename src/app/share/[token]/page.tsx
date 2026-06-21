@@ -111,13 +111,13 @@ export default function SharePage() {
         {/* Header */}
         <div className="space-y-3">
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">{task.title}</h1>
-          <div className="flex items-center gap-3 text-sm text-gray-400">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
             <span>创建者：{task.user?.username}</span>
-            <span>·</span>
+            <span aria-hidden className="hidden sm:inline">·</span>
             <span>模型数：{task.models?.length || 0}</span>
             {share?.expiresAt && (
               <>
-                <span>·</span>
+                <span aria-hidden className="hidden sm:inline">·</span>
                 <span className="text-amber-400">
                   有效期至 {new Date(share.expiresAt).toLocaleDateString('zh-CN')}
                 </span>
@@ -126,9 +126,21 @@ export default function SharePage() {
           </div>
         </div>
 
-        {/* Score overview */}
-        {task.models?.length > 0 && (
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+        {task.description && (
+          <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">{task.description}</p>
+        )}
+
+        {/* Empty: no models at all */}
+        {!task.models?.length ? (
+          <div className="panel p-10 flex flex-col items-center justify-center text-center">
+            <FileCheck2 className="h-10 w-10 text-gray-600 mb-3" />
+            <p className="text-sm text-gray-400">该任务尚未添加任何模型</p>
+            <p className="text-xs text-gray-600 mt-1">请等待任务创建者上传模型后再查看报告。</p>
+          </div>
+        ) : (
+          <>
+            {/* Score overview */}
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
             {task.models.map((m: any) => {
               const report = m.reports?.[0]
               const score = report?.overallScore || 0
@@ -167,60 +179,62 @@ export default function SharePage() {
               )
             })}
           </div>
-        )}
 
-        {/* Report detail */}
-        {selectedModel && latestReport && (
-          <div className="panel p-5 space-y-4">
-            <div className="flex items-center gap-3">
-              <span className="mono text-sm font-medium text-white bg-white/[0.06] px-2.5 py-1 rounded-lg border border-white/10">
-                {selectedModel.modelCode}
-              </span>
-              <Badge variant="muted">{selectedModel.artifacts?.length || 0} 项产物</Badge>
+          {/* Report detail */}
+          {selectedModel && latestReport && (
+            <div className="panel p-5 space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="mono text-sm font-medium text-white bg-white/[0.06] px-2.5 py-1 rounded-lg border border-white/10">
+                  {selectedModel.modelCode}
+                </span>
+                <Badge variant="muted">{selectedModel.artifacts?.length || 0} 项产物</Badge>
+              </div>
+
+              <ReportModule
+                icon={Sparkles}
+                title="产物效果反馈"
+                accent="cyan"
+                content={latestReport.productFeedback}
+              />
+              <ReportModule
+                icon={Zap}
+                title="交付效率"
+                accent="amber"
+                score={latestReport.efficiencyScore}
+                content={latestReport.efficiencyComment}
+              />
+              <ReportModule
+                icon={ShieldCheck}
+                title="产物质量"
+                accent="violet"
+                score={latestReport.qualityScore}
+                content={latestReport.qualityComment}
+              />
+              <ReportModule
+                icon={Award}
+                title="综合评价"
+                accent="emerald"
+                score={latestReport.overallScore}
+                scoreMode="integer"
+                content={latestReport.overallComment}
+              />
+              <ReportModule
+                icon={Activity}
+                title="轨迹分析"
+                accent="indigo"
+                content={latestReport.trajectoryAnalysis || '未提供轨迹分析。'}
+              />
             </div>
+          )}
 
-            <ReportModule
-              icon={Sparkles}
-              title="产物效果反馈"
-              accent="cyan"
-              content={latestReport.productFeedback}
-            />
-            <ReportModule
-              icon={Zap}
-              title="交付效率"
-              accent="amber"
-              score={latestReport.efficiencyScore}
-              content={latestReport.efficiencyComment}
-            />
-            <ReportModule
-              icon={ShieldCheck}
-              title="产物质量"
-              accent="violet"
-              score={latestReport.qualityScore}
-              content={latestReport.qualityComment}
-            />
-            <ReportModule
-              icon={Award}
-              title="综合评价"
-              accent="emerald"
-              score={latestReport.overallScore}
-              scoreMode="integer"
-              content={latestReport.overallComment}
-            />
-            <ReportModule
-              icon={Activity}
-              title="轨迹分析"
-              accent="indigo"
-              content={latestReport.trajectoryAnalysis || '未提供轨迹分析。'}
-            />
-          </div>
-        )}
-
-        {selectedModel && !latestReport && (
-          <div className="panel p-10 flex flex-col items-center justify-center text-center">
-            <FileCheck2 className="h-10 w-10 text-gray-600 mb-3" />
-            <p className="text-sm text-gray-500">该模型暂无评估报告</p>
-          </div>
+          {selectedModel && !latestReport && (
+            <div className="panel p-10 flex flex-col items-center justify-center text-center">
+              <FileCheck2 className="h-10 w-10 text-gray-600 mb-3" />
+              <p className="text-sm text-gray-500">该模型暂无评估报告</p>
+              <p className="text-xs text-gray-600 mt-1">报告生成后会自动显示在这里。</p>
+            </div>
+          )}
+        </>
         )}
 
         {/* Footer */}

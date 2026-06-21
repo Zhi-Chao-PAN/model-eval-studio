@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { FileText, Save, Sparkles, Check, Scale, ChevronDown, ChevronUp, Settings2 } from 'lucide-react'
+import { FileText, Save, Sparkles, Check, Scale, ChevronDown, ChevronUp, Settings2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -28,9 +28,11 @@ export default function StepInfo({ task, onUpdate }: Props) {
 
   const [rubric, setRubric] = useState<RubricData | null>(null)
   const [rubricLoading, setRubricLoading] = useState(true)
+  const [rubricLoadError, setRubricLoadError] = useState<string | null>(null)
   const [rubricExpanded, setRubricExpanded] = useState(true)
   const [rubricSaving, setRubricSaving] = useState(false)
   const [rubricSaved, setRubricSaved] = useState(false)
+  const [rubricError, setRubricError] = useState<string | null>(null)
   const [isCustom, setIsCustom] = useState(false)
 
   useEffect(() => {
@@ -39,15 +41,17 @@ export default function StepInfo({ task, onUpdate }: Props) {
 
   async function loadRubric() {
     setRubricLoading(true)
+    setRubricLoadError(null)
     try {
       const res = await fetch('/api/tasks/' + task.id + '/rubric')
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '评分规则加载失败（HTTP ' + res.status + '）')
       if (data.rubric) {
         setRubric(data.rubric)
         setIsCustom(data.isCustom || false)
       }
-    } catch (e) {
-      console.error('加载评分规则失败', e)
+    } catch (e: any) {
+      setRubricLoadError(e?.message || '加载失败')
     } finally {
       setRubricLoading(false)
     }
@@ -74,66 +78,28 @@ export default function StepInfo({ task, onUpdate }: Props) {
 
   async function switchTemplate(templateKey: string) {
     if (!rubric) return
+    if (rubric.templateType === templateKey && !isCustom) return // 已经是该默认模板
     setRubricSaving(true)
+    setRubricError(null)
+    setRubricSaved(false)
     try {
-      // 先拉取预设模板的完整数据
-      const templatesRes = await fetch('/api/rubrics/templates')
-      const templatesData = await templatesRes.json()
-      const template = templatesData.templates?.find((t: any) => t.key === templateKey)
-      if (!template) throw new Error('模板不存在')
-
-      // 这里需要获取模板的完整 rubric 数据，简化处理：直接保存选中模板的类型
-      // 实际应用中可以从前端缓存或重新构造
-      const newRubric: RubricData = {
-        templateType: templateKey as RubricData['templateType'],
-        dimensions: rubric.dimensions, // 先用旧的，稍后从模板数据更新
-        overallFormula: rubric.overallFormula,
+      const templateRubric = getFullTemplateRubric(templateKey)
+      if (!templateRubric) throw new Error('模板不存在')
+      const saveRes = await fetch('/api/tasks/' + task.id + '/rubric', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rubric: templateRubric }),
+      })
+      const saveData = await saveRes.json().catch(() => ({}))
+      if (!saveRes.ok) throw new Error(saveData.error || '模板切换失败')
+      if (saveData.rubric) {
+        setRubric(saveData.rubric)
+        setIsCustom(saveData.isCustom || false)
+        setRubricSaved(true)
+        setTimeout(() => setRubricSaved(false), 1500)
       }
-
-      // 由于 /api/rubrics/templates 返回的是摘要信息，这里需要完整数据
-      // 重新从服务端获取完整 rubric（带 isCustom: false 时会返回默认模板）
-      const defaultRes = await fetch('/api/tasks/' + task.id + '/rubric')
-      const defaultData = await defaultRes.json()
-
-      // 简化：直接将 rubric 保存为选中的模板类型，使用默认模板的维度
-      // 实际做法：调用 PUT /rubric 保存自定义配置
-      if (defaultData.rubric && defaultData.rubric.templateType === templateKey) {
-        // 如果任务当前 category 对应的默认模板就是目标模板，直接删除自定义 rubric 即可
-        if (isCustom) {
-          // 保存为默认模板（即删除自定义记录——但没有 DELETE 接口，用 PUT 存默认模板数据）
-          const saveRes = await fetch('/api/tasks/' + task.id + '/rubric', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rubric: defaultData.rubric }),
-          })
-          const saveData = await saveRes.json()
-          if (saveData.rubric) {
-            setRubric(saveData.rubric)
-            setIsCustom(saveData.isCustom || false)
-          }
-        }
-      } else {
-        // 需要保存为该模板类型的自定义配置
-        // 从预设模板构造完整 rubric
-        const templateRubric = await getFullTemplateRubric(templateKey)
-        if (templateRubric) {
-          const saveRes = await fetch('/api/tasks/' + task.id + '/rubric', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rubric: templateRubric }),
-          })
-          const saveData = await saveRes.json()
-          if (saveData.rubric) {
-            setRubric(saveData.rubric)
-            setIsCustom(saveData.isCustom || false)
-          }
-        }
-      }
-
-      setRubricSaved(true)
-      setTimeout(() => setRubricSaved(false), 1500)
     } catch (e: any) {
-      console.error('切换模板失败', e)
+      setRubricError(e?.message || '模板切换失败')
     } finally {
       setRubricSaving(false)
     }
@@ -260,7 +226,7 @@ export default function StepInfo({ task, onUpdate }: Props) {
               )}
             </div>
             <p className="text-xs text-gray-400 mt-0.5">
-              {rubricLoading ? '加载中...' : rubric ? `${rubric.dimensions.length} 个评分维度，满分 10 分` : '未设置'}
+              {rubricLoading ? '加载中...' : rubricLoadError ? '加载失败' : rubric ? `${rubric.dimensions.length} 个评分维度，满分 10 分` : '未设置'}
             </p>
           </div>
           {rubricExpanded ? (
@@ -269,6 +235,16 @@ export default function StepInfo({ task, onUpdate }: Props) {
             <ChevronDown className="h-4 w-4 text-gray-500" />
           )}
         </div>
+
+        {rubricExpanded && rubricLoadError && !rubricLoading && (
+          <div className="mt-4 text-center py-4 border-t border-white/[0.07] pt-4">
+            <AlertTriangle className="h-5 w-5 mx-auto text-amber-400 mb-1" />
+            <p className="text-xs text-amber-300 mb-2">{rubricLoadError}</p>
+            <Button size="sm" variant="secondary" onClick={loadRubric}>
+              <RefreshCw className="h-3 w-3 mr-1" /> 重试
+            </Button>
+          </div>
+        )}
 
         {rubricExpanded && !rubricLoading && rubric && (
           <div className="mt-4 space-y-4 border-t border-white/[0.07] pt-4">
@@ -324,9 +300,14 @@ export default function StepInfo({ task, onUpdate }: Props) {
                 <Save className="h-3 w-3 animate-pulse" /> 保存中...
               </div>
             )}
-            {rubricSaved && (
+            {rubricSaved && !rubricError && (
               <div className="text-xs text-emerald-400 flex items-center gap-1">
                 <Check className="h-3 w-3" /> 评分规则已更新
+              </div>
+            )}
+            {rubricError && (
+              <div className="text-xs text-red-400 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" /> {rubricError}
               </div>
             )}
           </div>

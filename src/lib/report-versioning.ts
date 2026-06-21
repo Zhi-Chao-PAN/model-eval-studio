@@ -42,6 +42,11 @@ export async function getNextReportVersion(taskModelId: string): Promise<number>
   return (maxVersion._max.version || 0) + 1
 }
 
+/** Prisma 唯一约束冲突错误码（见 https://www.prisma.io/docs/reference/api-reference/error-reference#p2002） */
+export function isUniqueConstraintError(err: unknown): boolean {
+  return !!err && typeof err === 'object' && (err as any).code === 'P2002'
+}
+
 /** 生成文本内容的 SHA-256 哈希（用于快照摘要） */
 export function hashContent(content: string | null | undefined): string | undefined {
   if (!content) return undefined
@@ -144,41 +149,59 @@ export async function createReportRevision(opts: {
   generationSnapshot?: string
   generationConfig?: string
 }): Promise<any> {
-  const version = await getNextReportVersion(opts.taskModelId)
-
   const parent = await prisma.modelReport.findUnique({
     where: { id: opts.parentReportId },
   })
   if (!parent) throw new Error('父报告不存在')
+  // 防止跨 model 链接版本链
+  if (parent.taskModelId !== opts.taskModelId) {
+    throw new Error('父报告与当前模型不匹配')
+  }
 
-  const report = await prisma.modelReport.create({
-    data: {
-      taskModelId: opts.taskModelId,
-      version,
-      source: opts.source,
-      parentReportId: opts.parentReportId,
-      editedById: opts.editedById || null,
-      editNote: opts.editNote || null,
-      productFeedback: opts.productFeedback ?? parent.productFeedback,
-      verificationScreenshotUrls:
-        opts.verificationScreenshotUrls !== undefined
-          ? opts.verificationScreenshotUrls
-          : parent.verificationScreenshotUrls,
-      verificationSummary:
-        opts.verificationSummary !== undefined
-          ? opts.verificationSummary
-          : parent.verificationSummary,
-      overallScore: opts.overallScore ?? parent.overallScore,
-      overallComment: opts.overallComment ?? parent.overallComment,
-      efficiencyScore: opts.efficiencyScore ?? parent.efficiencyScore,
-      efficiencyComment: opts.efficiencyComment ?? parent.efficiencyComment,
-      qualityScore: opts.qualityScore ?? parent.qualityScore,
-      qualityComment: opts.qualityComment ?? parent.qualityComment,
-      trajectoryAnalysis: opts.trajectoryAnalysis ?? parent.trajectoryAnalysis,
-      generationSnapshot: opts.generationSnapshot ?? parent.generationSnapshot,
-      generationConfig: opts.generationConfig ?? parent.generationConfig,
-    },
-  })
+  // 使用事务 + 唯一约束冲突重试（最多 3 次），避免并发写入时 version 重复
+  const MAX_RETRIES = 3
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const report = await prisma.$transaction(async tx => {
+        const version = await (tx as any).modelReport.aggregate({
+          where: { taskModelId: opts.taskModelId },
+          _max: { version: true },
+        }).then((r: any) => (r._max.version || 0) + 1)
 
-  return report
+        return (tx as any).modelReport.create({
+          data: {
+            taskModelId: opts.taskModelId,
+            version,
+            source: opts.source,
+            parentReportId: opts.parentReportId,
+            editedById: opts.editedById || null,
+            editNote: opts.editNote || null,
+            productFeedback: opts.productFeedback ?? parent.productFeedback,
+            verificationScreenshotUrls:
+              opts.verificationScreenshotUrls !== undefined
+                ? opts.verificationScreenshotUrls
+                : parent.verificationScreenshotUrls,
+            verificationSummary:
+              opts.verificationSummary !== undefined
+                ? opts.verificationSummary
+                : parent.verificationSummary,
+            overallScore: opts.overallScore ?? parent.overallScore,
+            overallComment: opts.overallComment ?? parent.overallComment,
+            efficiencyScore: opts.efficiencyScore ?? parent.efficiencyScore,
+            efficiencyComment: opts.efficiencyComment ?? parent.efficiencyComment,
+            qualityScore: opts.qualityScore ?? parent.qualityScore,
+            qualityComment: opts.qualityComment ?? parent.qualityComment,
+            trajectoryAnalysis: opts.trajectoryAnalysis ?? parent.trajectoryAnalysis,
+            generationSnapshot: opts.generationSnapshot ?? parent.generationSnapshot,
+            generationConfig: opts.generationConfig ?? parent.generationConfig,
+          },
+        })
+      })
+      return report
+    } catch (err: any) {
+      if (!isUniqueConstraintError(err) || attempt === MAX_RETRIES - 1) throw err
+      // 等待随机时间再重试，避免再次冲突
+      await new Promise(r => setTimeout(r, 20 + Math.random() * 80))
+    }
+  }
 }

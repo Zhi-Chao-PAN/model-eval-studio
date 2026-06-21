@@ -5,6 +5,7 @@
  * 支持：Owner、Editor、Viewer、公开链接、Admin 只读。
  */
 
+import { randomBytes } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import type { SessionData } from '@/lib/session'
 
@@ -145,13 +146,9 @@ export function requireAccess(
 
 /**
  * 生成一个安全的共享 token。
+ * 使用 24 字节 CSPRNG 随机数，编码为 url-safe base64（32 字符），前缀 sh_。
+ * 约 192 bit 熵，足以抵御离线暴力枚举。
  */
 export function generateShareToken(): string {
-  // 使用 crypto 生成随机 token
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let token = 'sh_'
-  for (let i = 0; i < 24; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return token
+  return 'sh_' + randomBytes(24).toString('base64url')
 }

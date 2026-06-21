@@ -149,9 +149,12 @@ export default function StepReport({ task, onRefresh }: Props) {
   const [reportVersions, setReportVersions] = useState<ReportVersion[]>([])
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(false)
+  const [versionsError, setVersionsError] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [selectedReportDetail, setSelectedReportDetail] = useState<ReportDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  const [reviseFormError, setReviseFormError] = useState<string | null>(null)
 
   // 人工修订相关
   const [reviseOpen, setReviseOpen] = useState(false)
@@ -197,17 +200,19 @@ export default function StepReport({ task, onRefresh }: Props) {
 
   async function loadReportVersions(modelId: string) {
     setVersionsLoading(true)
+    setVersionsError(null)
     try {
       const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/reports')
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '版本列表加载失败（HTTP ' + res.status + '）')
       if (data.reports) {
         setReportVersions(data.reports)
         if (data.reports.length > 0 && !selectedReportId) {
           setSelectedReportId(data.reports[0].id)
         }
       }
-    } catch (e) {
-      console.error('加载报告版本失败', e)
+    } catch (e: any) {
+      setVersionsError(e?.message || '版本列表加载失败')
     } finally {
       setVersionsLoading(false)
     }
@@ -216,14 +221,17 @@ export default function StepReport({ task, onRefresh }: Props) {
   async function loadReportDetail(reportId: string) {
     if (!currentModelId) return
     setDetailLoading(true)
+    setDetailError(null)
+    setSelectedReportDetail(null) // 清空旧数据，避免显示上一个版本
     try {
       const res = await fetch('/api/tasks/' + task.id + '/models/' + currentModelId + '/reports/' + reportId)
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '版本详情加载失败（HTTP ' + res.status + '）')
       if (data.report) {
         setSelectedReportDetail(data.report)
       }
-    } catch (e) {
-      console.error('加载报告详情失败', e)
+    } catch (e: any) {
+      setDetailError(e?.message || '版本详情加载失败')
     } finally {
       setDetailLoading(false)
     }
@@ -260,6 +268,7 @@ export default function StepReport({ task, onRefresh }: Props) {
 
   function openRevise() {
     if (!viewedReport) return
+    setReviseFormError(null)
     setReviseForm({
       overallScore: String(viewedReport.overallScore),
       overallComment: viewedReport.overallComment || '',
@@ -276,6 +285,26 @@ export default function StepReport({ task, onRefresh }: Props) {
 
   async function submitRevise() {
     if (!currentModelId || !selectedReportId) return
+    // 前端校验评分范围
+    const overallScore = Number(reviseForm.overallScore)
+    const efficiencyScore = Number(reviseForm.efficiencyScore)
+    const qualityScore = Number(reviseForm.qualityScore)
+    const validateScore = (val: number, label: string, step: number) => {
+      if (isNaN(val) || val < 1 || val > 10) return label + '必须在 1–10 之间'
+      const multiples = 1 / step
+      if (Math.round(val * multiples) / multiples !== val) return label + '的步长必须为 ' + step
+      return null
+    }
+    const errs = [
+      validateScore(overallScore, '综合评分', 1),
+      validateScore(efficiencyScore, '交付效率', 0.5),
+      validateScore(qualityScore, '产物质量', 0.5),
+    ].filter(Boolean) as string[]
+    if (errs.length > 0) {
+      setReviseFormError(errs.join('；'))
+      return
+    }
+    setReviseFormError(null)
     setReviseSaving(true)
     try {
       const body: Record<string, unknown> = {
@@ -296,16 +325,13 @@ export default function StepReport({ task, onRefresh }: Props) {
       if (reviseForm.trajectoryAnalysis !== (viewedReport?.trajectoryAnalysis || '')) {
         body.trajectoryAnalysis = reviseForm.trajectoryAnalysis
       }
-      const overallScore = Number(reviseForm.overallScore)
-      if (!isNaN(overallScore) && overallScore !== viewedReport?.overallScore) {
+      if (overallScore !== viewedReport?.overallScore) {
         body.overallScore = overallScore
       }
-      const efficiencyScore = Number(reviseForm.efficiencyScore)
-      if (!isNaN(efficiencyScore) && efficiencyScore !== viewedReport?.efficiencyScore) {
+      if (efficiencyScore !== viewedReport?.efficiencyScore) {
         body.efficiencyScore = efficiencyScore
       }
-      const qualityScore = Number(reviseForm.qualityScore)
-      if (!isNaN(qualityScore) && qualityScore !== viewedReport?.qualityScore) {
+      if (qualityScore !== viewedReport?.qualityScore) {
         body.qualityScore = qualityScore
       }
 
@@ -470,10 +496,29 @@ export default function StepReport({ task, onRefresh }: Props) {
     runReportStream({ modelId, mode: 'adjust', body: { modelId, adjustInstruction: adjustText } })
   }
 
+  function fallbackCopy(text: string, cb: () => void) {
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+      document.body.appendChild(ta); ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      cb()
+    } catch {
+      showNote('warn', '复制失败，请手动选择复制', 2500)
+    }
+  }
+
   async function copySection(section: ReportSection) {
-    await navigator.clipboard.writeText(buildSectionCopyText(section))
-    setCopiedKey(section.key)
-    window.setTimeout(() => setCopiedKey(null), 1600)
+    const text = buildSectionCopyText(section)
+    const done = () => {
+      setCopiedKey(section.key)
+      window.setTimeout(() => setCopiedKey(null), 1600)
+    }
+    if (navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(text); done(); return } catch { /* fall through */ }
+    }
+    fallbackCopy(text, done)
   }
 
   const liveStreamText = currentModelId ? (streamPreview[currentModelId] || '') : ''
@@ -739,6 +784,12 @@ export default function StepReport({ task, onRefresh }: Props) {
                     <div className="mt-3 space-y-2 border-t border-white/[0.07] pt-3">
                       {versionsLoading ? (
                         <div className="text-xs text-gray-500 text-center py-2">加载中...</div>
+                      ) : versionsError ? (
+                        <div className="text-xs text-amber-400 text-center py-2 flex flex-col items-center gap-1">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          {versionsError}
+                          <button onClick={() => currentModelId && loadReportVersions(currentModelId)} className="underline hover:text-amber-300">重试</button>
+                        </div>
                       ) : reportVersions.length === 0 ? (
                         <div className="text-xs text-gray-500 text-center py-2">暂无版本记录</div>
                       ) : (
@@ -795,6 +846,17 @@ export default function StepReport({ task, onRefresh }: Props) {
                               </button>
                             )
                           })}
+                        </div>
+                      )}
+
+                      {detailLoading && (
+                        <div className="text-[10px] text-gray-500 text-center py-1 animate-pulse">
+                          正在加载版本详情...
+                        </div>
+                      )}
+                      {detailError && (
+                        <div className="text-[10px] text-amber-400 text-center py-1 flex items-center justify-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> {detailError}
                         </div>
                       )}
 
@@ -968,6 +1030,12 @@ export default function StepReport({ task, onRefresh }: Props) {
             </div>
 
             <div className="space-y-4">
+              {reviseFormError && (
+                <div className="text-xs px-3 py-2 rounded-lg border bg-red-500/10 text-red-300 border-red-500/20 flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{reviseFormError}</span>
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label>综合评分</Label>
