@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Image as ImageIcon, Camera, BarChart3, UploadCloud, X as XIcon,
   Sparkles, AlertTriangle, SkipForward, CheckCircle2,
@@ -17,6 +17,7 @@ interface Props {
 
 type Tab = 'process' | 'dashboard'
 type UploadedImage = { name: string; dataUrl: string }
+type SavedImage = { id: string; name: string; url: string; size: number; uploadedAt: string }
 
 const MAX_SCREENSHOTS_PER_TAB = 6
 const MAX_SCREENSHOT_FILE_BYTES = 12 * 1024 * 1024
@@ -149,6 +150,9 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [processImages, setProcessImages] = useState<UploadedImage[]>([])
   const [dashboardImages, setDashboardImages] = useState<UploadedImage[]>([])
+  const [savedProcessImages, setSavedProcessImages] = useState<SavedImage[]>([])
+  const [savedDashboardImages, setSavedDashboardImages] = useState<SavedImage[]>([])
+  const [loadingSaved, setLoadingSaved] = useState(true)
   const [analyzing, setAnalyzing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [startedAt, setStartedAt] = useState<number | undefined>(undefined)
@@ -160,9 +164,43 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
 
   const models = task.models || []
 
+  async function loadSavedScreenshots() {
+    if (!models || models.length === 0) {
+      setLoadingSaved(false)
+      return
+    }
+    // 取第一个有截图的模型的数据（同一任务同一 type 截图内容一致）
+    try {
+      for (const model of models) {
+        const res = await fetch('/api/tasks/' + task.id + '/models/' + model.id + '/screenshots')
+        if (!res.ok) continue
+        const data = await res.json()
+        const screenshots = data.screenshots || []
+        if (screenshots.length > 0) {
+          setSavedProcessImages(screenshots.filter((s: any) => s.type === 'process'))
+          setSavedDashboardImages(screenshots.filter((s: any) => s.type === 'dashboard'))
+          break
+        }
+      }
+    } catch {
+      // 加载失败静默处理
+    } finally {
+      setLoadingSaved(false)
+    }
+  }
+
   function stopAnalyze() {
     if (abortRef.current) abortRef.current.abort()
   }
+
+  // 加载已保存的截图（只在 models 从无到有时加载一次）
+  const loadedRef = useRef(false)
+  useEffect(() => {
+    if (loadedRef.current) return
+    if (models.length === 0) return
+    loadedRef.current = true
+    void loadSavedScreenshots()
+  }, [models.length])
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>, type: Tab) {
     const files = Array.from(e.target.files || [])
@@ -298,6 +336,8 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
               await saveRecognizedRows(payload.parsed.models)
             }
             setResult({ parsed: payload.parsed, raw: payload.raw })
+            // 分析完成后刷新已保存截图
+            await loadSavedScreenshots()
           } else if (eventName === 'error') {
             throw new Error(payload.message || '视觉模型返回错误')
           }
@@ -373,6 +413,9 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
               识别后可在表格里点「编辑/补充」手动修正。
             </div>
           </div>
+          {savedDashboardImages.length > 0 && (
+            <SavedScreenshotGrid images={savedDashboardImages} label="已保存的看板截图" />
+          )}
           <UploadBox label="数据看板" images={dashboardImages} onUpload={e => handleFile(e, 'dashboard')} onRemove={i => removeImage('dashboard', i)} accent="indigo" />
         </>
       ) : (
@@ -384,6 +427,9 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
               <div className="text-gray-400">用于分析模型的对话轮次、工具调用轨迹、错误点等细节。没有可跳过。</div>
             </div>
           </div>
+          {savedProcessImages.length > 0 && (
+            <SavedScreenshotGrid images={savedProcessImages} label="已保存的过程截图" />
+          )}
           <UploadBox label="执行过程" images={processImages} onUpload={e => handleFile(e, 'process')} onRemove={i => removeImage('process', i)} accent="amber" />
           {processImages.length === 0 && (
             <Button
@@ -495,6 +541,36 @@ function UploadBox({ label, images, onUpload, onRemove, accent }: {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function SavedScreenshotGrid({ images, label }: { images: SavedImage[]; label: string }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-xs text-gray-400">
+        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+        {label}（{images.length} 张，点击查看原图）
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+        {images.map((img) => (
+          <a
+            key={img.id}
+            href={img.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="relative aspect-video rounded-lg overflow-hidden border border-emerald-500/20 group"
+          >
+            <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
+              <div className="text-[10px] text-gray-300 truncate">{img.name}</div>
+            </div>
+            <div className="absolute top-1.5 right-1.5 px-1.5 h-5 bg-black/60 rounded text-[10px] text-emerald-300 opacity-0 group-hover:opacity-100 transition backdrop-blur-sm flex items-center">
+              查看原图
+            </div>
+          </a>
+        ))}
+      </div>
     </div>
   )
 }

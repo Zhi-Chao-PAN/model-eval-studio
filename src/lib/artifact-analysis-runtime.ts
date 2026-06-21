@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { getUserAiConfig } from '@/lib/user-ai'
-import { analyzeImages, generateChat } from '@/lib/ai'
+import { analyzeImages, generateChat, sanitizeAiError } from '@/lib/ai'
 import {
   buildFilesSummaryPrompt,
   buildSingleFileAnalysisPrompt,
@@ -23,6 +23,7 @@ import {
   MODEL_ARTIFACT_ANALYSIS_VERSION,
   type StoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
+import { generateReportForModel } from '@/lib/report-generation'
 
 export const ARTIFACT_ANALYSIS_RUN_STATUS = {
   QUEUED: 'QUEUED',
@@ -555,6 +556,77 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     label: '产物预分析已完成',
     detail: '产物内容分析结论已保存。生成评估报告时会优先复用本次结果；产物效果反馈仍以测试人员上传的本地验收截图为准。',
   })
+
+  // 自动触发报告生成（满足条件时）
+  // - 有 tester_upload 来源的验证截图
+  // - 模型尚未有报告
+  // - 用户有 AI 配置
+  try {
+    const [modelWithReports, aiConfig] = await Promise.all([
+      prisma.taskModel.findUnique({
+        where: { id: context.id },
+        include: {
+          reports: { take: 1, orderBy: { createdAt: 'desc' } },
+          artifacts: true,
+          task: { include: { models: false } },
+        },
+      }),
+      getUserAiConfig(input.userId),
+    ])
+
+    if (modelWithReports && aiConfig && modelWithReports.reports.length === 0) {
+      const hasAuthenticEvidence = parseVerificationEvidence(modelWithReports.verificationScreenshotUrls)
+        .some(isAuthenticVerificationEvidence)
+      if (hasAuthenticEvidence) {
+        await appendArtifactAnalysisEvent({
+          runId: input.runId,
+          phase: 'auto_report',
+          status: ARTIFACT_ANALYSIS_EVENT_STATUS.STARTED,
+          label: '自动生成评估报告中…',
+        })
+
+        try {
+          const task = modelWithReports.task
+          const result = await generateReportForModel({
+            task,
+            model: modelWithReports,
+            aiConfig,
+          })
+
+          await appendArtifactAnalysisEvent({
+            runId: input.runId,
+            phase: 'auto_report',
+            status: ARTIFACT_ANALYSIS_EVENT_STATUS.COMPLETED,
+            label: '评估报告已自动生成',
+            detail: `报告已生成，综合评分 ${result.report.overallScore}/10。`,
+          })
+
+          console.info('[auto-report] 报告生成成功', {
+            modelCode: modelWithReports.modelCode,
+            overallScore: result.report.overallScore,
+          })
+        } catch (reportErr) {
+          const sanitized = sanitizeAiError(reportErr)
+          await appendArtifactAnalysisEvent({
+            runId: input.runId,
+            phase: 'auto_report',
+            status: ARTIFACT_ANALYSIS_EVENT_STATUS.FAILED,
+            label: '自动生成报告失败',
+            detail: sanitized.message,
+          })
+          console.warn('[auto-report] 报告生成失败', {
+            modelCode: modelWithReports.modelCode,
+            error: sanitized.message,
+            category: sanitized.category,
+          })
+        }
+      }
+    }
+  } catch (autoReportErr) {
+    // 自动报告失败不影响分析主流程
+    console.warn('[auto-report] 触发失败:', autoReportErr instanceof Error ? autoReportErr.message : String(autoReportErr))
+  }
+
   return { rerun: false }
 }
 
