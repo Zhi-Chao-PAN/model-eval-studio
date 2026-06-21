@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Wand2, Sparkles, Square, AlertCircle, Check, ArrowRight,
   Code2, Bot, ChevronDown, ChevronUp, FileDown, RefreshCw,
+  Copy, CheckCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +39,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
   const [starterError, setStarterError] = useState<string | null>(null)
   const [starterData, setStarterData] = useState<any>(null)
   const [complexity, setComplexity] = useState<'low' | 'medium' | 'high'>('medium')
+  const [copiedField, setCopiedField] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const promptAbortRef = useRef<AbortController | null>(null)
 
@@ -141,6 +143,25 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
   }
 
   function abortPrompt() { promptAbortRef.current?.abort() }
+
+  async function copyToClipboard(text: string, field: string) {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedField(field)
+      setTimeout(() => setCopiedField(cur => cur === field ? null : cur), 2000)
+    } catch {
+      // 降级方案
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopiedField(field)
+      setTimeout(() => setCopiedField(cur => cur === field ? null : cur), 2000)
+    }
+  }
 
   async function generateStarterCode() {
     if (!taskType) return
@@ -414,7 +435,20 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
                   <ThinkBlock content={promptThinking} streaming={isPromptWorking} />
                 )}
                 <div>
-                  <Label className="text-xs text-gray-400">任务 Prompt（交给待测模型）</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-gray-400">任务 Prompt（交给待测模型）</Label>
+                    <button
+                      onClick={() => copyToClipboard(generatedPrompt, 'prompt')}
+                      disabled={!generatedPrompt}
+                      className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1 transition-colors disabled:opacity-40"
+                    >
+                      {copiedField === 'prompt' ? (
+                        <><CheckCheck className="h-3 w-3 text-emerald-400" /> 已复制</>
+                      ) : (
+                        <><Copy className="h-3 w-3" /> 复制</>
+                      )}
+                    </button>
+                  </div>
                   <Textarea
                     value={generatedPrompt}
                     onChange={e => setGeneratedPrompt(e.target.value)}
@@ -424,7 +458,25 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
                 </div>
 
                 <div>
-                  <Label className="text-xs text-gray-400">题目来源 / 背景说明</Label>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-xs text-gray-400">题目来源 / 背景说明</Label>
+                      <div className="text-[10px] text-amber-400/70 mt-0.5">
+                        请用第一人称"我"来描述，模拟评测者真实的项目背景和诉求
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => copyToClipboard(generatedBackground, 'background')}
+                      disabled={!generatedBackground}
+                      className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1 transition-colors disabled:opacity-40"
+                    >
+                      {copiedField === 'background' ? (
+                        <><CheckCheck className="h-3 w-3 text-emerald-400" /> 已复制</>
+                      ) : (
+                        <><Copy className="h-3 w-3" /> 复制</>
+                      )}
+                    </button>
+                  </div>
                   <Textarea
                     value={generatedBackground}
                     onChange={e => setGeneratedBackground(e.target.value)}
