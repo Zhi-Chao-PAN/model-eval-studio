@@ -35,10 +35,7 @@ export async function GET(
             select: {
               id: true,
               name: true,
-              url: true,
               size: true,
-              mimeType: true,
-              previewJson: true,
               createdAt: true,
             },
           },
@@ -50,7 +47,6 @@ export async function GET(
               version: true,
               source: true,
               productFeedback: true,
-              verificationSummary: true,
               overallScore: true,
               overallComment: true,
               efficiencyScore: true,
@@ -59,7 +55,6 @@ export async function GET(
               qualityComment: true,
               trajectoryAnalysis: true,
               createdAt: true,
-              updatedAt: true,
             },
           },
           artifactAnalysisRuns: {

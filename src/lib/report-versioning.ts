@@ -4,6 +4,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { createHash } from 'crypto'
+import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
 
 export type ReportSource = 'AI_GENERATED' | 'AI_ADJUSTED' | 'MANUAL'
 
@@ -175,23 +176,23 @@ export async function createReportRevision(opts: {
             source: opts.source,
             parentReportId: opts.parentReportId,
             editedById: opts.editedById || null,
-            editNote: opts.editNote || null,
-            productFeedback: opts.productFeedback ?? parent.productFeedback,
+            editNote: clampDbText(opts.editNote ?? null, 500),
+            productFeedback: clampRequiredText(opts.productFeedback ?? parent.productFeedback, DB_TEXT_LIMITS.COMMENT),
             verificationScreenshotUrls:
               opts.verificationScreenshotUrls !== undefined
                 ? opts.verificationScreenshotUrls
                 : parent.verificationScreenshotUrls,
-            verificationSummary:
-              opts.verificationSummary !== undefined
-                ? opts.verificationSummary
-                : parent.verificationSummary,
+            verificationSummary: clampDbText(
+              opts.verificationSummary !== undefined ? opts.verificationSummary : parent.verificationSummary,
+              DB_TEXT_LIMITS.VERIFICATION,
+            ),
             overallScore: opts.overallScore ?? parent.overallScore,
-            overallComment: opts.overallComment ?? parent.overallComment,
+            overallComment: clampRequiredText(opts.overallComment ?? parent.overallComment, DB_TEXT_LIMITS.COMMENT),
             efficiencyScore: opts.efficiencyScore ?? parent.efficiencyScore,
-            efficiencyComment: opts.efficiencyComment ?? parent.efficiencyComment,
+            efficiencyComment: clampRequiredText(opts.efficiencyComment ?? parent.efficiencyComment, DB_TEXT_LIMITS.COMMENT),
             qualityScore: opts.qualityScore ?? parent.qualityScore,
-            qualityComment: opts.qualityComment ?? parent.qualityComment,
-            trajectoryAnalysis: opts.trajectoryAnalysis ?? parent.trajectoryAnalysis,
+            qualityComment: clampRequiredText(opts.qualityComment ?? parent.qualityComment, DB_TEXT_LIMITS.COMMENT),
+            trajectoryAnalysis: clampDbText(opts.trajectoryAnalysis ?? parent.trajectoryAnalysis, DB_TEXT_LIMITS.ANALYSIS),
             generationSnapshot: opts.generationSnapshot ?? parent.generationSnapshot,
             generationConfig: opts.generationConfig ?? parent.generationConfig,
           },

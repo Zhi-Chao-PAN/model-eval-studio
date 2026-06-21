@@ -25,9 +25,35 @@ export async function GET(
   const models = await prisma.taskModel.findMany({
     where: { taskId: id },
     orderBy: { createdAt: 'asc' },
-    include: {
-      artifacts: { orderBy: { createdAt: 'asc' } },
-      reports: { orderBy: { version: 'desc' }, take: 1 },
+    select: {
+      id: true,
+      modelCode: true,
+      displayName: true,
+      createdAt: true,
+      processText: true,            // 报告 Tab 中轨迹分析 fallback 使用
+      artifactAnalysisJson: true,   // 产物 Tab 徽章状态使用
+      artifacts: {
+        select: { id: true, name: true, size: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      },
+      reports: {
+        select: {
+          id: true,
+          version: true,
+          source: true,
+          overallScore: true,
+          efficiencyScore: true,
+          qualityScore: true,
+          productFeedback: true,
+          overallComment: true,
+          efficiencyComment: true,
+          qualityComment: true,
+          trajectoryAnalysis: true,
+          createdAt: true,
+        },
+        orderBy: { version: 'desc' },
+        take: 1,
+      },
     },
   })
   return NextResponse.json({ models })
