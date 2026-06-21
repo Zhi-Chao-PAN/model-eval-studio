@@ -2,17 +2,44 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, Activity, Award, Check, Copy,
-  FileCheck2, ListChecks, Pencil,
+  AlertTriangle, Activity, Award, Check, ChevronDown, ChevronUp, Copy,
+  FileCheck2, ListChecks, Pencil, History,
   RefreshCw, Send, ShieldCheck, Sparkles, Star, Zap,
+  Clock, Edit3, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Input, Textarea, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { WorkingStatus } from '@/components/working-status'
 import { VerificationEvidencePanel } from '@/components/tasks/VerificationEvidencePanel'
 import { cn } from '@/lib/utils'
 import { isAuthenticVerificationEvidence, parseVerificationEvidence } from '@/lib/verification-evidence'
+
+interface ReportVersion {
+  id: string
+  version: number
+  source: string
+  parentReportId: string | null
+  editedById: string | null
+  editNote: string | null
+  overallScore: number
+  efficiencyScore: number
+  qualityScore: number
+  createdAt: string
+  updatedAt: string
+}
+
+interface ReportDetail extends ReportVersion {
+  productFeedback: string
+  verificationScreenshotUrls: string | null
+  verificationSummary: string | null
+  overallComment: string
+  efficiencyComment: string
+  qualityComment: string
+  trajectoryAnalysis: string | null
+  generationSnapshot?: unknown
+  generationConfig?: unknown
+}
 
 interface Props {
   task: any
@@ -118,6 +145,29 @@ export default function StepReport({ task, onRefresh }: Props) {
   const [streamPreview, setStreamPreview] = useState<Record<string, string>>({})
   const abortRefs = useRef<Record<string, AbortController>>({})
 
+  // 版本历史相关
+  const [reportVersions, setReportVersions] = useState<ReportVersion[]>([])
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
+  const [versionsLoading, setVersionsLoading] = useState(false)
+  const [selectedReportDetail, setSelectedReportDetail] = useState<ReportDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [versionsOpen, setVersionsOpen] = useState(false)
+
+  // 人工修订相关
+  const [reviseOpen, setReviseOpen] = useState(false)
+  const [reviseForm, setReviseForm] = useState({
+    overallScore: '',
+    overallComment: '',
+    efficiencyScore: '',
+    efficiencyComment: '',
+    qualityScore: '',
+    qualityComment: '',
+    productFeedback: '',
+    trajectoryAnalysis: '',
+    editNote: '',
+  })
+  const [reviseSaving, setReviseSaving] = useState(false)
+
   const models = useMemo(() => task.models || [], [task.models])
   const currentModelId = selectedModelId ?? models[0]?.id ?? null
 
@@ -135,6 +185,63 @@ export default function StepReport({ task, onRefresh }: Props) {
     : 0
   const hasTesterEvidence = testerEvidenceCount > 0
 
+  // 当切换模型时加载版本历史
+  useEffect(() => {
+    if (currentModelId && latestReport) {
+      loadReportVersions(currentModelId)
+    } else {
+      setReportVersions([])
+      setSelectedReportId(null)
+    }
+  }, [currentModelId, latestReport?.id])
+
+  async function loadReportVersions(modelId: string) {
+    setVersionsLoading(true)
+    try {
+      const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/reports')
+      const data = await res.json()
+      if (data.reports) {
+        setReportVersions(data.reports)
+        if (data.reports.length > 0 && !selectedReportId) {
+          setSelectedReportId(data.reports[0].id)
+        }
+      }
+    } catch (e) {
+      console.error('加载报告版本失败', e)
+    } finally {
+      setVersionsLoading(false)
+    }
+  }
+
+  async function loadReportDetail(reportId: string) {
+    if (!currentModelId) return
+    setDetailLoading(true)
+    try {
+      const res = await fetch('/api/tasks/' + task.id + '/models/' + currentModelId + '/reports/' + reportId)
+      const data = await res.json()
+      if (data.report) {
+        setSelectedReportDetail(data.report)
+      }
+    } catch (e) {
+      console.error('加载报告详情失败', e)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  // 选中版本变化时加载详情
+  useEffect(() => {
+    if (selectedReportId && versionsOpen) {
+      loadReportDetail(selectedReportId)
+    }
+  }, [selectedReportId, versionsOpen])
+
+  // 查看的报告：如果选了历史版本就显示历史的，否则显示最新的
+  const viewedReport = selectedReportId && selectedReportDetail
+    ? selectedReportDetail
+    : latestReport
+  const isViewingHistorical = selectedReportId !== null && latestReport && selectedReportId !== latestReport.id
+
   const SECTION_DEFS: Array<Omit<ReportSection, 'score' | 'content'>> = [
     { key: 'product',     title: '产物效果反馈',     icon: Sparkles,    accent: 'cyan' },
     { key: 'efficiency',  title: '交付效率',         icon: Zap,         accent: 'amber', scoreMode: 'half' },
@@ -143,13 +250,102 @@ export default function StepReport({ task, onRefresh }: Props) {
     { key: 'trajectory',  title: '轨迹分析',         icon: Activity,    accent: 'indigo' },
   ]
 
-  const reportSections: ReportSection[] = latestReport ? [
-    { ...SECTION_DEFS[0], content: latestReport.productFeedback || '' },
-    { ...SECTION_DEFS[1], score: latestReport.efficiencyScore, content: latestReport.efficiencyComment || '' },
-    { ...SECTION_DEFS[2], score: latestReport.qualityScore,    content: latestReport.qualityComment || '' },
-    { ...SECTION_DEFS[3], score: latestReport.overallScore,    content: latestReport.overallComment || '' },
-    { ...SECTION_DEFS[4], content: latestReport.trajectoryAnalysis || (selectedModel?.processText ? selectedModel.processText : '未提供轨迹截图。') },
+  const reportSections: ReportSection[] = viewedReport ? [
+    { ...SECTION_DEFS[0], content: viewedReport.productFeedback || '' },
+    { ...SECTION_DEFS[1], score: viewedReport.efficiencyScore, content: viewedReport.efficiencyComment || '' },
+    { ...SECTION_DEFS[2], score: viewedReport.qualityScore,    content: viewedReport.qualityComment || '' },
+    { ...SECTION_DEFS[3], score: viewedReport.overallScore,    content: viewedReport.overallComment || '' },
+    { ...SECTION_DEFS[4], content: viewedReport.trajectoryAnalysis || (selectedModel?.processText ? selectedModel.processText : '未提供轨迹截图。') },
   ] : []
+
+  function openRevise() {
+    if (!viewedReport) return
+    setReviseForm({
+      overallScore: String(viewedReport.overallScore),
+      overallComment: viewedReport.overallComment || '',
+      efficiencyScore: String(viewedReport.efficiencyScore),
+      efficiencyComment: viewedReport.efficiencyComment || '',
+      qualityScore: String(viewedReport.qualityScore),
+      qualityComment: viewedReport.qualityComment || '',
+      productFeedback: viewedReport.productFeedback || '',
+      trajectoryAnalysis: viewedReport.trajectoryAnalysis || '',
+      editNote: '',
+    })
+    setReviseOpen(true)
+  }
+
+  async function submitRevise() {
+    if (!currentModelId || !selectedReportId) return
+    setReviseSaving(true)
+    try {
+      const body: Record<string, unknown> = {
+        editNote: reviseForm.editNote || null,
+      }
+      if (reviseForm.productFeedback !== (viewedReport?.productFeedback || '')) {
+        body.productFeedback = reviseForm.productFeedback
+      }
+      if (reviseForm.overallComment !== (viewedReport?.overallComment || '')) {
+        body.overallComment = reviseForm.overallComment
+      }
+      if (reviseForm.efficiencyComment !== (viewedReport?.efficiencyComment || '')) {
+        body.efficiencyComment = reviseForm.efficiencyComment
+      }
+      if (reviseForm.qualityComment !== (viewedReport?.qualityComment || '')) {
+        body.qualityComment = reviseForm.qualityComment
+      }
+      if (reviseForm.trajectoryAnalysis !== (viewedReport?.trajectoryAnalysis || '')) {
+        body.trajectoryAnalysis = reviseForm.trajectoryAnalysis
+      }
+      const overallScore = Number(reviseForm.overallScore)
+      if (!isNaN(overallScore) && overallScore !== viewedReport?.overallScore) {
+        body.overallScore = overallScore
+      }
+      const efficiencyScore = Number(reviseForm.efficiencyScore)
+      if (!isNaN(efficiencyScore) && efficiencyScore !== viewedReport?.efficiencyScore) {
+        body.efficiencyScore = efficiencyScore
+      }
+      const qualityScore = Number(reviseForm.qualityScore)
+      if (!isNaN(qualityScore) && qualityScore !== viewedReport?.qualityScore) {
+        body.qualityScore = qualityScore
+      }
+
+      const res = await fetch('/api/tasks/' + task.id + '/models/' + currentModelId + '/reports/' + selectedReportId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '修订失败')
+
+      showNote('ok', '修订已保存为新版本')
+      setReviseOpen(false)
+      onRefresh()
+      // 重新加载版本列表
+      if (currentModelId) loadReportVersions(currentModelId)
+    } catch (e: any) {
+      showNote('err', e.message || '修订失败')
+    } finally {
+      setReviseSaving(false)
+    }
+  }
+
+  function sourceLabel(source: string): string {
+    switch (source) {
+      case 'AI_GENERATED': return 'AI 生成'
+      case 'AI_ADJUSTED': return 'AI 调整'
+      case 'MANUAL': return '人工修订'
+      default: return source
+    }
+  }
+
+  function sourceBadgeColor(source: string): string {
+    switch (source) {
+      case 'AI_GENERATED': return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+      case 'AI_ADJUSTED': return 'bg-violet-500/15 text-violet-300 border-violet-500/30'
+      case 'MANUAL': return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+      default: return 'bg-gray-500/15 text-gray-300 border-gray-500/30'
+    }
+  }
 
   function showNote(type: 'ok' | 'warn' | 'err', text: string, timeout = type === 'err' ? 8000 : 3000) {
     setNote({ type, text })
@@ -416,15 +612,42 @@ export default function StepReport({ task, onRefresh }: Props) {
               )}
             </div>
             {!isGenerating && !isAdjusting && (
-              <Button
-                variant={latestReport ? 'secondary' : 'primary'}
-                size="sm"
-                onClick={() => generateReport(selectedModel.id)}
-                title={!hasTesterEvidence ? '未上传截图时会先生成除产物效果反馈外的其他模块' : undefined}
-              >
-                {latestReport ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                {latestReport ? '重新生成' : '生成评估报告'}
-              </Button>
+              <div className="flex items-center gap-2">
+                {latestReport && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={openRevise}
+                      title="人工修订评分和评论"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      人工修订
+                    </Button>
+                    {isViewingHistorical && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedReportId(latestReport.id)
+                          setSelectedReportDetail(null)
+                        }}
+                      >
+                        回到最新版
+                      </Button>
+                    )}
+                  </>
+                )}
+                <Button
+                  variant={latestReport ? 'secondary' : 'primary'}
+                  size="sm"
+                  onClick={() => generateReport(selectedModel.id)}
+                  title={!hasTesterEvidence ? '未上传截图时会先生成除产物效果反馈外的其他模块' : undefined}
+                >
+                  {latestReport ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  {latestReport ? '重新生成' : '生成评估报告'}
+                </Button>
+              </div>
             )}
           </div>
 
@@ -491,6 +714,98 @@ export default function StepReport({ task, onRefresh }: Props) {
                 onRefresh={onRefresh}
                 onNotice={showNote}
               />
+
+              {/* 版本历史面板 */}
+              {latestReport && (
+                <div className="panel p-4">
+                  <button
+                    className="w-full flex items-center gap-2 text-left"
+                    onClick={() => setVersionsOpen(!versionsOpen)}
+                  >
+                    <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+                      <History className="h-3.5 w-3.5 text-amber-300" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-[13px] font-medium text-white">版本历史</h4>
+                      <p className="text-[11px] text-gray-500">{reportVersions.length} 个版本</p>
+                    </div>
+                    {versionsOpen
+                      ? <ChevronUp className="h-4 w-4 text-gray-500" />
+                      : <ChevronDown className="h-4 w-4 text-gray-500" />
+                    }
+                  </button>
+
+                  {versionsOpen && (
+                    <div className="mt-3 space-y-2 border-t border-white/[0.07] pt-3">
+                      {versionsLoading ? (
+                        <div className="text-xs text-gray-500 text-center py-2">加载中...</div>
+                      ) : reportVersions.length === 0 ? (
+                        <div className="text-xs text-gray-500 text-center py-2">暂无版本记录</div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                          {reportVersions.map((v) => {
+                            const isActive = (selectedReportId || latestReport?.id) === v.id
+                            const isLatest = v.id === latestReport?.id
+                            return (
+                              <button
+                                key={v.id}
+                                onClick={() => {
+                                  setSelectedReportId(v.id)
+                                  loadReportDetail(v.id)
+                                }}
+                                className={cn(
+                                  'w-full text-left p-2 rounded-lg border transition-all',
+                                  isActive
+                                    ? 'border-amber-500/40 bg-amber-500/10'
+                                    : 'border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]'
+                                )}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className="text-[11px] font-mono text-gray-400">v{v.version}</span>
+                                    {isLatest && (
+                                      <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300">最新</span>
+                                    )}
+                                  </div>
+                                  <span className={cn(
+                                    'text-[10px] px-1.5 py-0.5 rounded border',
+                                    sourceBadgeColor(v.source)
+                                  )}>
+                                    {sourceLabel(v.source)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between mt-1">
+                                  <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                                    <Clock className="h-3 w-3" />
+                                    {new Date(v.createdAt).toLocaleString('zh-CN', {
+                                      month: 'short', day: 'numeric',
+                                      hour: '2-digit', minute: '2-digit'
+                                    })}
+                                  </div>
+                                  <div className="text-[11px] font-mono">
+                                    <span className={tierText(v.overallScore)}>{formatScore(v.overallScore, 'integer')}</span>
+                                    <span className="text-gray-600">/10</span>
+                                  </div>
+                                </div>
+                                {v.editNote && (
+                                  <div className="text-[10px] text-gray-500 mt-1 truncate">
+                                    备注：{v.editNote}
+                                  </div>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {/* 生成依据摘要 */}
+                      {selectedReportDetail?.generationSnapshot != null && (
+                        <GenerationSnapshotSummary snapshot={selectedReportDetail.generationSnapshot as Record<string, unknown>} />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* RIGHT COLUMN — report modules */}
@@ -629,6 +944,189 @@ export default function StepReport({ task, onRefresh }: Props) {
           <p className="text-sm text-gray-500">暂无待测模型，请先完成第 3 / 4 步</p>
         </div>
       )}
+
+      {/* 人工修订弹窗 */}
+      {reviseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="panel p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-white/10 flex items-center justify-center">
+                  <Edit3 className="h-4 w-4 text-amber-300" />
+                </div>
+                <div>
+                  <h3 className="font-medium">人工修订报告</h3>
+                  <p className="text-xs text-gray-500">将创建一个新版本，原版本保留</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setReviseOpen(false)}
+                className="p-1.5 rounded-md hover:bg-white/5 text-gray-500 hover:text-gray-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label>综合评分</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={reviseForm.overallScore}
+                    onChange={e => setReviseForm(p => ({ ...p, overallScore: e.target.value }))}
+                    className="bg-white/[0.02] border-white/[0.07] text-center"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>交付效率</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    step={0.5}
+                    value={reviseForm.efficiencyScore}
+                    onChange={e => setReviseForm(p => ({ ...p, efficiencyScore: e.target.value }))}
+                    className="bg-white/[0.02] border-white/[0.07] text-center"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>产物质量</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    step={0.5}
+                    value={reviseForm.qualityScore}
+                    onChange={e => setReviseForm(p => ({ ...p, qualityScore: e.target.value }))}
+                    className="bg-white/[0.02] border-white/[0.07] text-center"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>产物效果反馈</Label>
+                <Textarea
+                  value={reviseForm.productFeedback}
+                  onChange={e => setReviseForm(p => ({ ...p, productFeedback: e.target.value }))}
+                  rows={3}
+                  className="bg-white/[0.02] border-white/[0.07] text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>综合评价</Label>
+                <Textarea
+                  value={reviseForm.overallComment}
+                  onChange={e => setReviseForm(p => ({ ...p, overallComment: e.target.value }))}
+                  rows={3}
+                  className="bg-white/[0.02] border-white/[0.07] text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>交付效率评论</Label>
+                  <Textarea
+                    value={reviseForm.efficiencyComment}
+                    onChange={e => setReviseForm(p => ({ ...p, efficiencyComment: e.target.value }))}
+                    rows={3}
+                    className="bg-white/[0.02] border-white/[0.07] text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>产物质量评论</Label>
+                  <Textarea
+                    value={reviseForm.qualityComment}
+                    onChange={e => setReviseForm(p => ({ ...p, qualityComment: e.target.value }))}
+                    rows={3}
+                    className="bg-white/[0.02] border-white/[0.07] text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>轨迹分析</Label>
+                <Textarea
+                  value={reviseForm.trajectoryAnalysis}
+                  onChange={e => setReviseForm(p => ({ ...p, trajectoryAnalysis: e.target.value }))}
+                  rows={3}
+                  className="bg-white/[0.02] border-white/[0.07] text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>修订说明</Label>
+                <Input
+                  value={reviseForm.editNote}
+                  onChange={e => setReviseForm(p => ({ ...p, editNote: e.target.value }))}
+                  placeholder="为什么要修改？（可选）"
+                  className="bg-white/[0.02] border-white/[0.07]"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 mt-5 pt-4 border-t border-white/[0.07]">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setReviseOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                size="sm"
+                onClick={submitRevise}
+                loading={reviseSaving}
+                loadingText="提交中..."
+              >
+                保存为新版本
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GenerationSnapshotSummary({ snapshot }: { snapshot: Record<string, unknown> }) {
+  return (
+    <div className="border-t border-white/[0.07] pt-3 mt-3">
+      <div className="text-[11px] text-gray-400 font-medium mb-2">生成依据</div>
+      <div className="space-y-1 text-[10px] text-gray-500">
+        <div className="flex justify-between">
+          <span>生成时间</span>
+          <span className="text-gray-400">
+            {snapshot.generatedAt
+              ? new Date(snapshot.generatedAt as string).toLocaleString('zh-CN')
+              : '-'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span>AI 模型</span>
+          <span className="text-gray-400 font-mono">
+            {(snapshot.aiModel as string) || '-'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span>产物数量</span>
+          <span className="text-gray-400">
+            {(snapshot.artifactCount as number) || 0} 项
+          </span>
+        </div>
+        {snapshot.tokenInput != null && typeof snapshot.tokenInput === 'number' && (
+          <div className="flex justify-between">
+            <span>Token 消耗</span>
+            <span className="text-gray-400 font-mono">
+              {(snapshot.tokenInput as number) + ((snapshot.tokenOutput as number) || 0)}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

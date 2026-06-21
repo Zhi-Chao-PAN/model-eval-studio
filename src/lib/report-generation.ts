@@ -39,6 +39,17 @@ import {
   type ParsedModelReport,
   type ReportParseOptions,
 } from '@/lib/report-parser'
+import {
+  getDefaultRubric,
+  buildRubricGuidancePrompt,
+  parseDimensions,
+  type RubricData,
+} from '@/lib/rubric-templates'
+import {
+  getNextReportVersion,
+  buildGenerationSnapshot,
+  buildGenerationConfig,
+} from '@/lib/report-versioning'
 
 const AUXILIARY_CALL_TIMEOUT_MS = 45_000
 const REPORT_CALL_TIMEOUT_MS = 90_000
@@ -81,11 +92,33 @@ export async function generateReportForModel(
   const { task, model, aiConfig, callbacks = {} } = options
   const { onPhase = () => {}, onDelta = () => {}, onReplace = () => {} } = callbacks
 
+  const startedAt = Date.now()
   let tokenInput = 0
   let tokenOutput = 0
 
   const phase = (name: string, extra?: Record<string, any>) => {
     onPhase(name, extra)
+  }
+
+  // 加载任务的评分规则（优先自定义，否则按任务类型取默认）
+  let rubricGuidance: string | undefined
+  try {
+    const rubricRecord = await prisma.evaluationRubric.findUnique({
+      where: { taskId: task.id },
+    })
+    if (rubricRecord) {
+      const rubric: RubricData = {
+        templateType: rubricRecord.templateType as RubricData['templateType'],
+        dimensions: parseDimensions(rubricRecord.dimensionsJson),
+        overallFormula: rubricRecord.overallFormula || '',
+      }
+      rubricGuidance = buildRubricGuidancePrompt(rubric)
+    } else {
+      const defaultRubric = getDefaultRubric(task.category || task.requirementType)
+      rubricGuidance = buildRubricGuidancePrompt(defaultRubric)
+    }
+  } catch {
+    // 加载失败时静默回退到旧的 type-based 逻辑
   }
 
   // Only tester-uploaded local acceptance screenshots are eligible.
@@ -298,6 +331,7 @@ export async function generateReportForModel(
     verificationSummary,
     hasTrajectory: Boolean(processText?.trim()),
     taskType: task.requirementType || undefined,
+    rubricGuidance,
   })
 
   let reportText = ''
@@ -343,9 +377,48 @@ export async function generateReportForModel(
 
   phase('saving')
   const parsed = validated.parsed
+
+  // 分配版本号
+  const version = await getNextReportVersion(model.id)
+
+  // 加载 rubric 用于生成配置快照
+  const rubricRecord = await prisma.evaluationRubric.findUnique({
+    where: { taskId: task.id },
+  }).catch(() => null)
+
+  // 构建生成依据快照
+  const generationSnapshot = buildGenerationSnapshot({
+    task: {
+      title: task.title,
+      description: task.description,
+      backgroundUsed: task.backgroundUsed,
+    },
+    model: {
+      hardMetricsJson: model.hardMetricsJson,
+      processText: model.processText,
+      artifactAnalysisJson: model.artifactAnalysisJson,
+      verificationScreenshotUrls,
+      verificationSummary,
+    },
+    artifactCount: model.artifacts?.length || 0,
+    aiModel: aiConfig.model,
+    aiProvider: aiConfig.provider,
+    tokenInput,
+    tokenOutput,
+    durationMs: Date.now() - startedAt,
+  })
+
+  // 构建生成配置快照
+  const generationConfig = buildGenerationConfig({
+    rubric: rubricRecord || null,
+    taskType: task.requirementType || task.category,
+  })
+
   const report = await prisma.modelReport.create({
     data: {
       taskModelId: model.id,
+      version,
+      source: 'AI_GENERATED',
       productFeedback: parsed.productFeedback,
       verificationScreenshotUrls,
       verificationSummary,
@@ -356,6 +429,8 @@ export async function generateReportForModel(
       qualityScore: parsed.qualityScore,
       qualityComment: parsed.qualityComment,
       trajectoryAnalysis: parsed.trajectoryAnalysis,
+      generationSnapshot,
+      generationConfig,
     },
   })
   await prisma.task.update({ where: { id: task.id }, data: { currentStep: 'REPORT' } })

@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 interface Task {
   id: string
@@ -20,6 +21,8 @@ interface Task {
   createdAt: string
   updatedAt: string
   _count: { models: number }
+  role?: string
+  user?: { username: string }
 }
 
 const STEPS = [
@@ -43,18 +46,21 @@ const statusMeta: Record<string, { label: string; variant: any }> = {
 export default function DashboardPage() {
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>([])
+  const [sharedTasks, setSharedTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'mine' | 'shared'>('mine')
 
   async function loadTasks() {
     try {
       const res = await fetch('/api/tasks')
       let data; try { data = await res.json(); } catch { throw new Error('服务器返回了非预期内容（HTTP ' + res.status + '）') }
       if (data.tasks) setTasks(data.tasks)
+      if (data.sharedTasks) setSharedTasks(data.sharedTasks)
     } finally { setLoading(false) }
   }
 
@@ -84,7 +90,8 @@ export default function DashboardPage() {
     } finally { setDeletingId(null) }
   }
 
-  const filtered = tasks.filter(t =>
+  const displayTasks = activeTab === 'mine' ? tasks : sharedTasks
+  const filtered = displayTasks.filter(t =>
     !search || t.title.toLowerCase().includes(search.toLowerCase())
   )
   return (
@@ -93,7 +100,10 @@ export default function DashboardPage() {
         <div>
           <h1 className="display text-3xl sm:text-4xl mb-2">工作台</h1>
           <p className="text-gray-400 text-sm">
-            共 <span className="text-white tabular">{tasks.length}</span> 个评估任务
+            共 <span className="text-white tabular">{tasks.length}</span> 个任务
+            {sharedTasks.length > 0 && (
+              <> · <span className="text-white tabular">{sharedTasks.length}</span> 个共享</>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -105,6 +115,32 @@ export default function DashboardPage() {
             <Plus className="h-3.5 w-3.5" /> 新建任务
           </Button>
         </div>
+      </div>
+
+      {/* Tab 切换 */}
+      <div className="flex gap-1 mb-4 p-1 rounded-lg bg-white/[0.02] w-fit">
+        <button
+          onClick={() => setActiveTab('mine')}
+          className={cn(
+            'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+            activeTab === 'mine'
+              ? 'bg-white/[0.06] text-white'
+              : 'text-gray-500 hover:text-gray-300'
+          )}
+        >
+          我的任务 ({tasks.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('shared')}
+          className={cn(
+            'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+            activeTab === 'shared'
+              ? 'bg-white/[0.06] text-white'
+              : 'text-gray-500 hover:text-gray-300'
+          )}
+        >
+          与我共享 ({sharedTasks.length})
+        </button>
       </div>
 
       {showNew && (

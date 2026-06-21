@@ -9,6 +9,7 @@ import {
 } from '@/lib/ai-prompts'
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -42,9 +43,16 @@ export async function POST(
   let taskTitle = ''
   let taskType: TaskType | null = null
 
-  const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId, status: { not: 'DELETED' } },
-  })
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'EDITOR')
+  if (denied) {
+    return new Response(
+      JSON.stringify({ error: denied.error }),
+      { status: denied.status, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
+  const task = await prisma.task.findUnique({ where: { id } })
   if (!task) {
     return new Response(JSON.stringify({ error: '任务不存在' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
   }

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { apiError } from '@/lib/api-error'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 
@@ -170,10 +171,24 @@ export async function GET(
   const url = new URL(request.url)
   const format = resolveFormat(url.searchParams)
 
-  const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId, status: { not: 'DELETED' } },
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'VIEWER')
+  if (denied) {
+    logAudit(request, {
+      action: 'EXPORT',
+      userId: session.userId,
+      taskId: id,
+      status: 'error',
+      error: denied.error,
+      durationMs: Date.now() - startedAt,
+    })
+    return apiError(denied.error, denied.status)
+  }
+
+  const task = await prisma.task.findUnique({
+    where: { id },
     include: {
-      models: { include: { reports: { orderBy: { createdAt: 'desc' }, take: 1 } } },
+      models: { include: { reports: { orderBy: { version: 'desc' }, take: 1 } } },
     },
   })
   if (!task) {

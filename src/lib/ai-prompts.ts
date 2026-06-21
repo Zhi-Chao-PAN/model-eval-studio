@@ -275,11 +275,13 @@ export function buildReportPrompt(opts: {
   hasTrajectory?: boolean
   analysisContext?: string
   taskType?: TaskType | string
+  rubricGuidance?: string
 }): string {
   const isCoding = opts.taskType === 'CODING'
   const isAgent = opts.taskType === 'AGENT'
 
-  const typeSpecificGuidance = isCoding
+  // 如果传入了自定义 rubric 指导，优先使用；否则回退到基于类型的硬编码指导
+  const typeSpecificGuidance = opts.rubricGuidance || (isCoding
     ? `
 【任务类型说明】
 这是一个 Coding 代码开发任务。请按照 Coding 评测标准进行评估：
@@ -339,9 +341,25 @@ export function buildReportPrompt(opts: {
 - 是否出现严重的幻觉（胡编乱造）？
 - 工具调用是否正确、高效？
 - 规划是否合理？`
-    : ''
+    : '')
 
-  const typeSpecificScoring = isCoding
+  const typeSpecificScoring = opts.rubricGuidance
+    ? `
+【产物质量评分参考】
+产物质量评分请综合考虑各评分维度中与产物本身相关的维度。评分允许 1-10，支持 .5 分。
+- 重点看交付物质量、需求满足度、正确性、完整性
+- 请在评论中说明你的判断依据
+
+【交付效率评分参考】
+交付效率评分请结合轨迹过程、规划效率、工具使用效率来评。评分允许 1-10，支持 .5 分。
+- 步骤是否清晰高效、工具有效利用、无明显绕路或无效尝试
+- 是否有验证闭环
+
+【综合评分参考】
+综合评分按评分规则中的总分公式计算。必须是 1-10 的整数。
+- 结合所有评分维度加权求和
+- 注意评分规则中的封顶/约束条件`
+    : (isCoding
     ? `
 【产物质量评分参考】
 产物质量评分请综合考虑需求完成度和代码质量。评分允许 1-10，支持 .5 分。
@@ -375,7 +393,7 @@ export function buildReportPrompt(opts: {
 【综合评分参考】
 综合评分请整体评估 Agent 的整体表现。必须是 1-10 的整数。
 - 结合指令理解、规划能力、工具调用、推理判断、幻觉检测、交付结果。`
-    : ''
+    : '')
 
   return `请你代入测试者本人，以第一人称口吻为模型「${opts.modelCode}」撰写一份可直接提交到测试平台表单的评估报告。
 

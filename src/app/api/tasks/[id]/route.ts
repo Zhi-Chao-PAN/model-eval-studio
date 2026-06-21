@@ -4,10 +4,11 @@ import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
 import { parseTrajectoryScreenshots } from '@/lib/trajectory-screenshots'
+import { getTaskAccess, hasAccessLevel, requireAccess } from '@/lib/task-access'
 
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await requireAuth()
   if (!session) {
@@ -16,83 +17,87 @@ export async function GET(
 
   const { id } = await params
 
-  const task = await prisma.task.findFirst({
-    where: {
-      id,
-      userId: session.userId,
-      status: { not: 'DELETED' },
-    },
-      include: {
-        attachments: { orderBy: { createdAt: 'asc' } },
-        models: {
-          orderBy: { createdAt: 'asc' },
-          include: {
-            artifacts: {
-              orderBy: { createdAt: 'asc' },
-              select: {
-                id: true,
-                name: true,
-                url: true,
-                size: true,
-                mimeType: true,
-                previewJson: true,
-                createdAt: true,
-              },
+  const { access, task: accessTask } = await getTaskAccess(id, session)
+  const accessDenied = requireAccess(access, 'VIEWER')
+  if (accessDenied) {
+    return NextResponse.json({ error: accessDenied.error }, { status: accessDenied.status })
+  }
+
+  const task = await prisma.task.findUnique({
+    where: { id },
+    include: {
+      attachments: { orderBy: { createdAt: 'asc' } },
+      models: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          artifacts: {
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              name: true,
+              url: true,
+              size: true,
+              mimeType: true,
+              previewJson: true,
+              createdAt: true,
             },
-            reports: {
-              orderBy: { createdAt: 'desc' },
-              take: 1,
-              select: {
-                id: true,
-                productFeedback: true,
-                verificationSummary: true,
-                overallScore: true,
-                overallComment: true,
-                efficiencyScore: true,
-                efficiencyComment: true,
-                qualityScore: true,
-                qualityComment: true,
-                trajectoryAnalysis: true,
-                createdAt: true,
-                updatedAt: true,
-              },
+          },
+          reports: {
+            orderBy: { version: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              version: true,
+              source: true,
+              productFeedback: true,
+              verificationSummary: true,
+              overallScore: true,
+              overallComment: true,
+              efficiencyScore: true,
+              efficiencyComment: true,
+              qualityScore: true,
+              qualityComment: true,
+              trajectoryAnalysis: true,
+              createdAt: true,
+              updatedAt: true,
             },
-            artifactAnalysisRuns: {
-              orderBy: { createdAt: 'desc' },
-              take: 1,
-              select: {
-                id: true,
-                status: true,
-                currentPhase: true,
-                error: true,
-                workflowRunId: true,
-                startedAt: true,
-                completedAt: true,
-                createdAt: true,
-                updatedAt: true,
-                nextEventSeq: true,
-                events: {
-                  orderBy: { sequence: 'asc' },
-                  select: {
-                    id: true,
-                    sequence: true,
-                    phase: true,
-                    status: true,
-                    label: true,
-                    detail: true,
-                    metadata: true,
-                    createdAt: true,
-                  },
+          },
+          artifactAnalysisRuns: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              status: true,
+              currentPhase: true,
+              error: true,
+              workflowRunId: true,
+              startedAt: true,
+              completedAt: true,
+              createdAt: true,
+              updatedAt: true,
+              nextEventSeq: true,
+              events: {
+                orderBy: { sequence: 'asc' },
+                select: {
+                  id: true,
+                  sequence: true,
+                  phase: true,
+                  status: true,
+                  label: true,
+                  detail: true,
+                  metadata: true,
+                  createdAt: true,
                 },
               },
             },
           },
         },
-        messages: {
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          take: 200,
-        },
       },
+      messages: {
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 200,
+      },
+    },
   })
 
   if (!task) {
@@ -133,8 +138,15 @@ export async function PUT(
   try {
     const data = await request.json()
 
-    const task = await prisma.task.findFirst({
-      where: { id, userId: session.userId, status: { not: 'DELETED' } },
+    const { access } = await getTaskAccess(id, session)
+    const accessDenied = requireAccess(access, 'EDITOR')
+    if (accessDenied) {
+      errorMsg = accessDenied.error
+      return NextResponse.json({ error: errorMsg }, { status: accessDenied.status })
+    }
+
+    const task = await prisma.task.findUnique({
+      where: { id },
     })
     if (!task) {
       errorMsg = '任务不存在'
@@ -201,8 +213,19 @@ export async function DELETE(
   let taskTitle = ''
 
   try {
-    const task = await prisma.task.findFirst({
-      where: { id, userId: session.userId, status: { not: 'DELETED' } },
+    const { access } = await getTaskAccess(id, session)
+    if (!access) {
+      errorMsg = '任务不存在'
+      return NextResponse.json({ error: errorMsg }, { status: 404 })
+    }
+    // 只有 Owner 可以删除任务
+    if (access !== 'OWNER') {
+      errorMsg = '只有任务创建者可以删除任务'
+      return NextResponse.json({ error: errorMsg }, { status: 403 })
+    }
+
+    const task = await prisma.task.findUnique({
+      where: { id },
       include: {
         models: {
           include: {

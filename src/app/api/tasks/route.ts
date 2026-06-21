@@ -50,7 +50,7 @@ async function cleanupExpiredCompletedTasks(userId: string) {
   }
 }
 
-// 获取当前用户的任务列表
+// 获取当前用户的任务列表（含我创建的 + 与我共享的）
 export async function GET() {
   const session = await requireAuth()
   if (!session) {
@@ -60,26 +60,53 @@ export async function GET() {
   // 惰性清理 30 天前的已完成任务
   void cleanupExpiredCompletedTasks(session.userId)
 
-  const tasks = await prisma.task.findMany({
+  const taskSelect = {
+    id: true,
+    title: true,
+    category: true,
+    requirementType: true,
+    status: true,
+    currentStep: true,
+    createdAt: true,
+    updatedAt: true,
+    _count: { select: { models: true } },
+  } as const
+
+  // 我创建的任务
+  const myTasks = await prisma.task.findMany({
     where: {
       userId: session.userId,
       status: { not: 'DELETED' },
     },
     orderBy: { updatedAt: 'desc' },
-    select: {
-      id: true,
-      title: true,
-      category: true,
-      requirementType: true,
-      status: true,
-      currentStep: true,
-      createdAt: true,
-      updatedAt: true,
-      _count: { select: { models: true } },
+    select: taskSelect,
+  })
+
+  // 与我共享的任务
+  const sharedRows = await prisma.taskCollaborator.findMany({
+    where: {
+      userId: session.userId,
+      task: { status: { not: 'DELETED' } },
+    },
+    orderBy: { task: { updatedAt: 'desc' } },
+    include: {
+      task: {
+        select: {
+          ...taskSelect,
+          user: { select: { username: true } },
+        },
+      },
     },
   })
 
-  return NextResponse.json({ tasks })
+  const sharedTasks = sharedRows
+    .filter(row => row.task)
+    .map(row => ({
+      ...row.task,
+      role: row.role,
+    }))
+
+  return NextResponse.json({ tasks: myTasks, sharedTasks })
 }
 
 // 创建新任务

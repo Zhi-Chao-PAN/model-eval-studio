@@ -6,6 +6,7 @@ import { buildSystemPrompt } from '@/lib/ai-prompts'
 import { filterConversationMessages, getWorkflowContent } from '@/lib/task-messages'
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,10 +34,19 @@ export async function POST(
   let tokenOutput: number | null = null
   let userMessageText = ''
 
-  const task = await prisma.task.findFirst({
-    where: { id, userId: session.userId, status: { not: 'DELETED' } },
+  const { access } = await getTaskAccess(id, session)
+  const denied = requireAccess(access, 'EDITOR')
+  if (denied) {
+    return new Response(
+      JSON.stringify({ error: denied.error }),
+      { status: denied.status, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
+  const task = await prisma.task.findUnique({
+    where: { id },
     include: {
-      models: { include: { artifacts: true, reports: { take: 1, orderBy: { createdAt: 'desc' } } } },
+      models: { include: { artifacts: true, reports: { take: 1, orderBy: { version: 'desc' } } } },
       attachments: true,
     },
   })

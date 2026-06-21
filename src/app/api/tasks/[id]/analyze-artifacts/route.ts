@@ -6,6 +6,7 @@ import { generateChat } from '@/lib/ai'
 import { buildSystemPrompt, buildArtifactAnalysisPrompt } from '@/lib/ai-prompts'
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export async function POST(
   request: Request,
@@ -31,8 +32,15 @@ export async function POST(
   let taskTitle = ''
 
   try {
-    const task = await prisma.task.findFirst({
-      where: { id, userId: session.userId, status: { not: 'DELETED' } },
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'EDITOR')
+    if (denied) {
+      errorMsg = denied.error
+      return NextResponse.json({ error: denied.error }, { status: denied.status })
+    }
+
+    const task = await prisma.task.findUnique({
+      where: { id },
       include: {
         models: { include: { artifacts: true } },
       },

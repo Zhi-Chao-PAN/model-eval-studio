@@ -79,6 +79,8 @@ model User {
   tasks         Task[]
   inviteCodes   InviteCode[] @relation("CreatedInvites")
   auditLogs     AuditLog[]
+  sharedTasks   TaskCollaborator[]
+  createdShares TaskShare[] @relation("TaskShareCreator")
 }
 
 model InviteCode {
@@ -112,6 +114,9 @@ model Task {
   attachments     TaskAttachment[]
   models          TaskModel[]
   messages        TaskMessage[]
+  rubric          EvaluationRubric?
+  shares          TaskShare[]
+  collaborators   TaskCollaborator[]
   taskIdeaJson    String?
   analysisJson    String?
 
@@ -206,23 +211,31 @@ model ModelArtifact {
 }
 
 model ModelReport {
-  id                String   @id @default(cuid())
-  taskModelId       String
-  taskModel         TaskModel @relation(fields: [taskModelId], references: [id], onDelete: Cascade)
-  productFeedback   String
+  id                  String   @id @default(cuid())
+  taskModelId         String
+  taskModel           TaskModel @relation(fields: [taskModelId], references: [id], onDelete: Cascade)
+  version             Int      @default(1)
+  source              String   @default("AI_GENERATED") // AI_GENERATED | AI_ADJUSTED | MANUAL
+  parentReportId      String?  // 上一版本 ID，形成修订链
+  editedById          String?  // 人工修订者用户 ID
+  editNote            String?  // 修订说明
+  productFeedback     String
   verificationScreenshotUrls String?
   verificationSummary String?
-  overallScore      Float
-  overallComment    String
-  efficiencyScore   Float
-  efficiencyComment String
-  qualityScore      Float
-  qualityComment    String
-  trajectoryAnalysis String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  overallScore        Float
+  overallComment      String
+  efficiencyScore     Float
+  efficiencyComment   String
+  qualityScore        Float
+  qualityComment      String
+  trajectoryAnalysis  String?
+  generationSnapshot  String?  @db.Text // 生成依据 JSON 快照
+  generationConfig    String?  @db.Text // 生成时的 rubric/prompt 配置快照
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([taskModelId, createdAt])
+  @@index([taskModelId, version])
 }
 
 model TaskMessage {
@@ -261,6 +274,19 @@ model AuditLog {
   @@index([createdAt])
 }
 
+model EvaluationRubric {
+  id             String   @id @default(cuid())
+  taskId         String   @unique
+  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  templateType   String   // "CODING" | "AGENT" | "CUSTOM"
+  dimensionsJson String   // JSON 数组：[{key, label, weight, description, scoreRange}]
+  overallFormula String?  // 综合分计算公式描述
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([taskId])
+}
+
 model RateLimitBucket {
   id          String   @id
   count       Int      @default(0)
@@ -269,4 +295,31 @@ model RateLimitBucket {
   updatedAt   DateTime @updatedAt
 
   @@index([expiresAt])
+}
+
+model TaskShare {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  token       String   @unique
+  accessType  String   @default("VIEW") // VIEW 只读
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  createdById String
+  createdBy   User     @relation("TaskShareCreator", fields: [createdById], references: [id])
+
+  @@index([taskId])
+}
+
+model TaskCollaborator {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   // "VIEWER" | "EDITOR"
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, userId])
+  @@index([userId])
 }
