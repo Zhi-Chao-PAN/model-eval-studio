@@ -125,7 +125,8 @@
 ### 部署
 - 平台：Vercel
 - 数据库：Neon PostgreSQL
-- 文件存储：当前只存解析后的文本到数据库
+- 文件存储：Vercel Blob（生产）/ 本地文件系统（开发，`.local-artifacts/`）
+- 构建时自动执行 `prisma migrate deploy`（见 `scripts/migrate-if-production.js`），部署后首次需手动 `pnpm init:admin` 初始化管理员
 
 ## 数据模型
 
@@ -184,6 +185,42 @@
 - id, runId, sequence, phase, status, label, detail, metadata
 - createdAt
 
+### EvaluationRubric（评分模板）
+- id, taskId (1:1)
+- templateType: CODING / AGENT / CUSTOM
+- dimensionsJson: 评分维度数组（key/label/weight/description/scoreRange/commonDeductions）
+- overallFormula: 综合分公式说明
+- createdAt, updatedAt
+
+### ModelReport（报告版本链，新增字段）
+- **version**：版本号（自增，(taskModelId, version) 唯一）
+- **source**：AI_GENERATED / AI_ADJUSTED / MANUAL
+- **parentReportId**：上一版本（形成修订链，自引用外键）
+- **editedById**：人工修订者 ID（外键 User，删用户置 NULL）
+- **editNote**：修订说明
+- **generationSnapshot**（@db.Text）：生成时元信息快照（AI 模型/token/耗时/产物签名/过程文本 hash）
+- **generationConfig**（@db.Text）：生成时 rubric/prompt 配置快照
+
+### TaskCollaborator（协作者）
+- id, taskId, userId (taskId+userId 唯一)
+- role: VIEWER / EDITOR
+- createdAt
+
+### TaskShare（公开只读链接）
+- id, taskId, token (@unique, sh_ 前缀 + 32 位 base64url CSPRNG)
+- accessType: VIEW
+- expiresAt（可空，永久）
+- createdById（外键 User，删用户级联删除）
+- createdAt
+
+### AuditLog
+- id, userId, action, taskId, status, error, ip, userAgent, detail
+- tokenInput, tokenOutput, durationMs
+- createdAt（索引：userId/action/taskId/createdAt）
+
+### RateLimitBucket
+- id, scope, identifier, tokens, resetAt
+
 ### AuditLog
 - id, userId, action, detail, ipAddress, userAgent
 - path, method, status, error
@@ -197,24 +234,27 @@
 - DIRECT_URL：PostgreSQL 直连（Prisma 迁移，Neon 等服务需配置）
 - SESSION_SECRET：会话加密密钥（32 字符以上）
 - ENCRYPTION_KEY：API Key 加密密钥（32 字节，64 位十六进制）
-- BLOB_READ_WRITE_TOKEN：Vercel Blob 令牌（可选，文件上传用）
+- BLOB_READ_WRITE_TOKEN：Vercel Blob 令牌（可选，文件上传用；未配置时使用本地文件存储）
 - ADMIN_USERNAME：初始管理员用户名
 - ADMIN_PASSWORD：初始管理员密码
-- DATABASE_URL：PostgreSQL 连接串（Neon）
-- ADMIN_USERNAME：初始管理员用户名
-- ADMIN_PASSWORD：初始管理员密码
+- DATABASE_URL：PostgreSQL 连接串（Neon pooled 连接）
+- DIRECT_URL：PostgreSQL 直连串（Prisma 迁移用，Neon 必需）
+- SESSION_SECRET：iron-session 加密密钥（≥32 字符）
+- ENCRYPTION_KEY：AES-256-GCM 加密用户 API Key（推荐 64 位十六进制，用 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` 生成）
 
 ### Vercel 部署步骤
 1. 连接 GitHub 仓库
-2. 配置环境变量
-3. 配置 Build Command: pnpm build
-4. 配置 Install Command: pnpm install
+2. 配置环境变量（见上表）
+3. 配置 Build Command: `pnpm build`（会自动在 production 环境跑 `prisma migrate deploy`）
+4. 配置 Install Command: `pnpm install`
 5. 添加 Neon Postgres 集成
-6. 部署后运行 prisma migrate 和 seed
+6. 首次部署后执行 `pnpm init:admin` 创建管理员账号
+7. （可选）开启 Vercel Blob 存储以支持原始文件上传
 
 ## 后续规划
-- 接入 Vercel Blob 存储原始文件
 - 支持更多文件格式解析
-- 任务模板功能
-- 历史趋势分析
+- 报告跨模型对比可视化（雷达图/条形图）
+- 历史趋势分析（同任务同模型多版本成绩对比）
+- 任务模板库（预设场景化任务 prompt）
+- 通知中心（协作者加入、报告生成完成提醒）
 - 多语言支持

@@ -41,8 +41,25 @@ export async function POST(
 
     const task = await prisma.task.findUnique({
       where: { id },
-      include: {
-        models: { include: { artifacts: true } },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        backgroundUsed: true,
+        requirementType: true,
+        models: {
+          select: {
+            id: true,
+            modelCode: true,
+            hardMetricsJson: true,
+            processText: true,
+            artifacts: {
+              select: { name: true, parsedText: true, textContent: true },
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     })
     if (!task) {

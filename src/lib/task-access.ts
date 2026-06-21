@@ -48,11 +48,18 @@ export async function getTaskAccess(
   shareToken?: string,
   includeDeleted = false,
 ): Promise<TaskAccessResult> {
+  // 只拉取鉴权需要的最小字段：任务基础列 + 协作者(userId/role)，不拉 shares 全表。
+  // shares 仅在传入 shareToken 时通过唯一索引单独查询，避免内存过滤 + 全列加载。
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    include: {
-      collaborators: true,
-      shares: true,
+    select: {
+      id: true,
+      userId: true,
+      status: true,
+      title: true,
+      collaborators: {
+        select: { userId: true, role: true },
+      },
     },
   })
 
@@ -75,10 +82,10 @@ export async function getTaskAccess(
     return { access: 'VIEWER', task }
   }
 
-  // 协作者权限
+  // 协作者权限（这里 collaborators 只含 userId/role，足够判断）
   if (session) {
-    const collaborator = task.collaborators.find(
-      (c: any) => c.userId === session.userId,
+    const collaborator = (task.collaborators as Array<{ userId: string; role: string }>).find(
+      c => c.userId === session.userId,
     )
     if (collaborator) {
       const role = collaborator.role === 'EDITOR' ? 'EDITOR' : 'VIEWER'
@@ -86,14 +93,18 @@ export async function getTaskAccess(
     }
   }
 
-  // 公开共享链接
+  // 公开共享链接：直接走 TaskShare.token 唯一索引查询，不走内存过滤
   if (shareToken) {
-    const share = task.shares.find((s: any) => s.token === shareToken)
-    if (share && share.accessType === 'VIEW') {
-      // 检查是否过期
-      if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
-        return { access: null, task: null }
-      }
+    const share = await prisma.taskShare.findUnique({
+      where: { token: shareToken },
+      select: { taskId: true, accessType: true, expiresAt: true },
+    })
+    if (
+      share &&
+      share.taskId === taskId &&
+      share.accessType === 'VIEW' &&
+      (!share.expiresAt || new Date(share.expiresAt) >= new Date())
+    ) {
       return { access: 'PUBLIC_VIEW', task }
     }
   }
