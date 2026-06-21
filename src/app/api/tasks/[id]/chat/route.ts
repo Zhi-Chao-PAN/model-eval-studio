@@ -6,6 +6,7 @@ import { generateChat } from '@/lib/ai'
 import { buildSystemPrompt } from '@/lib/ai-prompts'
 import { filterConversationMessages, getWorkflowContent } from '@/lib/task-messages'
 import { logAudit } from '@/lib/audit'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 export async function POST(
   request: Request,
@@ -15,6 +16,14 @@ export async function POST(
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id } = await params
+
+  const rateLimit = await consumeRateLimit({
+    scope: 'ai-chat',
+    identifier: session.userId,
+    limit: 30,
+    windowMs: 10 * 60_000,
+  })
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null

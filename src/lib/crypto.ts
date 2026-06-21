@@ -6,13 +6,10 @@ const ENCODING = 'base64'
 function getKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY
   if (!key || key.length < 32) {
-    // 开发环境兜底，生产环境必须设置
-    return Buffer.from(
-      process.env.NODE_ENV === 'production'
-        ? ''
-        : 'dev-key-please-set-ENCRYPTION_KEY-in-prod-32',
-      'utf-8'
-    )
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('生产环境必须配置至少 32 个字符的 ENCRYPTION_KEY')
+    }
+    return Buffer.from('dev-key-please-set-ENCRYPTION_KEY-in-prod-32', 'utf-8').subarray(0, 32)
   }
   return Buffer.from(key.slice(0, 32), 'utf-8')
 }

@@ -2,6 +2,53 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
+import { deleteArtifactFile } from '@/lib/artifact-storage'
+
+// 惰性清理：已完成超过 30 天的任务自动硬删除（含关联 blob）
+// 每次列表请求最多清理 5 个，失败不影响主流程
+async function cleanupExpiredCompletedTasks(userId: string) {
+  try {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const expired = await prisma.task.findMany({
+      where: {
+        userId,
+        status: 'COMPLETED',
+        updatedAt: { lt: cutoff },
+      },
+      take: 5,
+      include: {
+        models: {
+          include: {
+            artifacts: { select: { url: true } },
+          },
+        },
+      },
+    })
+    if (expired.length === 0) return
+
+    for (const task of expired) {
+      // 清理所有 blob 文件
+      const urls: string[] = []
+      for (const m of task.models) {
+        for (const a of m.artifacts) {
+          if (a.url) urls.push(a.url)
+        }
+      }
+      if (urls.length > 0) {
+        await Promise.all(
+          urls.map((url) =>
+            deleteArtifactFile(url).catch(() => undefined),
+          ),
+        )
+      }
+      // 硬删除任务（级联删除所有关联数据）
+      await prisma.task.delete({ where: { id: task.id } })
+    }
+  } catch (err) {
+    // 清理失败不影响主流程，仅记录
+    console.warn('过期任务清理失败:', err instanceof Error ? err.message : String(err))
+  }
+}
 
 // 获取当前用户的任务列表
 export async function GET() {
@@ -9,6 +56,9 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: '未登录' }, { status: 401 })
   }
+
+  // 惰性清理 30 天前的已完成任务
+  void cleanupExpiredCompletedTasks(session.userId)
 
   const tasks = await prisma.task.findMany({
     where: {

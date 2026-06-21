@@ -61,6 +61,15 @@ function normalizeEvidence(value: StoredEvidence, index: number): VerificationEv
   }
 }
 
+function fnv1a(value: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
 export function parseVerificationEvidence(raw?: string | null): VerificationEvidence[] {
   if (!raw) return []
 
@@ -83,6 +92,24 @@ export function isAuthenticVerificationEvidence(evidence: VerificationEvidence):
 
 export function serializeVerificationEvidence(evidence: VerificationEvidence[]): string {
   return JSON.stringify({ version: 2, images: evidence })
+}
+
+export function verificationEvidenceSignature(raw?: string | null): string {
+  return parseVerificationEvidence(raw)
+    .filter(isAuthenticVerificationEvidence)
+    .map((image) => {
+      const dataSample = `${image.dataUrl.slice(0, 4096)}:${image.dataUrl.slice(-4096)}`
+      return [
+        image.id,
+        image.name,
+        image.source,
+        image.capturedAt || '',
+        image.dataUrl.length,
+        fnv1a(dataSample),
+      ].join(':')
+    })
+    .sort()
+    .join('|')
 }
 
 export function validateVerificationEvidence(evidence: VerificationEvidence[]): string | null {

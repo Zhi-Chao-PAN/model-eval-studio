@@ -112,43 +112,77 @@ export default function SettingsPage() {
 
   async function saveBackground() {
     setSavingBg(true)
-    await fetch('/api/user/background', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ background }),
-    })
-    setSavingBg(false); setBgSaved(true)
-    setTimeout(() => setBgSaved(false), 2000)
+    setBgSaved(false)
+    try {
+      const res = await fetch('/api/user/background', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ background }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || '保存失败')
+      }
+      setBgSaved(true)
+      setTimeout(() => setBgSaved(false), 2000)
+    } catch (err) {
+      alert('保存失败：' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSavingBg(false)
+    }
   }
 
   async function saveAiConfig() {
     setSavingAi(true)
-    await fetch('/api/user/ai-config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider, baseUrl, apiKey, modelName,
-        maxTokens: maxTokens ? Number(maxTokens) : undefined,
-      }),
-    })
-    setSavingAi(false); setAiSaved(true); setHasApiKey(true)
-    setTimeout(() => setAiSaved(false), 2000)
+    setAiSaved(false)
+    try {
+      const res = await fetch('/api/user/ai-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider, baseUrl, apiKey, modelName,
+          maxTokens: maxTokens ? Number(maxTokens) : undefined,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || '保存失败')
+      }
+      setAiSaved(true)
+      setHasApiKey(true)
+      setTimeout(() => setAiSaved(false), 2000)
+    } catch (err) {
+      alert('保存失败：' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSavingAi(false)
+    }
   }
 
   async function validateKey() {
+    if (!baseUrl || !modelName || (!apiKey && !hasApiKey)) {
+      setValidateResult({ ok: false, error: '请先填写完整的 AI 配置信息' })
+      return
+    }
     setValidating(true); setValidateResult(null)
-    await fetch('/api/user/ai-config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider, baseUrl, apiKey: apiKey || undefined, modelName,
-        maxTokens: maxTokens ? Number(maxTokens) : undefined,
-      }),
-    })
-    const res = await fetch('/api/user/ai-config/validate', { method: 'POST' })
-    const data = await res.json()
-    setValidateResult(data)
-    setValidating(false)
+    try {
+      // 直接用当前表单值测试，不经过保存
+      const res = await fetch('/api/user/ai-config/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          baseUrl,
+          apiKey: apiKey || undefined, // 如果当前表单没填 key，则用 DB 里已存的（后端回退）
+          modelName,
+        }),
+      })
+      const data = await res.json()
+      setValidateResult(data)
+    } catch (err) {
+      setValidateResult({ ok: false, error: err instanceof Error ? err.message : '测试连接失败' })
+    } finally {
+      setValidating(false)
+    }
   }
 
   if (!loaded) return <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 text-gray-500 animate-spin" /></div>

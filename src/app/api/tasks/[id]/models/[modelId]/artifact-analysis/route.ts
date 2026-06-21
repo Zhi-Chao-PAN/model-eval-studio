@@ -11,6 +11,8 @@ import {
   failArtifactAnalysisRun,
 } from '@/lib/artifact-analysis-runtime'
 import { artifactAnalysisWorkflow } from '@/workflows/artifact-analysis'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { apiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -39,11 +41,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string; modelId: string }> },
 ) {
   const session = await requireAuth()
-  if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+  if (!session) return apiError('未登录', 401)
 
   const { id, modelId } = await params
   const model = await findOwnedModel(id, modelId, session.userId)
-  if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
+  if (!model) return apiError('模型不存在', 404)
 
   return NextResponse.json({
     run: model.artifactAnalysisRuns[0] || null,
@@ -71,57 +73,93 @@ export async function POST(
 
   try {
     const session = await requireAuth()
-    if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    if (!session) return apiError('未登录', 401)
     userId = session.userId
 
     const { id, modelId } = await params
     taskId = id
+    const rateLimit = await consumeRateLimit({
+      scope: 'ai-artifact',
+      identifier: session.userId,
+      limit: 12,
+      windowMs: 10 * 60_000,
+    })
+    if (!rateLimit.allowed) {
+      auditError = '产物分析请求过于频繁'
+      return rateLimitResponse(rateLimit)
+    }
+
     const model = await findOwnedModel(id, modelId, session.userId)
     if (!model) {
       auditError = '模型不存在'
-      return NextResponse.json({ error: auditError }, { status: 404 })
+      return apiError(auditError, 404)
     }
     modelCode = model.modelCode
     analysisModelId = model.id
     if (model.artifacts.length === 0) {
       auditError = '请先上传模型产物，再开始预分析'
-      return NextResponse.json({ error: auditError }, { status: 400 })
+      return apiError(auditError, 400)
     }
 
     const aiConfig = await getUserAiConfig(session.userId)
     if (!aiConfig) {
       auditError = '请先配置 AI API'
-      return NextResponse.json({ error: auditError }, { status: 400 })
+      return apiError(auditError, 400)
     }
 
-    const activeRun = model.artifactAnalysisRuns[0]
-    if (
-      activeRun &&
-      (activeRun.status === ARTIFACT_ANALYSIS_RUN_STATUS.QUEUED || activeRun.status === ARTIFACT_ANALYSIS_RUN_STATUS.RUNNING)
-    ) {
-      auditStatus = 'success'
-      return NextResponse.json({ run: activeRun, alreadyRunning: true })
-    }
+    // 用 PostgreSQL advisory lock 保护"检查+创建"，消除 TOCTOU 竞态
+    const { run: analysisRun, alreadyRunning } = await prisma.$transaction(async (tx) => {
+      // 基于 modelId 获取事务级咨询锁，并发请求会在此排队
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${model.id}::text))`
 
-    const analysisRun = await prisma.artifactAnalysisRun.create({
-      data: {
-        taskModelId: model.id,
-        status: ARTIFACT_ANALYSIS_RUN_STATUS.QUEUED,
-        currentPhase: 'queued',
-        nextEventSeq: 1,
-        events: {
-          create: {
-            sequence: 1,
-            phase: 'queued',
-            status: ARTIFACT_ANALYSIS_EVENT_STATUS.QUEUED,
-            label: '已进入后台分析队列',
-            detail: '任务已提交，正在准备盘点、解压和分析产物内容。',
+      // 在锁内重新检查是否已有活跃 run（预加载的数据可能已过时）
+      const activeRun = await tx.artifactAnalysisRun.findFirst({
+        where: {
+          taskModelId: model.id,
+          status: {
+            in: [
+              ARTIFACT_ANALYSIS_RUN_STATUS.QUEUED,
+              ARTIFACT_ANALYSIS_RUN_STATUS.RUNNING,
+            ],
           },
         },
-      },
-      include: { events: { orderBy: { sequence: 'asc' } } },
+        orderBy: { createdAt: 'desc' },
+        include: { events: { orderBy: { sequence: 'asc' } } },
+      })
+
+      if (activeRun) {
+        return { run: activeRun, alreadyRunning: true }
+      }
+
+      // 没有活跃 run，创建新的
+      const newRun = await tx.artifactAnalysisRun.create({
+        data: {
+          taskModelId: model.id,
+          status: ARTIFACT_ANALYSIS_RUN_STATUS.QUEUED,
+          currentPhase: 'queued',
+          nextEventSeq: 1,
+          events: {
+            create: {
+              sequence: 1,
+              phase: 'queued',
+              status: ARTIFACT_ANALYSIS_EVENT_STATUS.QUEUED,
+              label: '已进入后台分析队列',
+              detail: '任务已提交，正在准备盘点、解压和分析产物内容。',
+            },
+          },
+        },
+        include: { events: { orderBy: { sequence: 'asc' } } },
+      })
+
+      return { run: newRun, alreadyRunning: false }
     })
+
     analysisRunId = analysisRun.id
+
+    if (alreadyRunning) {
+      auditStatus = 'success'
+      return NextResponse.json({ run: analysisRun, alreadyRunning: true })
+    }
 
     const workflowRun = await start(artifactAnalysisWorkflow, [{
       runId: analysisRun.id,

@@ -49,3 +49,6 @@ yarn-error.log*
 # mockups
 .mockups/
 public/mockup-layouts.html
+
+# Local development artifact storage
+.local-artifacts/

@@ -8,6 +8,7 @@ import {
   type TaskType,
 } from '@/lib/ai-prompts'
 import { logAudit } from '@/lib/audit'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,6 +28,14 @@ export async function POST(
     return new Response(JSON.stringify({ error: '未登录' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
   }
   const { id } = await params
+
+  const rateLimit = await consumeRateLimit({
+    scope: 'ai-design',
+    identifier: session.userId,
+    limit: 12,
+    windowMs: 10 * 60_000,
+  })
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
   let tokenInput: number | null = null
   let tokenOutput: number | null = null

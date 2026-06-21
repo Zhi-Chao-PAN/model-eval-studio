@@ -157,9 +157,10 @@ export default function AdminPage() {
   useEffect(() => {
     setLoading(true)
     ;(async () => {
-      if (tab === 'invites') await loadInvites()
-      else if (tab === 'users') await loadUsers()
-      else if (tab === 'audit') await loadAuditLogs()
+      // 初始加载：用户和邀请码是轻量数据，并行加载，确保顶部统计卡片有数据
+      const loads: Promise<any>[] = [loadInvites(), loadUsers()]
+      if (tab === 'audit') loads.push(loadAuditLogs())
+      await Promise.all(loads)
       setLoading(false)
     })()
   }, [tab])

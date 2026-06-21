@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
+import { consumeRateLimit, getRequestIp, rateLimitResponse } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   const startedAt = Date.now()
@@ -19,6 +20,17 @@ export async function POST(request: Request) {
     if (!username || !password) {
       errorMsg = '用户名和密码必填'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    const rateLimit = await consumeRateLimit({
+      scope: 'auth-login',
+      identifier: `${getRequestIp(request)}:${String(username).toLowerCase()}`,
+      limit: 10,
+      windowMs: 15 * 60_000,
+    })
+    if (!rateLimit.allowed) {
+      errorMsg = '登录请求过于频繁'
+      return rateLimitResponse(rateLimit)
     }
 
     const user = await prisma.user.findUnique({ where: { username } })

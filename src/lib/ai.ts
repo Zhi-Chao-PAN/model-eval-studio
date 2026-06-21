@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { type AiProvider } from '@prisma/client'
+import { openAiChatCompletionsUrl } from '@/lib/ai-endpoint'
 
 export interface AiMessage {
   role: 'system' | 'user' | 'assistant'
@@ -212,7 +213,7 @@ export async function analyzeImages(
     max_completion_tokens: options.maxTokens ?? 4000,
   }
 
-  const url = options.baseUrl.replace(/\/$/, '') + '/chat/completions'
+  const url = openAiChatCompletionsUrl(options.baseUrl)
 
   const res = await fetch(url, {
     method: 'POST',
@@ -248,4 +249,131 @@ export async function analyzeImages(
     : null
 
   return { content, usage }
+}
+
+/**
+ * 对上游 AI 错误做脱敏、分类和截断，返回安全的用户可读消息。
+ *
+ * 规则：
+ * - 根据 HTTP 状态码分类错误（鉴权、限流、超时、上游异常等）
+ * - 自动剥离错误消息中的 API Key / Authorization 等敏感信息
+ * - 截断上游详细消息到 200 字符以内，避免溢出
+ * - 开发环境下保留原始错误（作为 raw 字段），生产环境只返回脱敏摘要
+ */
+export interface SanitizedAiError {
+  message: string        // 面向用户的中文错误消息
+  category:              // 错误分类，供前端做不同处理
+    | 'auth'             // 鉴权失败：API Key 无效
+    | 'not_found'        // 模型或 Base URL 错误
+    | 'rate_limit'       // 触发限流
+    | 'timeout'          // 请求超时
+    | 'upstream_5xx'     // 上游服务端错误
+    | 'content_filter'   // 内容安全/合规拦截
+    | 'context_length'   // 上下文长度超限
+    | 'unknown'          // 其他错误
+  status?: number
+  raw?: string           // 原始错误（仅开发环境）
+}
+
+const AI_ERROR_MAX_DETAIL_LENGTH = 200
+
+export function sanitizeAiError(err: unknown): SanitizedAiError {
+  const isDev = process.env.NODE_ENV !== 'production'
+  const raw = err instanceof Error ? err.message : String(err)
+
+  // 尝试从错误消息中提取 HTTP 状态码
+  const statusMatch = raw.match(/HTTP\s*(\d{3})/i)
+  const status = statusMatch ? parseInt(statusMatch[1], 10) : undefined
+
+  // 超时类错误
+  if (
+    /timeout|timed out|ETIMEDOUT|ECONNRESET|AbortError|网络超时/i.test(raw) ||
+    (err instanceof DOMException && err.name === 'TimeoutError')
+  ) {
+    return {
+      message: 'AI 服务响应超时，请稍后重试或检查网络连接',
+      category: 'timeout',
+      status,
+      raw: isDev ? raw : undefined,
+    }
+  }
+
+  if (status) {
+    // 鉴权失败
+    if (status === 401 || status === 403) {
+      return {
+        message: 'API Key 无效或无权限访问该模型，请检查设置',
+        category: 'auth',
+        status,
+        raw: isDev ? raw : undefined,
+      }
+    }
+
+    // 模型 / URL 不存在
+    if (status === 404) {
+      return {
+        message: '模型名称或 Base URL 错误，请检查设置',
+        category: 'not_found',
+        status,
+        raw: isDev ? raw : undefined,
+      }
+    }
+
+    // 限流
+    if (status === 429) {
+      return {
+        message: 'AI 服务触发限流，请稍后重试',
+        category: 'rate_limit',
+        status,
+        raw: isDev ? raw : undefined,
+      }
+    }
+
+    // 上游 5xx
+    if (status >= 500) {
+      return {
+        message: 'AI 服务端暂时不可用，请稍后重试',
+        category: 'upstream_5xx',
+        status,
+        raw: isDev ? raw : undefined,
+      }
+    }
+  }
+
+  // 内容安全拦截（关键词匹配）
+  if (/content.*filter|content_policy|安全过滤|内容审核|sensitive|inappropriate/i.test(raw)) {
+    return {
+      message: '请求内容可能违反安全策略，请调整提示词后重试',
+      category: 'content_filter',
+      status,
+      raw: isDev ? raw : undefined,
+    }
+  }
+
+  // 上下文长度超限
+  if (/context.*length|max.*tokens|token.*limit|上下文.*超长|长度.*超限/i.test(raw)) {
+    return {
+      message: '输入内容过长，超出模型上下文长度限制，请减少输入内容',
+      category: 'context_length',
+      status,
+      raw: isDev ? raw : undefined,
+    }
+  }
+
+  // 通用错误：剥离敏感信息，截断后返回
+  const sanitized = raw
+    .replace(/sk-[A-Za-z0-9_-]{20,}/g, 'sk-***')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer ***')
+    .replace(/api[_-]?key['":\s]*[A-Za-z0-9_-]{16,}/gi, 'apiKey: ***')
+
+  const truncated = sanitized.length > AI_ERROR_MAX_DETAIL_LENGTH
+    ? sanitized.slice(0, AI_ERROR_MAX_DETAIL_LENGTH) + '…'
+    : sanitized
+
+  return {
+    message: `AI 调用失败：${truncated || '未知错误'}`,
+    category: 'unknown',
+    status,
+    raw: isDev ? raw : undefined,
+  }
 }

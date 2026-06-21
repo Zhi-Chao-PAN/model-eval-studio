@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
+import { TaskStep } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
+
+const ALLOWED_ROLES = new Set(['user', 'assistant', 'system'])
+const MAX_MESSAGE_LENGTH = 100_000
 
 export async function GET(
   _request: Request,
@@ -19,10 +23,10 @@ export async function GET(
 
   const messages = await prisma.taskMessage.findMany({
     where: { taskId: id },
-    orderBy: { createdAt: 'asc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 200,
   })
-  return NextResponse.json({ messages })
+  return NextResponse.json({ messages: messages.reverse() })
 }
 
 export async function POST(
@@ -32,10 +36,29 @@ export async function POST(
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id } = await params
-  const { role, content, step, modelId } = await request.json()
+  const body = await request.json().catch(() => null)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ error: '请求内容格式无效' }, { status: 400 })
+  }
+
+  const role = typeof body.role === 'string' ? body.role.trim() : ''
+  const content = typeof body.content === 'string' ? body.content.trim() : ''
+  const step = typeof body.step === 'string' ? body.step : ''
+  const modelId = typeof body.modelId === 'string' && body.modelId.trim()
+    ? body.modelId.trim()
+    : null
 
   if (!role || !content || !step) {
     return NextResponse.json({ error: 'role / content / step 必填' }, { status: 400 })
+  }
+  if (!ALLOWED_ROLES.has(role)) {
+    return NextResponse.json({ error: '消息角色无效' }, { status: 400 })
+  }
+  if (!Object.values(TaskStep).includes(step as TaskStep)) {
+    return NextResponse.json({ error: '任务阶段无效' }, { status: 400 })
+  }
+  if (content.length > MAX_MESSAGE_LENGTH) {
+    return NextResponse.json({ error: '消息内容过长' }, { status: 413 })
   }
 
   const task = await prisma.task.findFirst({
@@ -43,8 +66,16 @@ export async function POST(
   })
   if (!task) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
 
+  if (modelId) {
+    const model = await prisma.taskModel.findFirst({
+      where: { id: modelId, taskId: id },
+      select: { id: true },
+    })
+    if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
+  }
+
   const msg = await prisma.taskMessage.create({
-    data: { taskId: id, role, content, step, modelId },
+    data: { taskId: id, role, content, step: step as TaskStep, modelId },
   })
   return NextResponse.json({ message: msg })
 }

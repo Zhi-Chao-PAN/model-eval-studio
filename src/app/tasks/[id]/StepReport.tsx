@@ -56,6 +56,7 @@ const PHASE_TEXT: Record<string, string> = {
   analyzing_file: '正在分析当前产物文件...',
   synthesizing: '正在汇总全部产物分析...',
   generating_report: '正在撰写评估报告...',
+  repairing_report: '正在校验并修复报告结构...',
   adjusting_report: '正在根据您的反馈调整报告...',
   saving: '正在保存报告...',
 }
@@ -66,6 +67,7 @@ const PHASE_DOT: Record<string, 'indigo' | 'cyan' | 'emerald' | 'amber'> = {
   analyzing_file: 'cyan',
   synthesizing: 'indigo',
   generating_report: 'indigo',
+  repairing_report: 'amber',
   adjusting_report: 'indigo',
   saving: 'emerald',
 }
@@ -232,6 +234,10 @@ export default function StepReport({ task, onRefresh }: Props) {
                     updateJob({ streamText: next[modelId] })
                     return next
                   })
+                } else if (event === 'replace') {
+                  const replacement = data.text || ''
+                  setStreamPreview(prev => ({ ...prev, [modelId]: replacement }))
+                  updateJob({ streamText: replacement })
                 } else if (event === 'done') {
                   setStreamPreview(prev => { const copy = { ...prev }; delete copy[modelId]; return copy })
                   onRefresh()
