@@ -9,6 +9,14 @@ import { buildScreenshotAnalysisPrompt, buildDashboardAnalysisPrompt } from '@/l
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError } from '@/lib/api-error'
+import { storeArtifactFile, deleteArtifactFile } from '@/lib/artifact-storage'
+import {
+  parseTrajectoryScreenshots,
+  serializeTrajectoryScreenshots,
+  filterScreenshotsByType,
+  type TrajectoryScreenshot,
+  type TrajectoryScreenshotType,
+} from '@/lib/trajectory-screenshots'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -136,6 +144,8 @@ export async function POST(
   if (!task) {
     return apiError('任务不存在', 404)
   }
+
+  const userId = session.userId
 
   const aiConfig = await getUserAiConfig(session.userId)
   if (!aiConfig) {
@@ -274,10 +284,20 @@ export async function POST(
 
         const inserted: string[] = []
         const updated: string[] = []
+        let storedScreenshots: TrajectoryScreenshot[] = []
         try {
           const existingCodes = new Set(
             task.models.map((tm: any) => tm.modelCode.toUpperCase()),
           )
+
+          // 先把本次的 base64 截图全部存到 Blob
+          storedScreenshots = await storeScreenshotsToBlob({
+            images,
+            type,
+            userId,
+            taskId: id,
+          })
+
           const ops: any[] = []
 
           for (const m of parsed.models) {
@@ -286,21 +306,34 @@ export async function POST(
 
             if (type === 'dashboard') {
               const metricsJson = JSON.stringify(m.metrics || m)
+              // 合并：保留另一类（process）的截图，替换本类（dashboard）的截图
+              const existingModel = task.models.find((tm: any) => tm.modelCode.toUpperCase() === modelCode)
+              const existingScreenshots = parseTrajectoryScreenshots(existingModel?.screenshotUrls)
+              const otherType = filterScreenshotsByType(existingScreenshots, 'process')
+              const mergedScreenshots = [...otherType, ...storedScreenshots]
+              const screenshotUrls = serializeTrajectoryScreenshots(mergedScreenshots)
               ops.push(
                 prisma.taskModel.upsert({
                   where: { taskId_modelCode: { taskId: id, modelCode } },
-                  update: { hardMetricsJson: metricsJson },
+                  update: { hardMetricsJson: metricsJson, screenshotUrls },
                   create: {
                     taskId: id,
                     modelCode,
                     displayName: m.displayName || modelCode,
                     hardMetricsJson: metricsJson,
+                    screenshotUrls: serializeTrajectoryScreenshots(storedScreenshots),
                   },
                 }),
               )
             } else {
               const processText = m.processDetail || m.processSummary
-              const updateData: any = { screenshotUrls: images.length + ' images' }
+              // 合并：保留另一类（dashboard）的截图，替换本类（process）的截图
+              const existingModel = task.models.find((tm: any) => tm.modelCode.toUpperCase() === modelCode)
+              const existingScreenshots = parseTrajectoryScreenshots(existingModel?.screenshotUrls)
+              const otherType = filterScreenshotsByType(existingScreenshots, 'dashboard')
+              const mergedScreenshots = [...otherType, ...storedScreenshots]
+              const screenshotUrls = serializeTrajectoryScreenshots(mergedScreenshots)
+              const updateData: any = { screenshotUrls }
               if (processText) updateData.processText = processText
               ops.push(
                 prisma.taskModel.upsert({
@@ -311,7 +344,7 @@ export async function POST(
                     modelCode,
                     displayName: m.displayName || modelCode,
                     processText: processText || null,
-                    screenshotUrls: images.length + ' images',
+                    screenshotUrls: serializeTrajectoryScreenshots(storedScreenshots),
                   },
                 }),
               )
@@ -372,4 +405,72 @@ export async function POST(
       'X-Accel-Buffering': 'no',
     },
   })
+}
+
+// --- helpers ---
+
+interface StoreScreenshotsOptions {
+  images: string[]          // base64 data URL 数组
+  type: TrajectoryScreenshotType
+  userId: string
+  taskId: string
+}
+
+/**
+ * 将 base64 截图存入 Blob 存储，返回元数据数组。
+ * 失败时清理已上传的文件，然后抛出错误。
+ */
+async function storeScreenshotsToBlob(
+  options: StoreScreenshotsOptions,
+): Promise<TrajectoryScreenshot[]> {
+  const { images, type, userId, taskId } = options
+  const uploaded: { url: string; index: number }[] = []
+
+  try {
+    const now = new Date().toISOString()
+    const result: TrajectoryScreenshot[] = []
+
+    for (let i = 0; i < images.length; i += 1) {
+      const dataUrl = images[i]
+      // 从 data URL 提取 mime 和 base64 数据
+      const mimeMatch = dataUrl.match(/^data:(image\/[a-z0-9+.-]+);base64,/i)
+      const contentType = mimeMatch?.[1] || 'image/jpeg'
+      const base64Data = dataUrl.slice(dataUrl.indexOf(',') + 1)
+      const buffer = Buffer.from(base64Data, 'base64')
+      const ext = contentType === 'image/png'
+        ? 'png'
+        : contentType === 'image/webp'
+          ? 'webp'
+          : 'jpg'
+      const fileName = `screenshot-${i + 1}.${ext}`
+
+      // 路径：model-eval-screenshots/{userId}/{taskId}/{type}/{uuid}-{filename}
+      const stored = await storeArtifactFile({
+        buffer,
+        fileName,
+        contentType,
+        userId,
+        taskId,
+        modelId: '__trajectory__', // 截图暂时不按 model 分目录（一次分析可能涉及多个 model）
+      })
+
+      uploaded.push({ url: stored.url, index: i })
+      result.push({
+        id: crypto.randomUUID(),
+        name: fileName,
+        url: stored.url,
+        size: buffer.length,
+        type,
+        uploadedAt: now,
+      })
+    }
+
+    return result
+  } catch (err) {
+    // 部分上传失败：回滚已上传的文件
+    for (const { url } of uploaded) {
+      void deleteArtifactFile(url).catch(() => {})
+    }
+    throw err
+  }
 }

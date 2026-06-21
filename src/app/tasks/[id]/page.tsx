@@ -18,6 +18,10 @@ import { DesktopStepSidebar, MobileStepBar } from '@/components/tasks/StepSideba
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { filterConversationMessages } from '@/lib/task-messages'
 import { cn } from '@/lib/utils'
+import {
+  isAuthenticVerificationEvidence,
+  parseVerificationEvidence,
+} from '@/lib/verification-evidence'
 
 const STEPS = [
   { key: 'DESIGN', label: '任务设计', desc: 'AI 辅助设计评测题' },
@@ -73,6 +77,9 @@ export default function TaskPage() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const loadTaskSeqRef = useRef(0)
+  const autoReportedRef = useRef<Set<string>>(new Set())
+  const [autoReportNote, setAutoReportNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const autoReportNoteTimerRef = useRef<number | null>(null)
 
   async function readJsonResponse(res: Response) {
     const text = await res.text().catch(() => '')
@@ -114,6 +121,39 @@ export default function TaskPage() {
     if (res.ok && data.messages) setMessages(data.messages)
   }
 
+  // ---- auto-report: 产物分析完成后自动生成报告 ----
+
+  function showAutoReportNote(type: 'ok' | 'err', text: string, timeout = type === 'err' ? 15000 : 6000) {
+    if (autoReportNoteTimerRef.current) {
+      window.clearTimeout(autoReportNoteTimerRef.current)
+      autoReportNoteTimerRef.current = null
+    }
+    setAutoReportNote({ type, text })
+    autoReportNoteTimerRef.current = window.setTimeout(() => {
+      setAutoReportNote(null)
+    }, timeout)
+  }
+
+  async function triggerAutoReport(modelId: string, modelCode: string) {
+    try {
+      showAutoReportNote('ok', `「${modelCode}」产物分析完成，正在自动生成评估报告…`)
+      const res = await fetch('/api/tasks/' + taskId + '/generate-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId }),
+      })
+      if (!res.ok) {
+        const data = await readJsonResponse(res)
+        showAutoReportNote('err', `「${modelCode}」自动生成报告失败: ${data.error || '未知错误'}`)
+        autoReportedRef.current.delete(modelId)
+      }
+      void loadTask()
+    } catch (err) {
+      showAutoReportNote('err', `「${modelCode}」自动生成报告失败: ${err instanceof Error ? err.message : String(err)}`)
+      autoReportedRef.current.delete(modelId)
+    }
+  }
+
   useEffect(() => { loadTask(); loadMessages() }, [taskId])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamingContent, currentStep, chatOpen])
 
@@ -128,6 +168,46 @@ export default function TaskPage() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [exportMenuOpen])
+
+  // 自动报告：检测刚完成的产物分析，自动触发报告生成
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!task?.models) return
+    const models = task.models as any[]
+    for (const model of models) {
+      const run = model.artifactAnalysisRuns?.[0]
+      if (!run || run.status !== 'COMPLETED') continue
+      if (autoReportedRef.current.has(model.id)) continue
+
+      // 检查是否有真实验证截图（tester_upload 来源）
+      const evidence = parseVerificationEvidence(model.verificationScreenshotUrls)
+      const hasAuthenticEvidence = evidence.some(isAuthenticVerificationEvidence)
+
+      // 检查是否已有报告
+      const hasReport = Array.isArray(model.reports) && model.reports.length > 0
+
+      if (hasAuthenticEvidence && !hasReport) {
+        autoReportedRef.current.add(model.id)
+        void triggerAutoReport(model.id, model.modelCode)
+      } else if (!hasAuthenticEvidence) {
+        // 没有验证截图的也标记一下，避免反复检查
+        autoReportedRef.current.add(model.id)
+      }
+    }
+  }, [task?.models])
+
+  // 有正在运行的分析时，轮询刷新任务数据（驱动 auto-report 检测）
+  const hasRunningAnalysis = task?.models?.some((m: any) => {
+    const status = m.artifactAnalysisRuns?.[0]?.status
+    return status === 'QUEUED' || status === 'RUNNING'
+  })
+  useEffect(() => {
+    if (!hasRunningAnalysis) return
+    const timer = window.setInterval(() => {
+      void loadTask()
+    }, 1500)
+    return () => window.clearInterval(timer)
+  }, [hasRunningAnalysis])
 
   const chatMessages = filterConversationMessages(messages, task || {})
 
@@ -270,6 +350,17 @@ export default function TaskPage() {
 
   return (
     <div className="pb-20 lg:pb-6 relative min-h-[80vh]">
+      {/* Auto-report notification */}
+      {autoReportNote && (
+        <div className={cn(
+          'fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md max-w-sm text-sm border',
+          autoReportNote.type === 'ok'
+            ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-200'
+            : 'bg-red-500/20 border-red-500/30 text-red-200',
+        )}>
+          {autoReportNote.text}
+        </div>
+      )}
       {/* Top header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div className="flex items-start gap-3 min-w-0">

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
+import { parseTrajectoryScreenshots } from '@/lib/trajectory-screenshots'
 
 export async function GET(
   _request: Request,
@@ -96,6 +97,14 @@ export async function GET(
 
   if (!task) {
     return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+  }
+
+  // 懒加载字段不在任务详情中返回，避免 payload 膨胀
+  // - screenshotUrls: 轨迹截图 Blob URL 列表，通过 /models/[modelId]/screenshots 按需加载
+  // - verificationScreenshotUrls: 验证截图 base64，通过 /models/[modelId]/verification 按需加载
+  for (const model of task.models) {
+    ;(model as any).screenshotUrls = undefined
+    ;(model as any).verificationScreenshotUrls = undefined
   }
 
   return NextResponse.json({
@@ -211,9 +220,15 @@ export async function DELETE(
 
     // 先级联清理所有产物 blob 文件（失败不阻断删除，仅警告）
     const artifactUrls: string[] = []
+    const screenshotUrls: string[] = []
     for (const model of task.models) {
       for (const artifact of model.artifacts) {
         if (artifact.url) artifactUrls.push(artifact.url)
+      }
+      // 收集轨迹截图 URL（去重，因为多个 model 可能引用同一张截图）
+      const screenshots = parseTrajectoryScreenshots((model as any).screenshotUrls)
+      for (const s of screenshots) {
+        if (!screenshotUrls.includes(s.url)) screenshotUrls.push(s.url)
       }
     }
     if (artifactUrls.length > 0) {
@@ -221,6 +236,15 @@ export async function DELETE(
         artifactUrls.map((url) =>
           deleteArtifactFile(url).catch((err) => {
             console.warn('清理任务产物文件失败:', url, err instanceof Error ? err.message : String(err))
+          }),
+        ),
+      )
+    }
+    if (screenshotUrls.length > 0) {
+      await Promise.all(
+        screenshotUrls.map((url) =>
+          deleteArtifactFile(url).catch((err) => {
+            console.warn('清理任务截图文件失败:', url, err instanceof Error ? err.message : String(err))
           }),
         ),
       )
