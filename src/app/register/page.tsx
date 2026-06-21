@@ -18,7 +18,8 @@ export default function RegisterPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (password !== confirmPassword) { setError('两次输入的密码不一致'); return }
-    if (password.length < 6) { setError('密码至少 6 位'); return }
+    if (username.length < 3 || username.length > 32) { setError('用户名长度需在 3-32 个字符之间'); return }
+    if (password.length < 8 || password.length > 128) { setError('密码长度需在 8-128 个字符之间'); return }
     setSubmitting(true)
     setError('')
     try {
@@ -79,7 +80,7 @@ export default function RegisterPage() {
                 id="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="2-20 个字符"
+                placeholder="3-32 个字符"
                 autoComplete="username"
                 required
               />
@@ -91,7 +92,7 @@ export default function RegisterPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="至少 6 位"
+                placeholder="至少 8 位"
                 autoComplete="new-password"
                 required
               />

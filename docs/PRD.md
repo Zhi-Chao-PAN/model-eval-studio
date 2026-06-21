@@ -31,7 +31,13 @@
 - 提供验证按钮，测试 API 是否可用
 - 用户可以随时切换模型
 
-### 4. 任务工作流（5 步向导）
+### 4. 任务工作流（6 步向导）
+
+#### 步骤 0：任务设计
+- 支持两种任务类型：编码型 / Agent 型
+- AI 协助设计高质量评测任务 prompt
+- 可自动生成起始代码仓库
+- 作为任务的入口步骤，设计完成后进入任务信息填写
 
 #### 步骤 1：任务信息
 - 任务名称
@@ -45,7 +51,7 @@
 - 可与 AI 对话调整
 - 输出结构化的测试思路建议
 
-#### 步骤 3：截图分析
+#### 步骤 3：看板识别（截图分析）
 - 两个 Tab：执行过程截图 / 数据看板截图
 - 支持多图上传（base64）
 - AI 多模态分析，自动识别：
@@ -61,25 +67,30 @@
   - 上传文件（PDF / Word / Excel / PPT / 文本 / ZIP）
   - ZIP 自动解压并解析所有文本文件
 - 文件自动解析提取文本内容
-- 整体 AI 对比分析
+- 后台异步 workflow 深度分析
+- 深度分析前 N 个主要文件，其余文件列入清单
+- 分析完成后有验证截图的模型自动触发报告生成
 - 可与 AI 对话调整
 
 #### 步骤 5：评估报告
 - 对每个模型生成结构化评估报告
-- 报告包含四个维度：
+- 报告包含五个维度：
   1. 产物效果反馈
   2. 综合表现评分（1-10，支持 0.5 分精度）+ 评论
   3. 交付效率评分 + 评论
   4. 产物质量评分 + 评论
+  5. 执行轨迹分析
 - 支持 AI 调整报告（输入修改指令，AI 重写）
+- 验证截图作为报告评估的可信证据
 - 报告文本方便用户复制粘贴
 - 可导出 ZIP 打包所有报告
 
 ### 5. 对话系统
-- 每个步骤都有独立的 AI 对话侧栏
-- 对话历史按步骤隔离
+- 每个任务有统一的 AI 对话面板（右下角浮动）
+- 对话历史全局共享，不按步骤隔离
 - AI 始终带着任务上下文和用户背景
 - 消息持久化存储
+- 支持 SSE 流式输出
 
 ### 6. 任务管理
 - 任务列表（dashboard）
@@ -93,7 +104,10 @@
 - Next.js 16 (App Router) + TypeScript
 - React 19
 - Tailwind CSS 4
-- 浅色专业风格 UI
+- 浅色专业风格 UI → 深色高端科技风格
+- 新增产物效果截图（验证证据）功能
+- 新增后台异步产物分析（workflow）
+- 新增执行轨迹分析报告模块
 
 ### 后端
 - Next.js API Routes
@@ -117,7 +131,7 @@
 
 ### User
 - id, username, passwordHash, role
-- background, aiProvider, aiBaseUrl, aiApiKey(encrypted), aiModelName
+- background, aiProvider, aiBaseUrl, aiApiKey(encrypted), aiModelName, aiMaxTokens
 - createdAt, lastActiveAt
 
 ### InviteCode
@@ -128,35 +142,64 @@
 - id, userId, title, category, requirementType, requirementName
 - description, backgroundUsed
 - status, currentStep, deletedAt, deletedBy
+- taskIdeaJson, analysisJson
 - createdAt, updatedAt
+
+### TaskAttachment
+- id, taskId, name, url, size, mimeType, parsedText
+- createdAt
 
 ### TaskModel
 - id, taskId, modelCode, displayName
 - hardMetricsJson, processText, screenshotUrls
+- verificationScreenshotUrls, artifactAnalysisJson
 - createdAt
 
 ### ModelArtifact
 - id, taskModelId, name, url, textContent
-- mimeType, size, parsedText
+- mimeType, size, parsedText, previewJson
 - createdAt
 
 ### ModelReport
 - id, taskModelId
 - productFeedback
+- verificationScreenshotUrls, verificationSummary
 - overallScore, overallComment
 - efficiencyScore, efficiencyComment
 - qualityScore, qualityComment
+- trajectoryAnalysis
 - createdAt, updatedAt
 
 ### TaskMessage
 - id, taskId, role, content, step, modelId
 - createdAt
 
+### ArtifactAnalysisRun
+- id, taskModelId, status, currentPhase, workflowRunId
+- verificationScreenshotUrls, verificationSummary
+- filesAnalysis, nextEventSeq, error
+- startedAt, completedAt, createdAt, updatedAt
+
+### ArtifactAnalysisEvent
+- id, runId, sequence, phase, status, label, detail, metadata
+- createdAt
+
+### AuditLog
+- id, userId, action, detail, ipAddress, userAgent
+- path, method, status, error
+- tokenInput, tokenOutput, durationMs
+- taskId, createdAt
+
 ## 部署说明
 
 ### 环境变量
+- DATABASE_URL：PostgreSQL pooled 连接（应用运行）
+- DIRECT_URL：PostgreSQL 直连（Prisma 迁移，Neon 等服务需配置）
 - SESSION_SECRET：会话加密密钥（32 字符以上）
-- ENCRYPTION_KEY：API Key 加密密钥（32 字符）
+- ENCRYPTION_KEY：API Key 加密密钥（32 字节，64 位十六进制）
+- BLOB_READ_WRITE_TOKEN：Vercel Blob 令牌（可选，文件上传用）
+- ADMIN_USERNAME：初始管理员用户名
+- ADMIN_PASSWORD：初始管理员密码
 - DATABASE_URL：PostgreSQL 连接串（Neon）
 - ADMIN_USERNAME：初始管理员用户名
 - ADMIN_PASSWORD：初始管理员密码

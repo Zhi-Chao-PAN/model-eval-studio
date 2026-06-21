@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Download, Trash2, Loader2, Check,
-  AlertTriangle, Sparkles, X,
+  AlertTriangle, Sparkles, X, FileJson, FileSpreadsheet, ChevronDown,
 } from 'lucide-react'
 import StepInfo from './StepInfo'
 import StepScreenshot from './StepScreenshot'
@@ -67,7 +67,9 @@ export default function TaskPage() {
   const [streaming, setStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
+  const [chatOpen, setChatOpen] = useState(true)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const loadTaskSeqRef = useRef(0)
@@ -114,6 +116,18 @@ export default function TaskPage() {
 
   useEffect(() => { loadTask(); loadMessages() }, [taskId])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamingContent, currentStep, chatOpen])
+
+  // 点击外部关闭导出菜单
+  useEffect(() => {
+    if (!exportMenuOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [exportMenuOpen])
 
   const chatMessages = filterConversationMessages(messages, task || {})
 
@@ -205,7 +219,10 @@ export default function TaskPage() {
     router.push('/dashboard')
   }
 
-  function handleExport() { window.open('/api/tasks/' + taskId + '/export', '_blank') }
+  function handleExport(format: 'zip' | 'json' | 'csv') {
+    setExportMenuOpen(false)
+    window.open('/api/tasks/' + taskId + '/export?format=' + format, '_blank')
+  }
 
   function renderStepContent() {
     if (!task) return null
@@ -277,9 +294,46 @@ export default function TaskPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 self-start sm:self-auto">
-          <Button variant="secondary" size="sm" onClick={handleExport}>
-            <Download className="h-3.5 w-3.5" /> 导出
-          </Button>
+          <div className="relative" ref={exportMenuRef}>
+            <Button variant="secondary" size="sm" onClick={() => setExportMenuOpen(v => !v)}>
+              <Download className="h-3.5 w-3.5" /> 导出
+              <ChevronDown className={cn('h-3 w-3 transition-transform', exportMenuOpen && 'rotate-180')} />
+            </Button>
+            {exportMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-52 rounded-xl border border-white/10 bg-[#0f0f17] shadow-xl z-30 overflow-hidden">
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-200 hover:bg-white/[0.06] text-left"
+                  onClick={() => handleExport('zip')}
+                >
+                  <Download className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <div className="font-medium">ZIP 报告包</div>
+                    <div className="text-[11px] text-gray-500">所有模型的 TXT 评估报告</div>
+                  </div>
+                </button>
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-200 hover:bg-white/[0.06] text-left border-t border-white/5"
+                  onClick={() => handleExport('json')}
+                >
+                  <FileJson className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <div className="font-medium">JSON 结构化数据</div>
+                    <div className="text-[11px] text-gray-500">任务 + 模型 + 报告完整数据</div>
+                  </div>
+                </button>
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-200 hover:bg-white/[0.06] text-left border-t border-white/5"
+                  onClick={() => handleExport('csv')}
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <div className="font-medium">CSV 横向对比表</div>
+                    <div className="text-[11px] text-gray-500">各模型评分一键对比</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
           <Button
             variant={deleteConfirm ? 'danger' : 'ghost'}
             size="sm"

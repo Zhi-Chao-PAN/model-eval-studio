@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, useState } from 'react'
+import { ChangeEvent, useEffect, useState } from 'react'
 import {
   AlertTriangle,
   Camera,
@@ -116,10 +116,50 @@ function formatSize(value?: number | null): string {
 export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, onRefresh, onNotice }: Props) {
   const [optimisticEvidence, setOptimisticEvidence] = useState<{ modelId: string; evidence: VerificationEvidence[] } | null>(null)
   const [saving, setSaving] = useState(false)
+  // undefined = 未加载/加载中, null = 已加载但为空, string = 已加载的序列化证据
+  const [loadedEvidenceRaw, setLoadedEvidenceRaw] = useState<string | null | undefined>(undefined)
+
+  // 懒加载验证截图：仅在 model.verificationScreenshotUrls 未提供时触发
+  // （任务详情 API 已裁剪此字段以减少响应体积）
+  useEffect(() => {
+    if (model.verificationScreenshotUrls !== undefined) return
+    if (loadedEvidenceRaw !== undefined) return
+    if (optimisticEvidence?.modelId === model.id) return
+
+    let cancelled = false
+
+    fetch(`/api/tasks/${taskId}/models/${model.id}/verification`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return
+        if (data && typeof data.verificationScreenshotUrls === 'string') {
+          setLoadedEvidenceRaw(data.verificationScreenshotUrls)
+        } else {
+          setLoadedEvidenceRaw(null)
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        setLoadedEvidenceRaw(null)
+        onNotice('err', '加载产物效果截图失败')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [model.id, model.verificationScreenshotUrls, taskId, loadedEvidenceRaw, optimisticEvidence, onNotice])
+
+  // 决定使用哪份证据数据
+  const evidenceRaw =
+    optimisticEvidence?.modelId === model.id
+      ? null // 走 optimistic 分支，不使用原始数据
+      : model.verificationScreenshotUrls !== undefined
+        ? model.verificationScreenshotUrls
+        : loadedEvidenceRaw
 
   const evidence = optimisticEvidence?.modelId === model.id
     ? optimisticEvidence.evidence
-    : parseVerificationEvidence(model.verificationScreenshotUrls || fallbackEvidenceRaw)
+    : parseVerificationEvidence(evidenceRaw || fallbackEvidenceRaw)
   const officialEvidence = evidence.filter(isAuthenticVerificationEvidence)
   const legacyEvidence = evidence.filter(image => !isAuthenticVerificationEvidence(image))
   const artifacts = Array.isArray(model.artifacts) ? model.artifacts : []
@@ -239,18 +279,14 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
                   <div className="truncate text-gray-300">{artifact.name}</div>
                   {formatSize(artifact.size) && <div className="mt-0.5 text-[10px] text-gray-600">{formatSize(artifact.size)}</div>}
                 </div>
-                {artifact.url ? (
-                  <a
-                    href={artifact.url}
-                    download={artifact.name}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 text-[10px] text-gray-200 hover:bg-white/[0.1]"
-                  >
-                    <Download className="h-3 w-3" />
-                    下载
-                  </a>
-                ) : (
-                  <span className="shrink-0 text-[10px] text-gray-600">已保存</span>
-                )}
+                <a
+                  href={`/api/tasks/${taskId}/models/${model.id}/artifacts/${artifact.id}/download`}
+                  download={artifact.name}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 text-[10px] text-gray-200 hover:bg-white/[0.1]"
+                >
+                  <Download className="h-3 w-3" />
+                  下载
+                </a>
               </div>
             ))}
           </div>

@@ -16,12 +16,22 @@ import {
   isAuthenticVerificationEvidence,
   parseVerificationEvidence,
   serializeVerificationEvidence,
+  verificationEvidenceSignature,
   type VerificationEvidence,
 } from '@/lib/verification-evidence'
 import {
-  isFreshModelArtifactAnalysis,
+  isFreshArtifactFileAnalysis,
   parseStoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
+import {
+  ReportParseError,
+  formatReportText,
+  parseReportStrict,
+  type ParsedModelReport,
+  type ReportParseOptions,
+} from '@/lib/report-parser'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { apiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -39,10 +49,18 @@ export async function POST(
   const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) {
-    return new Response(JSON.stringify({ error: '未登录' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+    return apiError('未登录', 401)
   }
 
   const { id } = await params
+  const rateLimit = await consumeRateLimit({
+    scope: 'ai-report',
+    identifier: session.userId,
+    limit: 10,
+    windowMs: 10 * 60_000,
+  })
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
+
   const body = await request.json()
   const modelId = body.modelId
   const adjustInstruction = body.adjustInstruction
@@ -58,17 +76,17 @@ export async function POST(
       },
     },
   })
-  if (!task) return new Response(JSON.stringify({ error: '任务不存在' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
+  if (!task) return apiError('任务不存在', 404)
 
   const model = task.models.find((item) => item.id === modelId)
-  if (!model) return new Response(JSON.stringify({ error: '模型不存在' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
+  if (!model) return apiError('模型不存在', 404)
 
   const testerEvidence = parseVerificationEvidence(model.verificationScreenshotUrls)
     .filter(isAuthenticVerificationEvidence)
 
   const aiConfig = await getUserAiConfig(session.userId)
   if (!aiConfig) {
-    return new Response(JSON.stringify({ error: '请先配置 AI API' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    return apiError('请先配置 AI API', 400)
   }
 
   const encoder = new TextEncoder()
@@ -142,8 +160,23 @@ export async function POST(
             }
           }
 
+          const validated = await parseOrRepairReport({
+            reportText,
+            modelCode: model.modelCode,
+            aiConfig,
+            options: {
+              hasTrajectory: Boolean(model.processText?.trim()),
+              hasVerificationEvidence: Boolean(verificationScreenshotUrls),
+            },
+            onRepair: (issues) => phase('repairing_report', { issues }),
+          })
+          reportText = validated.reportText
+          totalTokenInput += validated.usage?.promptTokens ?? 0
+          totalTokenOutput += validated.usage?.completionTokens ?? 0
+          if (validated.repaired) send('replace', { text: reportText })
+
           phase('saving')
-          const parsed = parseReport(reportText, Boolean(model.processText?.trim()))
+          const parsed = validated.parsed
           const report = await prisma.modelReport.create({
             data: {
               taskModelId: modelId,
@@ -160,17 +193,35 @@ export async function POST(
             },
           })
           await prisma.task.update({ where: { id }, data: { currentStep: 'REPORT' } })
+
+          // 状态机：所有模型都生成了报告 → COMPLETED
+          if (task.status !== 'COMPLETED') {
+            const allModels = await prisma.taskModel.count({ where: { taskId: id } })
+            const modelsWithReports = await prisma.taskModel.count({
+              where: { taskId: id, reports: { some: {} } },
+            })
+            if (allModels > 0 && allModels === modelsWithReports) {
+              await prisma.task.update({ where: { id }, data: { status: 'COMPLETED' } })
+            }
+          }
+
           send('done', { report, rawText: reportText })
         } else {
           // ----- Fresh generation path -----
           const hardMetrics = model.hardMetricsJson ? safeJsonParse(model.hardMetricsJson) : null
           const storedPreAnalysis = parseStoredModelArtifactAnalysis(model.artifactAnalysisJson)
-          const preAnalysis = isFreshModelArtifactAnalysis(storedPreAnalysis, model.artifacts)
+          const preAnalysis = isFreshArtifactFileAnalysis(storedPreAnalysis, model.artifacts)
             ? storedPreAnalysis
             : null
 
           const storedEvidence = parseVerificationEvidence(model.verificationScreenshotUrls)
           const verificationEvidence = testerEvidence
+          const currentEvidenceSignature = verificationEvidenceSignature(model.verificationScreenshotUrls)
+          const canReuseVerificationSummary = Boolean(
+            preAnalysis &&
+            (preAnalysis.verificationEvidenceSignature || '') === currentEvidenceSignature &&
+            verificationEvidence.length > 0,
+          )
           verificationScreenshotUrls = verificationEvidence.length
             ? serializeVerificationEvidence(verificationEvidence)
             : null
@@ -179,16 +230,10 @@ export async function POST(
           phase(preAnalysis ? 'reusing_artifact_analysis' : 'analyzing_images', {
             modelCode: model.modelCode,
             hasImages: verificationEvidence.length > 0,
+            reusedScreenshotSummary: canReuseVerificationSummary,
           })
-          if (preAnalysis) {
-            const preAnalysisEvidence = parseVerificationEvidence(preAnalysis.verificationScreenshotUrls)
-              .filter(isAuthenticVerificationEvidence)
-            verificationScreenshotUrls = preAnalysisEvidence.length
-              ? serializeVerificationEvidence(preAnalysisEvidence)
-              : verificationScreenshotUrls
-            verificationSummary = preAnalysisEvidence.length || verificationEvidence.length
-              ? preAnalysis.verificationSummary
-              : missingEvidenceSummary(storedEvidence.length > 0)
+          if (preAnalysis && canReuseVerificationSummary) {
+            verificationSummary = preAnalysis.verificationSummary
           } else if (verificationEvidence.length > 0) {
             try {
               const imgResult = await analyzeImages(
@@ -393,9 +438,24 @@ export async function POST(
             }
           }
 
-          // Phase 3: save to DB
+          // Phase 3: validate, repair once if necessary, then save to DB.
+          const validated = await parseOrRepairReport({
+            reportText,
+            modelCode: model.modelCode,
+            aiConfig,
+            options: {
+              hasTrajectory: Boolean(model.processText?.trim()),
+              hasVerificationEvidence: Boolean(verificationScreenshotUrls),
+            },
+            onRepair: (issues) => phase('repairing_report', { issues }),
+          })
+          reportText = validated.reportText
+          totalTokenInput += validated.usage?.promptTokens ?? 0
+          totalTokenOutput += validated.usage?.completionTokens ?? 0
+          if (validated.repaired) send('replace', { text: reportText })
+
           phase('saving')
-          const parsed = parseReport(reportText, Boolean(model.processText?.trim()))
+          const parsed = validated.parsed
           const report = await prisma.modelReport.create({
             data: {
               taskModelId: modelId,
@@ -412,6 +472,18 @@ export async function POST(
             },
           })
           await prisma.task.update({ where: { id }, data: { currentStep: 'REPORT' } })
+
+          // 状态机：所有模型都生成了报告 → COMPLETED
+          if (task.status !== 'COMPLETED') {
+            const allModels = await prisma.taskModel.count({ where: { taskId: id } })
+            const modelsWithReports = await prisma.taskModel.count({
+              where: { taskId: id, reports: { some: {} } },
+            })
+            if (allModels > 0 && allModels === modelsWithReports) {
+              await prisma.task.update({ where: { id }, data: { status: 'COMPLETED' } })
+            }
+          }
+
           send('done', { report, rawText: reportText })
         }
       } catch (err: any) {
@@ -471,86 +543,115 @@ function missingEvidenceSummary(hasLegacyPreview = false): string {
     : '未提供产物效果截图。产物效果反馈暂不能生成，其余模块可基于产物内容、任务要求、硬指标和轨迹进行评估。'
 }
 
-// Keep the old format/parse helpers below for reuse (same as before)
-
-function formatReportText(modelCode: string, report: any): string {
-  return `====================================
-评估对象：${modelCode}
-====================================
-
-【产物效果反馈】
-${report.productFeedback || ''}
-
-【模型交付效率是否符合预期？】
-评分：${formatHalfScore(report.efficiencyScore)} / 10
-评论：${report.efficiencyComment || ''}
-
-【模型的产物质量怎么样】
-评分：${formatHalfScore(report.qualityScore)} / 10
-评论：${report.qualityComment || ''}
-
-【模型的综合表现怎么样】
-评分：${formatIntegerScore(report.overallScore)} / 10
-评论：${report.overallComment || ''}
-
-【轨迹分析】
-${report.trajectoryAnalysis || '未提供轨迹截图。'}
-`
+type RepairAiConfig = {
+  baseUrl: string
+  apiKey: string
+  model: string
+  provider: 'OPENAI_COMPAT' | 'ANTHROPIC_COMPAT'
+  maxTokens: number
+  background: string
 }
 
-function parseReport(text: string, hasTrajectory: boolean) {
-  const productFeedback = extractSection(text, '【产物效果反馈】', '【模型交付效率是否符合预期？】')
-  const efficiencyScore = normalizeHalfScore(extractScore(text, '【模型交付效率是否符合预期？】'))
-  const efficiencyComment = extractComment(text, '【模型交付效率是否符合预期？】', '【模型的产物质量怎么样】')
-  const qualityScore = normalizeHalfScore(extractScore(text, '【模型的产物质量怎么样】'))
-  const qualityComment = extractComment(text, '【模型的产物质量怎么样】', '【模型的综合表现怎么样】')
-  const overallScore = normalizeOverallScore(extractScore(text, '【模型的综合表现怎么样】'))
-  const overallComment = extractComment(text, '【模型的综合表现怎么样】', '【轨迹分析】')
-  const trajectoryAnalysis = hasTrajectory
-    ? extractSectionAfter(text, '【轨迹分析】').trim() || '已提供轨迹截图，但报告未生成有效轨迹分析。'
-    : '未提供轨迹截图。'
+async function parseOrRepairReport(input: {
+  reportText: string
+  modelCode: string
+  aiConfig: RepairAiConfig
+  options: ReportParseOptions
+  onRepair: (issues: string[]) => void
+}): Promise<{
+  parsed: ParsedModelReport
+  reportText: string
+  repaired: boolean
+  usage?: { promptTokens: number; completionTokens: number }
+}> {
+  try {
+    return {
+      parsed: parseReportStrict(input.reportText, input.options),
+      reportText: input.reportText,
+      repaired: false,
+    }
+  } catch (error) {
+    if (!(error instanceof ReportParseError)) throw error
+    input.onRepair(error.issues)
 
-  return {
-    productFeedback: productFeedback.trim(),
-    overallScore, overallComment: overallComment.trim(),
-    efficiencyScore, efficiencyComment: efficiencyComment.trim(),
-    qualityScore, qualityComment: qualityComment.trim(),
-    trajectoryAnalysis,
+    const repairPrompt = buildReportRepairPrompt({
+      reportText: input.reportText,
+      modelCode: input.modelCode,
+      issues: error.issues,
+      ...input.options,
+    })
+    const repaired = await generateChat(
+      [
+        { role: 'system', content: buildSystemPrompt(input.aiConfig.background) },
+        { role: 'user', content: repairPrompt },
+      ],
+      {
+        baseUrl: input.aiConfig.baseUrl,
+        apiKey: input.aiConfig.apiKey,
+        model: input.aiConfig.model,
+        provider: input.aiConfig.provider,
+        temperature: 0.1,
+        maxTokens: Math.min(2400, input.aiConfig.maxTokens),
+        timeoutMs: REPORT_CALL_TIMEOUT_MS,
+      },
+    )
+
+    try {
+      return {
+        parsed: parseReportStrict(repaired.content, input.options),
+        reportText: repaired.content,
+        repaired: true,
+        usage: repaired.usage || undefined,
+      }
+    } catch (repairError) {
+      if (repairError instanceof ReportParseError) {
+        throw new ReportParseError([
+          ...error.issues,
+          ...repairError.issues.map(issue => `自动修复后仍存在：${issue}`),
+        ])
+      }
+      throw repairError
+    }
   }
 }
 
-function extractSection(text: string, start: string, end: string): string {
-  const s = text.indexOf(start); const e = text.indexOf(end)
-  if (s === -1 || e === -1 || e <= s) return ''
-  return text.slice(s + start.length, e).trim()
-}
-function extractSectionAfter(text: string, start: string): string {
-  const s = text.indexOf(start)
-  if (s === -1) return ''
-  return text.slice(s + start.length).trim()
-}
-function extractScore(text: string, marker: string): number {
-  const idx = text.indexOf(marker)
-  if (idx === -1) return 0
-  const m = text.slice(idx, idx + 500).match(/评分[：:\s]*([1-9](?:\.5)?|10(?:\.0)?)/)
-  return m ? parseFloat(m[1]) : 0
-}
-function extractComment(text: string, start: string, end: string): string {
-  return cleanComment(extractSection(text, start, end))
-}
-function cleanComment(s: string): string {
-  return s.replace(/评分[：:\s]*([1-9](?:\.5)?|10(?:\.0)?)(?:\s*\/\s*10)?\s*/g, '').replace(/^评论[：:\s]*/m, '').trim()
-}
-function normalizeOverallScore(s: number): number {
-  if (!Number.isFinite(s) || s <= 0) return 1
-  return Math.min(10, Math.max(1, Math.round(s)))
-}
-function normalizeHalfScore(s: number): number {
-  if (!Number.isFinite(s) || s <= 0) return 1
-  return Math.min(10, Math.max(1, Math.round(s * 2) / 2))
-}
-function formatIntegerScore(s: number): string { return String(normalizeOverallScore(s)) }
-function formatHalfScore(s: number): string {
-  const n = normalizeHalfScore(s)
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+function buildReportRepairPrompt(input: {
+  reportText: string
+  modelCode: string
+  issues: string[]
+  hasTrajectory: boolean
+  hasVerificationEvidence: boolean
+}): string {
+  const productInstruction = input.hasVerificationEvidence
+    ? '保留并修正基于产物效果截图的第一人称反馈，不得写成未上传截图。'
+    : '产物效果反馈必须且只能写：未上传产物效果截图，暂无法填写产物效果反馈。'
+  const trajectoryInstruction = input.hasTrajectory
+    ? '轨迹分析必须基于已有轨迹内容给出具体分析。'
+    : '轨迹分析必须且只能写：未提供轨迹截图。'
+
+  return `下面这份模型评估报告结构不合格，请只修复格式和明确指出的问题，不要扩写没有证据的事实。
+
+模型：${input.modelCode}
+发现的问题：
+${input.issues.map(issue => `- ${issue}`).join('\n')}
+
+硬性规则：
+- 必须按顺序保留 5 个模块：产物效果反馈、交付效率、产物质量、综合评价、轨迹分析。
+- 交付效率和产物质量评分只能是 1-10 的整数或 .5 分。
+- 综合评分只能是 1-10 的整数。
+- 每个评分模块都必须包含非空评论。
+- ${productInstruction}
+- ${trajectoryInstruction}
+- 全部使用第一人称“我”的测试者口吻，不要写给用户看的说明。
+- 只输出修复后的完整报告纯文本，不要 Markdown，不要解释修复过程。
+
+必须使用以下固定标题：
+【产物效果反馈】
+【模型交付效率是否符合预期？】
+【模型的产物质量怎么样】
+【模型的综合表现怎么样】
+【轨迹分析】
+
+原报告：
+${input.reportText}`
 }

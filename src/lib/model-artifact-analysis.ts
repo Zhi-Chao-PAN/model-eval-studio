@@ -1,4 +1,4 @@
-export const MODEL_ARTIFACT_ANALYSIS_VERSION = 1
+export const MODEL_ARTIFACT_ANALYSIS_VERSION = 2
 
 export type ArtifactAnalysisArtifact = {
   id: string
@@ -8,11 +8,12 @@ export type ArtifactAnalysisArtifact = {
 }
 
 export type StoredModelArtifactAnalysis = {
-  version: 1
+  version: 2
   modelCode: string
   analyzedAt: string
   artifactSignature: string
   artifactCount: number
+  verificationEvidenceSignature?: string | null
   verificationScreenshotUrls?: string | null
   verificationSummary: string
   filesAnalysis: string
@@ -45,6 +46,7 @@ export function parseStoredModelArtifactAnalysis(raw?: string | null): StoredMod
       typeof value.modelCode !== 'string' ||
       typeof value.analyzedAt !== 'string' ||
       typeof value.artifactSignature !== 'string' ||
+      typeof value.artifactCount !== 'number' ||
       typeof value.verificationSummary !== 'string' ||
       typeof value.filesAnalysis !== 'string'
     ) {
@@ -56,7 +58,7 @@ export function parseStoredModelArtifactAnalysis(raw?: string | null): StoredMod
   }
 }
 
-export function isFreshModelArtifactAnalysis(
+export function isFreshArtifactFileAnalysis(
   analysis: StoredModelArtifactAnalysis | null,
   artifacts: ArtifactAnalysisArtifact[],
 ): analysis is StoredModelArtifactAnalysis {
@@ -65,4 +67,14 @@ export function isFreshModelArtifactAnalysis(
     analysis.artifactSignature === artifactAnalysisSignature(artifacts) &&
     analysis.artifactCount === artifacts.length,
   )
+}
+
+export function isFreshModelArtifactAnalysis(
+  analysis: StoredModelArtifactAnalysis | null,
+  artifacts: ArtifactAnalysisArtifact[],
+  options?: { verificationEvidenceSignature?: string | null },
+): analysis is StoredModelArtifactAnalysis {
+  if (!isFreshArtifactFileAnalysis(analysis, artifacts)) return false
+  if (!options || options.verificationEvidenceSignature === undefined) return true
+  return (analysis.verificationEvidenceSignature || '') === (options.verificationEvidenceSignature || '')
 }

@@ -348,7 +348,7 @@
   .sheet {
     position: fixed;
     right: 24px; bottom: 90px;
-    width: 380px;
+    width: 440px;
     max-width: calc(100vw - 32px);
     height: calc(100dvh - 120px);
     max-height: 720px;

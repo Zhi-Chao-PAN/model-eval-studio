@@ -13,6 +13,7 @@ import {
   parseStoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
 import { ArtifactAnalysisTrace } from '@/components/tasks/ArtifactAnalysisTrace'
+import { FILE_ANALYSIS_LIMIT, FILE_ANALYSIS_CHAR_LIMIT } from '@/lib/artifact-analysis-runtime'
 
 interface Props {
   task: any
@@ -30,6 +31,29 @@ export default function StepArtifact({ task, onRefresh }: Props) {
   const [note, setNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const noteTimerRef = useRef<number | null>(null)
+  // 记录已经自动触发过报告生成的 modelId，防止重复触发
+  const autoReportedRef = useRef<Set<string>>(new Set())
+
+  async function triggerAutoReport(modelId: string, modelCode: string) {
+    try {
+      showNote('ok', `「${modelCode}」产物分析完成，正在自动生成评估报告…`, 6000)
+      const res = await fetch('/api/tasks/' + task.id + '/generate-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId }),
+      })
+      // 报告是 SSE 流式的，这里只确认请求成功启动
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        showNote('err', `「${modelCode}」自动生成报告失败: ${data.error || '未知错误'}`)
+        autoReportedRef.current.delete(modelId) // 失败则清除标记，下次可能重试
+      }
+      onRefresh()
+    } catch (err) {
+      showNote('err', `「${modelCode}」自动生成报告失败: ${err instanceof Error ? err.message : String(err)}`)
+      autoReportedRef.current.delete(modelId)
+    }
+  }
 
   const models = task.models || []
   const hasRunningAnalysis = models.some((model: any) => {
@@ -46,6 +70,34 @@ export default function StepArtifact({ task, onRefresh }: Props) {
     const timer = window.setInterval(onRefresh, 1_500)
     return () => window.clearInterval(timer)
   }, [hasRunningAnalysis, onRefresh])
+
+  // 当模型的产物分析完成（刚从 RUNNING 变为 COMPLETED），
+  // 且模型有验证截图且还没有报告时，自动触发报告生成
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    for (const model of models) {
+      const run = model.artifactAnalysisRuns?.[0]
+      if (!run || run.status !== 'COMPLETED') continue
+      if (autoReportedRef.current.has(model.id)) continue
+
+      // 检查是否有验证截图（真实证据）
+      const hasEvidence = !!model.verificationScreenshotUrls &&
+        model.verificationScreenshotUrls.length > 0 &&
+        model.verificationScreenshotUrls !== '[]' &&
+        model.verificationScreenshotUrls !== 'null'
+
+      // 检查是否已有报告
+      const hasReport = Array.isArray(model.reports) && model.reports.length > 0
+
+      if (hasEvidence && !hasReport) {
+        autoReportedRef.current.add(model.id)
+        void triggerAutoReport(model.id, model.modelCode)
+      } else if (!hasEvidence) {
+        // 没有验证截图的也标记一下，避免反复检查
+        autoReportedRef.current.add(model.id)
+      }
+    }
+  }, [models])
 
   function askConfirm(title: string, message: string): boolean {
     return window.confirm(title + '\n\n' + message)
@@ -156,8 +208,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         data.alreadyRunning
           ? '该模型正在后台分析，轨迹会自动更新。'
           : options.automatic
-            ? '已自动提交后台产物预分析，轨迹会自动更新。'
-            : '已提交后台产物预分析，拆解轨迹会自动更新。',
+            ? '已自动提交后台产物分析，拆解轨迹会自动更新。'
+            : '已提交后台产物分析，拆解轨迹会自动更新。有验证截图的模型将自动生成评估报告。',
       )
       onRefresh()
     } finally {
@@ -195,7 +247,9 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         showNote('err', '添加失败: ' + (data.error || '未知错误'))
         return
       }
-      const addedCount = Array.isArray(data.models) ? data.models.length : codes.length
+      const addedCount = typeof data.addedCount === 'number'
+        ? data.addedCount
+        : Array.isArray(data.models) ? data.models.length : codes.length
       setNewModelCode('')
       showNote(
         'ok',
@@ -319,7 +373,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                        loadingText="正在提交..."
                        disabled={artifactCount === 0 || isUploading || isAnalyzing}
                     >
-                      <Sparkles className="h-3 w-3" /> {isAnalyzing ? '后台分析中' : hasFreshAnalysis ? '重新分析' : '开始预分析'}
+                      <Sparkles className="h-3 w-3" /> {isAnalyzing ? '后台分析中' : hasFreshAnalysis ? '重新分析' : '开始产物分析'}
                     </Button>
                     <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
                       <Plus className="h-3 w-3" /> 粘贴文本
@@ -337,7 +391,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                           type="file"
                           className="hidden"
                           multiple
-                          accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.zip"
+                          accept=".pdf,.docx,.xlsx,.xls,.pptx,.txt,.md,.markdown,.csv,.json,.jsonl,.log,.xml,.html,.htm,.yaml,.yml,.zip,.png,.jpg,.jpeg,.webp,.js,.jsx,.ts,.tsx,.py,.java,.go,.rs,.css,.scss,.sql,.sh,.ps1"
                           onChange={(event) => handleFileUpload(event, model.id)}
                            disabled={uploadingModelId !== null || isAnalyzing}
                         />
@@ -370,6 +424,11 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                   </div>
                 )}
                 <ArtifactAnalysisTrace run={latestAnalysisRun} modelCode={model.modelCode} />
+                {latestAnalysisRun?.status === 'COMPLETED' && model.artifacts && model.artifacts.length > FILE_ANALYSIS_LIMIT && (
+                  <div className="mt-2 text-[11px] text-gray-500 leading-relaxed px-1">
+                    深度分析覆盖前 {FILE_ANALYSIS_LIMIT} 个主要文件，每文件约 {(FILE_ANALYSIS_CHAR_LIMIT / 1000).toFixed(0)}k 字符。其余文件已列入清单但未做逐文件深度分析。
+                  </div>
+                )}
               </div>
             )
           })}

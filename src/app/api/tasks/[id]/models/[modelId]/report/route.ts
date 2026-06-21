@@ -60,17 +60,29 @@ export async function POST(
     storedEvidence = evidence.length ? serializeVerificationEvidence(evidence) : null
   }
 
+  // 严格校验评分，非法直接返回 400（与 generate-report 保持一致）
+  let validatedOverallScore: number
+  let validatedEfficiencyScore: number
+  let validatedQualityScore: number
+  try {
+    validatedOverallScore = validateScore(overallScore, '综合评分')
+    validatedEfficiencyScore = validateScore(efficiencyScore, '效率评分')
+    validatedQualityScore = validateScore(qualityScore, '质量评分')
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || '评分校验失败' }, { status: 400 })
+  }
+
   const report = await prisma.modelReport.create({
     data: {
       taskModelId: modelId,
       productFeedback: productFeedback || '',
       verificationScreenshotUrls: storedEvidence,
       verificationSummary: verificationSummary || null,
-      overallScore: normalizeOverallScore(overallScore),
+      overallScore: validatedOverallScore,
       overallComment: overallComment || '',
-      efficiencyScore: normalizeHalfScore(efficiencyScore),
+      efficiencyScore: validatedEfficiencyScore,
       efficiencyComment: efficiencyComment || '',
-      qualityScore: normalizeHalfScore(qualityScore),
+      qualityScore: validatedQualityScore,
       qualityComment: qualityComment || '',
       trajectoryAnalysis: trajectoryAnalysis || '未提供轨迹截图。',
     },
@@ -79,14 +91,16 @@ export async function POST(
   return NextResponse.json({ report })
 }
 
-function normalizeOverallScore(score: unknown): number {
+function validateScore(score: unknown, fieldName: string): number {
   const value = Number(score)
-  if (!Number.isFinite(value) || value <= 0) return 1
-  return Math.min(10, Math.max(1, Math.round(value)))
-}
-
-function normalizeHalfScore(score: unknown): number {
-  const value = Number(score)
-  if (!Number.isFinite(value) || value <= 0) return 1
-  return Math.min(10, Math.max(1, Math.round(value * 2) / 2))
+  if (!Number.isFinite(value)) {
+    throw new Error(`${fieldName} 必须是数字`)
+  }
+  if (value < 1 || value > 10) {
+    throw new Error(`${fieldName} 必须在 1-10 之间`)
+  }
+  if (Math.round(value * 2) / 2 !== value) {
+    throw new Error(`${fieldName} 精度必须为 0.5 的倍数`)
+  }
+  return value
 }

@@ -74,23 +74,35 @@ export async function POST(
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
-    const existing = await prisma.taskModel.findMany({
-      where: { taskId: id, modelCode: { in: normalizedCodes } },
-      select: { modelCode: true },
+    const result = await prisma.taskModel.createMany({
+      data: normalizedCodes.map((code) => ({
+        taskId: id,
+        modelCode: code,
+        displayName: code,
+      })),
+      skipDuplicates: true,
     })
-    const existingCodes = new Set(existing.map((model) => model.modelCode.toUpperCase()))
-    const created = []
-    for (const code of normalizedCodes) {
-      if (existingCodes.has(code)) continue
-      const m = await prisma.taskModel.create({
-        data: { taskId: id, modelCode: code, displayName: code },
+    addedCount = result.count
+
+    // 状态机：添加模型时 DRAFT → IN_PROGRESS
+    if (addedCount > 0 && task.status === 'DRAFT') {
+      await prisma.task.update({
+        where: { id },
+        data: { status: 'IN_PROGRESS' },
       })
-      created.push(m)
     }
-    addedCount = created.length
+
+    const models = await prisma.taskModel.findMany({
+      where: { taskId: id, modelCode: { in: normalizedCodes } },
+      orderBy: { createdAt: 'asc' },
+    })
 
     status = 'success'
-    return NextResponse.json({ models: created, skipped: [...existingCodes] })
+    return NextResponse.json({
+      models,
+      addedCount,
+      skippedCount: normalizedCodes.length - addedCount,
+    })
   } finally {
     logAudit(request, {
       action: 'MODEL_ADD',

@@ -143,6 +143,8 @@ model TaskModel {
   artifacts      ModelArtifact[]
   reports        ModelReport[]
   artifactAnalysisRuns ArtifactAnalysisRun[]
+
+  @@unique([taskId, modelCode])
 }
 
 model ArtifactAnalysisRun {
@@ -154,6 +156,7 @@ model ArtifactAnalysisRun {
   currentPhase               String?
   error                      String?  @db.Text
   artifactSignature          String?
+  verificationEvidenceSignature String?
   artifactCount              Int?
   verificationScreenshotUrls String?
   verificationSummary        String?  @db.Text
@@ -182,6 +185,7 @@ model ArtifactAnalysisEvent {
   createdAt DateTime @default(now())
 
   @@index([runId, sequence])
+  @@unique([runId, sequence])
 }
 
 model ModelArtifact {
@@ -248,4 +252,14 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@index([createdAt])
+}
+
+model RateLimitBucket {
+  id          String   @id
+  count       Int      @default(0)
+  windowStart DateTime
+  expiresAt   DateTime
+  updatedAt   DateTime @updatedAt
+
+  @@index([expiresAt])
 }

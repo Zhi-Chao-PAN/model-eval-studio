@@ -2,7 +2,7 @@
 import { useState, useRef } from 'react'
 import {
   Image as ImageIcon, Camera, BarChart3, UploadCloud, X as XIcon,
-  Sparkles, AlertTriangle, SkipForward, CheckCircle2, Square,
+  Sparkles, AlertTriangle, SkipForward, CheckCircle2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +17,64 @@ interface Props {
 
 type Tab = 'process' | 'dashboard'
 type UploadedImage = { name: string; dataUrl: string }
+
+const MAX_SCREENSHOTS_PER_TAB = 6
+const MAX_SCREENSHOT_FILE_BYTES = 12 * 1024 * 1024
+const MAX_SCREENSHOT_DATA_URL_LENGTH = 900_000
+const MAX_ANALYSIS_IMAGES = 12
+const MAX_ANALYSIS_PAYLOAD_LENGTH = 4_000_000
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('图片读取失败，请重新选择'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('图片格式损坏或浏览器无法读取'))
+    image.src = dataUrl
+  })
+}
+
+function encodeScreenshotCanvas(canvas: HTMLCanvasElement): string {
+  let quality = 0.92
+  let dataUrl = canvas.toDataURL('image/jpeg', quality)
+  while (dataUrl.length > MAX_SCREENSHOT_DATA_URL_LENGTH && quality > 0.52) {
+    quality -= 0.08
+    dataUrl = canvas.toDataURL('image/jpeg', quality)
+  }
+  if (dataUrl.length > MAX_SCREENSHOT_DATA_URL_LENGTH) {
+    throw new Error('图片内容过于复杂，请先裁剪掉无关区域后重试')
+  }
+  return dataUrl
+}
+
+async function prepareScreenshot(file: File): Promise<string> {
+  if (!/^image\/(?:png|jpeg|webp)$/i.test(file.type)) {
+    throw new Error(`${file.name} 不是支持的 PNG、JPG 或 WebP 图片`)
+  }
+  if (file.size <= 0 || file.size > MAX_SCREENSHOT_FILE_BYTES) {
+    throw new Error(`${file.name} 大小不合法，单张图片不能超过 12MB`)
+  }
+
+  const source = await readFileAsDataUrl(file)
+  const image = await loadImage(source)
+  const maxEdge = 3200
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('浏览器不支持图片压缩')
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  return encodeScreenshotCanvas(canvas)
+}
 
 function sanitizeVisionStreamPreview(text: string): string {
   return text
@@ -52,7 +110,12 @@ function createWideImageTiles(dataUrl: string): Promise<string[]> {
         const context = canvas.getContext('2d')
         if (!context) continue
         context.drawImage(image, start, 0, tileWidth, height, 0, 0, tileWidth, height)
-        tiles.push(canvas.toDataURL('image/png'))
+        try {
+          tiles.push(encodeScreenshotCanvas(canvas))
+        } catch {
+          resolve([])
+          return
+        }
       }
 
       resolve(tiles)
@@ -64,10 +127,22 @@ function createWideImageTiles(dataUrl: string): Promise<string[]> {
 
 async function buildAnalysisImages(images: UploadedImage[], type: Tab): Promise<string[]> {
   const originals = images.map((image) => image.dataUrl)
-  if (type !== 'dashboard') return originals
+  if (type !== 'dashboard') return validateAnalysisPayload(originals)
 
   const tiles = await Promise.all(images.map((image) => createWideImageTiles(image.dataUrl)))
-  return [...originals, ...tiles.flat()]
+  const expanded = images.flatMap((image, index) => tiles[index].length ? tiles[index] : [image.dataUrl])
+  return validateAnalysisPayload(expanded)
+}
+
+function validateAnalysisPayload(images: string[]): string[] {
+  if (images.length > MAX_ANALYSIS_IMAGES) {
+    throw new Error(`自动裁剪后共有 ${images.length} 张图片，超过 ${MAX_ANALYSIS_IMAGES} 张上限，请减少原图数量`)
+  }
+  const totalLength = images.reduce((sum, image) => sum + image.length, 0)
+  if (totalLength > MAX_ANALYSIS_PAYLOAD_LENGTH) {
+    throw new Error('图片总数据量过大，请减少截图数量或进一步裁剪后重试')
+  }
+  return images
 }
 
 export default function StepScreenshot({ task, onRefresh }: Props) {
@@ -89,25 +164,27 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
     if (abortRef.current) abortRef.current.abort()
   }
 
-  function fileToDataUrl(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
-
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>, type: Tab) {
     const files = Array.from(e.target.files || [])
+    e.target.value = ''
     if (files.length === 0) return
     setError(null)
-    const images = await Promise.all(files.map(async f => ({
-      name: f.name, dataUrl: await fileToDataUrl(f),
-    })))
-    if (type === 'process') setProcessImages(prev => [...prev, ...images])
-    else setDashboardImages(prev => [...prev, ...images])
-    e.target.value = ''
+    const existing = type === 'process' ? processImages : dashboardImages
+    if (existing.length + files.length > MAX_SCREENSHOTS_PER_TAB) {
+      setError(`每类截图最多上传 ${MAX_SCREENSHOTS_PER_TAB} 张`)
+      return
+    }
+
+    try {
+      const images: UploadedImage[] = []
+      for (const file of files) {
+        images.push({ name: file.name, dataUrl: await prepareScreenshot(file) })
+      }
+      if (type === 'process') setProcessImages(prev => [...prev, ...images])
+      else setDashboardImages(prev => [...prev, ...images])
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : String(uploadError))
+    }
   }
 
   async function readJsonResponse(res: Response): Promise<any> {
@@ -170,10 +247,11 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
     const controller = new AbortController()
     abortRef.current = controller
     try {
+      const analysisImages = await buildAnalysisImages(images, activeTab)
       const res = await fetch('/api/tasks/' + task.id + '/analyze-screenshots', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ images: await buildAnalysisImages(images, activeTab), type: activeTab }),
+        body: JSON.stringify({ images: analysisImages, type: activeTab }),
         signal: controller.signal,
       })
       if (!res.ok || !res.body) {
@@ -389,13 +467,13 @@ function UploadBox({ label, images, onUpload, onRemove, accent }: {
         'flex items-center justify-center w-full h-28 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:bg-white/[0.02] transition-colors group',
         hoverBorder,
       )}>
-        <input type="file" accept="image/*" multiple className="hidden" onChange={onUpload} />
+        <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={onUpload} />
         <div className="text-center">
           <UploadCloud className={cn('h-7 w-7 mx-auto text-gray-500 transition-colors mb-1', hoverText)} />
           <span className="text-sm text-gray-400 group-hover:text-white transition-colors">
             点击上传{label}截图（可多张）
           </span>
-          <div className="text-xs text-gray-600 mt-0.5 mono">PNG · JPG · WebP</div>
+          <div className="text-xs text-gray-600 mt-0.5 mono">PNG · JPG · WebP，最多 {MAX_SCREENSHOTS_PER_TAB} 张</div>
         </div>
       </label>
 

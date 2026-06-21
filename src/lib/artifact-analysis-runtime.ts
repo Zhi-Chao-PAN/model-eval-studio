@@ -14,6 +14,7 @@ import {
   isAuthenticVerificationEvidence,
   parseVerificationEvidence,
   serializeVerificationEvidence,
+  verificationEvidenceSignature,
 } from '@/lib/verification-evidence'
 import {
   artifactAnalysisSignature,
@@ -43,6 +44,10 @@ export type ArtifactAnalysisRunInput = {
   userId: string
 }
 
+export type FinalizeArtifactAnalysisResult = {
+  rerun: boolean
+}
+
 type ArtifactLike = {
   id: string
   name: string
@@ -55,8 +60,8 @@ type ArtifactLike = {
   createdAt?: Date | string | null
 }
 
-const FILE_ANALYSIS_LIMIT = 4
-const FILE_ANALYSIS_CHAR_LIMIT = 32_000
+export const FILE_ANALYSIS_LIMIT = 4
+export const FILE_ANALYSIS_CHAR_LIMIT = 32_000
 const AUXILIARY_CALL_TIMEOUT_MS = 45_000
 
 function trimForDisplay(value: string, limit = 560): string {
@@ -214,10 +219,14 @@ export async function captureArtifactEvidence(input: ArtifactAnalysisRunInput): 
   const evidence = parseVerificationEvidence(context.verificationScreenshotUrls)
     .filter(isAuthenticVerificationEvidence)
   const verificationScreenshotUrls = evidence.length ? serializeVerificationEvidence(evidence) : null
+  const evidenceSignature = verificationEvidenceSignature(verificationScreenshotUrls)
 
   await prisma.artifactAnalysisRun.update({
     where: { id: input.runId },
-    data: { verificationScreenshotUrls },
+    data: {
+      verificationScreenshotUrls,
+      verificationEvidenceSignature: evidenceSignature,
+    },
   })
 
   if (evidence.length === 0) {
@@ -476,7 +485,7 @@ export async function summarizeArtifactFiles(input: ArtifactAnalysisRunInput, fi
   }
 }
 
-export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, filesAnalysis: string): Promise<void> {
+export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, filesAnalysis: string): Promise<FinalizeArtifactAnalysisResult> {
   await appendArtifactAnalysisEvent({
     runId: input.runId,
     phase: 'finalize',
@@ -491,8 +500,21 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
   if (!run) throw new Error('分析任务不存在')
 
   const currentSignature = artifactAnalysisSignature(context.artifacts)
-  if (run.artifactSignature !== currentSignature) {
-    throw new Error('分析过程中产物已变更，为避免混入旧结论，本次分析已停止，请重新开始分析')
+  const currentEvidenceSignature = verificationEvidenceSignature(context.verificationScreenshotUrls)
+  const artifactChanged = run.artifactSignature !== currentSignature
+  const evidenceChanged = (run.verificationEvidenceSignature || '') !== currentEvidenceSignature
+  if (artifactChanged || evidenceChanged) {
+    await appendArtifactAnalysisEvent({
+      runId: input.runId,
+      phase: 'finalize',
+      status: ARTIFACT_ANALYSIS_EVENT_STATUS.WARNING,
+      label: '检测到产物或截图在分析期间发生变化',
+      detail: artifactChanged
+        ? '产物文件在后台分析过程中被更新，将自动重新盘点并重跑分析。'
+        : '产物效果截图在后台分析过程中被更新，将自动重新读取并重跑分析。',
+      metadata: { artifactChanged, evidenceChanged },
+    })
+    return { rerun: true }
   }
 
   const analysis: StoredModelArtifactAnalysis = {
@@ -501,16 +523,17 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     analyzedAt: new Date().toISOString(),
     artifactSignature: currentSignature,
     artifactCount: context.artifacts.length,
+    verificationEvidenceSignature: currentEvidenceSignature,
     verificationScreenshotUrls: run.verificationScreenshotUrls,
     verificationSummary: run.verificationSummary || '未上传产物效果截图，暂无法生成产物效果反馈。',
     filesAnalysis,
   }
 
-  await Promise.all([
+  await prisma.$transaction([
     prisma.taskModel.update({
       where: { id: context.id },
       data: {
-        ...(run.verificationScreenshotUrls ? { verificationScreenshotUrls: run.verificationScreenshotUrls } : {}),
+        verificationScreenshotUrls: run.verificationScreenshotUrls,
         artifactAnalysisJson: JSON.stringify(analysis),
       },
     }),
@@ -519,6 +542,7 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
       data: {
         status: ARTIFACT_ANALYSIS_RUN_STATUS.COMPLETED,
         currentPhase: 'complete',
+        verificationEvidenceSignature: currentEvidenceSignature,
         filesAnalysis,
         completedAt: new Date(),
       },
@@ -531,6 +555,7 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     label: '产物预分析已完成',
     detail: '产物内容分析结论已保存。生成评估报告时会优先复用本次结果；产物效果反馈仍以测试人员上传的本地验收截图为准。',
   })
+  return { rerun: false }
 }
 
 export async function failArtifactAnalysisRun(input: ArtifactAnalysisRunInput, error: unknown): Promise<void> {

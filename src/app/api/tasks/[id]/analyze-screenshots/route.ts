@@ -7,10 +7,17 @@ import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
 import { buildScreenshotAnalysisPrompt, buildDashboardAnalysisPrompt } from '@/lib/ai-prompts'
 import { logAudit } from '@/lib/audit'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { apiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
+
+const MAX_ANALYSIS_IMAGES = 12
+const MAX_SINGLE_IMAGE_DATA_URL_LENGTH = 1_200_000
+const MAX_TOTAL_IMAGE_DATA_URL_LENGTH = 4_000_000
+const IMAGE_DATA_URL_PATTERN = /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -37,6 +44,46 @@ function normalizeDashboardTable(parsed: unknown): unknown {
   return parsed
 }
 
+function validateAnalysisImages(images: string[]): string | null {
+  if (images.length === 0) return '请至少上传 1 张图片'
+  if (images.length > MAX_ANALYSIS_IMAGES) return `一次最多分析 ${MAX_ANALYSIS_IMAGES} 张图片（含自动裁剪图）`
+
+  let totalLength = 0
+  for (const image of images) {
+    if (!IMAGE_DATA_URL_PATTERN.test(image)) return '仅支持 PNG、JPG、WebP 图片'
+    if (image.length > MAX_SINGLE_IMAGE_DATA_URL_LENGTH) return '单张图片过大，请压缩或裁剪后重试'
+    totalLength += image.length
+  }
+  if (totalLength > MAX_TOTAL_IMAGE_DATA_URL_LENGTH) return '图片总数据量过大，请减少图片数量或裁剪后重试'
+  return null
+}
+
+async function upstreamErrorMessage(response: Response): Promise<string> {
+  const hint = response.status === 401
+    ? 'API Key 无效'
+    : response.status === 404
+      ? 'Base URL 或模型名称错误'
+      : response.status === 429
+        ? '触发限流，请稍后重试'
+        : response.status >= 500
+          ? '视觉模型服务端异常，请稍后重试'
+          : '视觉模型调用失败'
+  const raw = (await response.text().catch(() => '')).trim()
+  if (!raw || /^<!doctype html/i.test(raw) || /^<html/i.test(raw)) {
+    return `${hint}（HTTP ${response.status}，上游返回了网页错误）`
+  }
+
+  let detail = raw
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const nested = isRecord(parsed.error) ? parsed.error.message : null
+    detail = String(nested || parsed.message || parsed.error || raw)
+  } catch {
+    detail = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+  }
+  return `${hint}（HTTP ${response.status}）：${detail.slice(0, 300)}`
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -44,25 +91,42 @@ export async function POST(
   const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) {
-    return new Response(JSON.stringify({ error: '未登录' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+    return apiError('未登录', 401)
   }
   const { id } = await params
 
+  const rateLimit = await consumeRateLimit({
+    scope: 'ai-screenshot',
+    identifier: session.userId,
+    limit: 8,
+    windowMs: 10 * 60_000,
+  })
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
+
   let tokenInput: number | null = null
   let tokenOutput: number | null = null
+  let auditStatus: 'success' | 'error' = 'error'
+  let auditError: string | null = null
 
   let images: string[] = []
   let type: 'process' | 'dashboard' = 'process'
   try {
-    const body = await request.json()
-    images = body.images || []
-    type = body.type || 'process'
+    const body: unknown = await request.json()
+    if (!isRecord(body) || !Array.isArray(body.images) || !body.images.every(image => typeof image === 'string')) {
+      return apiError('图片数据格式错误', 400, 'invalid_image_data')
+    }
+    if (body.type !== 'process' && body.type !== 'dashboard') {
+      return apiError('截图类型无效', 400, 'invalid_screenshot_type')
+    }
+    images = body.images
+    type = body.type
   } catch {
-    return new Response(JSON.stringify({ error: '请求体格式错误' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    return apiError('请求体格式错误', 400, 'invalid_body')
   }
 
-  if (!Array.isArray(images) || images.length === 0) {
-    return new Response(JSON.stringify({ error: '请至少上传 1 张图片' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  const imageValidationError = validateAnalysisImages(images)
+  if (imageValidationError) {
+    return apiError(imageValidationError, 400, 'invalid_images')
   }
 
   const task = await prisma.task.findFirst({
@@ -70,16 +134,16 @@ export async function POST(
     include: { models: true },
   })
   if (!task) {
-    return new Response(JSON.stringify({ error: '任务不存在' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
+    return apiError('任务不存在', 404)
   }
 
   const aiConfig = await getUserAiConfig(session.userId)
   if (!aiConfig) {
-    return new Response(JSON.stringify({ error: '请先在设置中配置 AI 模型' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    return apiError('请先在设置中配置 AI 模型', 400)
   }
 
   if (aiConfig.provider !== 'OPENAI_COMPAT') {
-    return new Response(JSON.stringify({ error: '截图识别需要 OpenAI 兼容接口' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    return apiError('截图识别需要 OpenAI 兼容接口', 400, 'provider_not_supported')
   }
 
   const basePrompt = type === 'dashboard' ? buildDashboardAnalysisPrompt() : buildScreenshotAnalysisPrompt()
@@ -132,30 +196,14 @@ export async function POST(
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + aiConfig.apiKey,
-            
           },
           body: JSON.stringify(requestBody),
+          signal: request.signal,
         })
 
         if (!res.ok || !res.body) {
-          const errText = await res.text().catch(() => '')
-          let hint = ''
-          if (res.status === 401) hint = 'API Key 无效'
-          else if (res.status === 404) hint = 'Base URL 或模型名称错误'
-          else if (res.status === 429) hint = '触发限流，请稍后重试'
-          else if (res.status >= 500) hint = '视觉模型服务端异常，请稍后重试'
-          const errMsg = ('URL: ' + fullUrl + '  ERR: ' + (errText || hint || '视觉模型调用失败')).slice(0, 800)
-          send('error', { status: res.status, message: errMsg, hint })
-          controller.close()
-          logAudit(request, {
-            action: 'AI_SCREENSHOT_ANALYZE',
-            userId: session.userId,
-            taskId: id,
-            status: 'error',
-            error: errMsg,
-            durationMs: Date.now() - startedAt,
-            detail: { imageCount: images.length, type },
-          })
+          auditError = await upstreamErrorMessage(res)
+          send('error', { status: res.status, message: auditError })
           return
         }
 
@@ -219,6 +267,7 @@ export async function POST(
           const reason = finishReason === 'length'
             ? '视觉模型输出达到长度上限，尚未生成最终 JSON。请重试，或上传裁剪后更清晰的截图。'
             : '视觉模型没有返回可识别的 JSON。请重试，或上传裁剪后更清晰的截图。'
+          auditError = reason
           send('error', { message: reason })
           return
         }
@@ -226,68 +275,86 @@ export async function POST(
         const inserted: string[] = []
         const updated: string[] = []
         try {
+          const existingCodes = new Set(
+            task.models.map((tm: any) => tm.modelCode.toUpperCase()),
+          )
+          const ops: any[] = []
+
           for (const m of parsed.models) {
             const modelCode = String(m.modelCode || '').trim().toUpperCase()
             if (!modelCode) continue
-            const existing = task.models.find((tm: any) => tm.modelCode.toUpperCase() === modelCode)
+
             if (type === 'dashboard') {
-              if (existing) {
-                await prisma.taskModel.update({
-                  where: { id: existing.id },
-                  data: { hardMetricsJson: JSON.stringify(m.metrics || m) },
-                })
-                updated.push(modelCode)
-              } else {
-                await prisma.taskModel.create({
-                  data: {
+              const metricsJson = JSON.stringify(m.metrics || m)
+              ops.push(
+                prisma.taskModel.upsert({
+                  where: { taskId_modelCode: { taskId: id, modelCode } },
+                  update: { hardMetricsJson: metricsJson },
+                  create: {
                     taskId: id,
                     modelCode,
                     displayName: m.displayName || modelCode,
-                    hardMetricsJson: JSON.stringify(m.metrics || m),
+                    hardMetricsJson: metricsJson,
                   },
-                })
-                inserted.push(modelCode)
-              }
-            } else if (existing) {
-              await prisma.taskModel.update({
-                where: { id: existing.id },
-                data: {
-                  processText: m.processDetail || m.processSummary || existing.processText,
-                  screenshotUrls: images.length + ' images',
-                },
-              })
+                }),
+              )
+            } else {
+              const processText = m.processDetail || m.processSummary
+              const updateData: any = { screenshotUrls: images.length + ' images' }
+              if (processText) updateData.processText = processText
+              ops.push(
+                prisma.taskModel.upsert({
+                  where: { taskId_modelCode: { taskId: id, modelCode } },
+                  update: updateData,
+                  create: {
+                    taskId: id,
+                    modelCode,
+                    displayName: m.displayName || modelCode,
+                    processText: processText || null,
+                    screenshotUrls: images.length + ' images',
+                  },
+                }),
+              )
+            }
+          }
+
+          ops.push(
+            prisma.task.update({ where: { id }, data: { currentStep: 'SCREENSHOT' } }),
+          )
+
+          await prisma.$transaction(ops)
+
+          // 根据预加载的数据统计 inserted / updated
+          for (const m of parsed.models) {
+            const modelCode = String(m.modelCode || '').trim().toUpperCase()
+            if (!modelCode) continue
+            if (existingCodes.has(modelCode)) {
               updated.push(modelCode)
             } else {
-              await prisma.taskModel.create({
-                data: {
-                  taskId: id,
-                  modelCode,
-                  displayName: m.displayName || modelCode,
-                  processText: m.processDetail || m.processSummary,
-                  screenshotUrls: images.length + ' images',
-                },
-              })
               inserted.push(modelCode)
             }
           }
-          await prisma.task.update({ where: { id }, data: { currentStep: 'SCREENSHOT' } })
         } catch (dbErr: any) {
-          send('error', { message: '数据库写入失败：' + (dbErr?.message || String(dbErr)) })
-          controller.close()
+          auditError = '数据库写入失败：' + (dbErr?.message || String(dbErr))
+          send('error', { message: auditError })
           return
         }
 
+        auditStatus = 'success'
         send('done', { inserted, updated, parsed, raw: clean })
       } catch (e: any) {
-        send('error', { message: e?.message || String(e) })
+        auditError = e?.name === 'AbortError'
+          ? '截图分析已取消'
+          : e?.message || String(e)
+        send('error', { message: auditError })
       } finally {
         try { controller.close() } catch {}
         logAudit(request, {
           action: 'AI_SCREENSHOT_ANALYZE',
           userId: session.userId,
           taskId: id,
-          status: finishReason === 'length' ? 'error' : (images.length > 0 ? 'success' : 'error'),
-          error: finishReason === 'length' ? '输出长度上限' : null,
+          status: auditStatus,
+          error: auditError,
           tokenInput,
           tokenOutput,
           durationMs: Date.now() - startedAt,

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { decrypt } from '@/lib/crypto'
+import { assertSafeAiBaseUrl, parseAiMaxTokens } from '@/lib/ai-endpoint'
 
 export const DEFAULT_MAX_TOKENS = 4000
 
@@ -20,12 +21,14 @@ export async function getUserAiConfig(userId: string) {
     return null
   }
 
+  const baseUrl = await assertSafeAiBaseUrl(user.aiBaseUrl)
+
   return {
     provider: user.aiProvider,
-    baseUrl: user.aiBaseUrl,
+    baseUrl,
     apiKey: decrypt(user.aiApiKey),
     model: user.aiModelName,
-    maxTokens: user.aiMaxTokens ?? DEFAULT_MAX_TOKENS,
+    maxTokens: parseAiMaxTokens(user.aiMaxTokens, DEFAULT_MAX_TOKENS),
     background: user.background || '',
   }
 }

@@ -15,6 +15,10 @@ export async function GET(request: Request) {
       id: true,
       username: true,
       role: true,
+      background: true,
+      aiProvider: true,
+      aiBaseUrl: true,
+      aiModelName: true,
       createdAt: true,
       lastActiveAt: true,
       _count: {

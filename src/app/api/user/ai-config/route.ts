@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { encrypt, decrypt } from '@/lib/crypto'
 import { logAudit } from '@/lib/audit'
+import { assertSafeAiBaseUrl, parseAiMaxTokens, parseAiProvider } from '@/lib/ai-endpoint'
 
 // 获取 AI 配置（不返回 apiKey 明文）
 export async function GET() {
@@ -51,11 +52,23 @@ export async function PUT(request: Request) {
 
   try {
     const body = await request.json()
-    const { provider, baseUrl, apiKey, modelName: mn, maxTokens } = body
-    modelName = mn || ''
+    const { provider: providerInput, baseUrl: baseUrlInput, apiKey, modelName: mn, maxTokens } = body
+    modelName = typeof mn === 'string' ? mn.trim() : ''
 
-    if (!provider || !baseUrl || !modelName) {
+    if (!providerInput || !baseUrlInput || !modelName) {
       errorMsg = 'provider、baseUrl、modelName 必填'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    let provider
+    let baseUrl
+    let normalizedMaxTokens
+    try {
+      provider = parseAiProvider(providerInput)
+      baseUrl = await assertSafeAiBaseUrl(baseUrlInput)
+      normalizedMaxTokens = parseAiMaxTokens(maxTokens)
+    } catch (error) {
+      errorMsg = error instanceof Error ? error.message : String(error)
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
@@ -63,19 +76,12 @@ export async function PUT(request: Request) {
       aiProvider: provider,
       aiBaseUrl: baseUrl,
       aiModelName: modelName,
+      aiMaxTokens: normalizedMaxTokens,
     }
 
     // 只有传了 apiKey 才更新
     if (apiKey) {
       data.aiApiKey = encrypt(apiKey)
-    }
-
-    // maxTokens 可选
-    if (maxTokens !== undefined && maxTokens !== null) {
-      const n = Number(maxTokens)
-      if (Number.isFinite(n) && n > 0) {
-        data.aiMaxTokens = Math.floor(n)
-      }
     }
 
     const user = await prisma.user.update({
