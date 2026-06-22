@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import {
-  X, Users, Link2, Copy, Check, Plus, Trash2,
+  X, Users, Link2, Copy, Check, Plus, Trash2, ExternalLink,
   Clock, Shield, AlertTriangle, RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -456,6 +456,15 @@ export function SharePanel({ taskId, onClose }: Props) {
                             ? <Check className="h-3.5 w-3.5 text-emerald-400" />
                             : <Copy className="h-3.5 w-3.5" />}
                         </button>
+                        <a
+                          href={`/share/${s.token}`}
+                          target="_blank"
+                          rel="noopener,noreferrer"
+                          className="p-1.5 rounded-md hover:bg-white/5 text-gray-500 hover:text-indigo-300 flex-shrink-0"
+                          title="打开链接预览"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
                         <button
                           onClick={() => revokeShare(s.id)}
                           disabled={revokingId === s.id}
