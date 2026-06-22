@@ -187,9 +187,15 @@ export default function StepInfo({ task, onUpdate, onNext, onPrev }: Props) {
             value={form.description}
             onChange={e => setForm({ ...form, description: e.target.value })}
             onBlur={save}
+            onKeyDown={e => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault()
+                save()
+              }
+            }}
             rows={8}
             className="mono bg-white/[0.02] border-white/[0.07] focus:bg-white/[0.03]"
-            placeholder="把交给待测模型的完整 prompt 粘贴到这里。AI 会基于这段文本理解任务目标，并据此评估各模型的产物。"
+            placeholder="把交给待测模型的完整 prompt 粘贴到这里。AI 会基于这段文本理解任务目标，并据此评估各模型的产物。（Ctrl/Cmd+Enter 保存）"
           />
         </div>
 
