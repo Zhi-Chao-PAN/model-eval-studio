@@ -15,7 +15,11 @@ export default function Error({
   reset: () => void
 }) {
   useEffect(() => {
-    console.error('[ErrorBoundary] Unhandled route error:', error)
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[ErrorBoundary] Unhandled route error (see server logs for details)')
+    } else {
+      console.error('[ErrorBoundary] Unhandled route error:', error)
+    }
   }, [error])
 
   return (

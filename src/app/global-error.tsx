@@ -21,9 +21,13 @@ export default function Error({
   reset: () => void
 }) {
   useEffect(() => {
-    // Log the error to the console in production for debugging via
-    // monitoring tools; Next.js also captures the digest for tracking.
-    console.error('[RootErrorBoundary] Unhandled rendering error:', error)
+    // In production, avoid leaking stack traces / internal paths to the browser console.
+    // Server logs still contain the full error via the API layer's safeServerError.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[RootErrorBoundary] Unhandled rendering error (see server logs for details)')
+    } else {
+      console.error('[RootErrorBoundary] Unhandled rendering error:', error)
+    }
   }, [error])
 
   return (

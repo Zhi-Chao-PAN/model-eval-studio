@@ -107,6 +107,7 @@ export default function AdminPage() {
   const [auditPage, setAuditPage] = useState(1)
   const [auditPageSize] = useState(20)
   const [auditLoading, setAuditLoading] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
   const [auditRange, setAuditRange] = useState<'today' | '7d' | '30d'>('today')
   const [auditAction, setAuditAction] = useState<string>('')
   const [auditUserId, setAuditUserId] = useState<string>('')
@@ -136,6 +137,7 @@ export default function AdminPage() {
   }
   async function loadAuditLogs() {
     setAuditLoading(true)
+    setAuditError(null)
     try {
       const params = new URLSearchParams()
       params.set('page', String(auditPage))
@@ -157,11 +159,17 @@ export default function AdminPage() {
         fetch('/api/admin/audit-logs?' + params.toString()),
         fetch('/api/admin/audit-stats?range=' + auditRange),
       ])
-      const logsData = await logsRes.json()
-      const statsData = await statsRes.json()
+      if (!logsRes.ok) throw new Error('审计日志加载失败（HTTP ' + logsRes.status + '）')
+      if (!statsRes.ok) throw new Error('审计统计加载失败（HTTP ' + statsRes.status + '）')
+      const [logsData, statsData] = await Promise.all([
+        logsRes.json().catch(() => ({ logs: [], total: 0 })),
+        statsRes.json().catch(() => ({ stats: null })),
+      ])
       if (logsData.logs) setAuditLogs(logsData.logs)
       if (logsData.total !== undefined) setAuditTotal(logsData.total)
       if (statsData.stats) setAuditStats(statsData.stats)
+    } catch (e: any) {
+      setAuditError(e?.message || '审计数据加载失败，请稍后重试')
     } finally {
       setAuditLoading(false)
     }
@@ -821,6 +829,14 @@ export default function AdminPage() {
               </Button>
             </div>
           </div>
+
+          {auditError && (
+            <div className="panel p-4 border-red-500/30 bg-red-500/5 flex items-center gap-3">
+              <AlertTriangle className="h-4 w-4 text-red-400 flex-shrink-0" />
+              <span className="text-sm text-red-300 flex-1">{auditError}</span>
+              <Button size="sm" variant="ghost" onClick={loadAuditLogs}>重试</Button>
+            </div>
+          )}
 
           {/* Audit log table */}
           <div className="panel p-0 overflow-hidden">

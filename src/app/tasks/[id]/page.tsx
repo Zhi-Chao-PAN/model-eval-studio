@@ -332,7 +332,7 @@ export default function TaskPage() {
 
   function handleExport(format: 'zip' | 'json' | 'csv') {
     setExportMenuOpen(false)
-    window.open('/api/tasks/' + taskId + '/export?format=' + format, '_blank')
+    window.open('/api/tasks/' + taskId + '/export?format=' + format, '_blank', 'noopener,noreferrer')
   }
 
   function renderStepContent() {

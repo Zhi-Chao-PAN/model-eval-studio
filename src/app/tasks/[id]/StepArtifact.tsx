@@ -94,6 +94,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       }
       showNote('ok', `已上传 ${files.length} 个产物文件，正在自动提交预分析`)
       await analyzeModelArtifacts(modelId, { automatic: true })
+    } catch {
+      showNote('err', '上传失败：网络异常，请稍后重试')
     } finally {
       setUploadingModelId(null)
       input.value = ''
@@ -119,6 +121,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
       setSelectedModel(null)
       showNote('ok', '文本产物已添加，正在自动提交预分析')
       await analyzeModelArtifacts(selectedModel, { automatic: true })
+    } catch {
+      showNote('err', '添加文本失败：网络异常，请稍后重试')
     } finally {
       setAddingText(false)
     }
@@ -126,17 +130,21 @@ export default function StepArtifact({ task, onRefresh }: Props) {
 
   async function deleteArtifact(modelId: string, artifactId: string) {
     if (!askConfirm('删除文件', '确定删除此文件？')) return
-    const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifacts', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ artifactId }),
-    })
-    const data = await readJsonResponse(res)
-    if (!res.ok) {
-      showNote('err', '删除失败: ' + (data.error || '未知错误'))
-      return
+    try {
+      const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifacts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifactId }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) {
+        showNote('err', '删除失败: ' + (data.error || '未知错误'))
+        return
+      }
+      onRefresh()
+    } catch {
+      showNote('err', '删除失败：网络异常，请稍后重试')
     }
-    onRefresh()
   }
 
   async function analyzeModelArtifacts(modelId: string, options: { automatic?: boolean } = {}) {
@@ -161,6 +169,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
             : '已提交后台产物分析，拆解轨迹会自动更新。有验证截图的模型将自动生成评估报告。',
       )
       onRefresh()
+    } catch {
+      showNote('err', (options.automatic ? '自动预分析' : '预分析') + '失败：网络异常，请稍后重试')
     } finally {
       setStartingModelId(null)
     }
@@ -205,6 +215,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         '已添加 ' + addedCount + ' 个模型' + (skipped.length ? '，跳过已存在：' + skipped.join('、') : ''),
       )
       onRefresh()
+    } catch {
+      showNote('err', '添加失败：网络异常，请稍后重试')
     } finally {
       setAddingModel(false)
     }
@@ -212,13 +224,17 @@ export default function StepArtifact({ task, onRefresh }: Props) {
 
   async function deleteModel(modelId: string) {
     if (!askConfirm('删除模型', '删除此模型及其所有产物、报告？')) return
-    const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId, { method: 'DELETE' })
-    const data = await readJsonResponse(res)
-    if (!res.ok) {
-      showNote('err', '删除失败: ' + (data.error || '未知错误'))
-      return
+    try {
+      const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId, { method: 'DELETE' })
+      const data = await readJsonResponse(res)
+      if (!res.ok) {
+        showNote('err', '删除失败: ' + (data.error || '未知错误'))
+        return
+      }
+      onRefresh()
+    } catch {
+      showNote('err', '删除失败：网络异常，请稍后重试')
     }
-    onRefresh()
   }
 
   return (

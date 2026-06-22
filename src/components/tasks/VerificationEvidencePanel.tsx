@@ -129,7 +129,10 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
     let cancelled = false
 
     fetch(`/api/tasks/${taskId}/models/${model.id}/verification`)
-      .then((res) => res.json())
+      .then(async (res) => {
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        return res.json().catch(() => ({}))
+      })
       .then((data) => {
         if (cancelled) return
         if (data && typeof data.verificationScreenshotUrls === 'string') {

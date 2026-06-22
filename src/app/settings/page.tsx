@@ -194,7 +194,14 @@ export default function SettingsPage() {
           modelName,
         }),
       })
-      const data = await res.json()
+      // Safely parse JSON to handle non-JSON error responses
+      const text = await res.text()
+      let data: any = {}
+      try { data = text ? JSON.parse(text) : {} } catch { data = { ok: false, error: '服务器返回了非预期内容' } }
+      if (!res.ok && !data.ok) {
+        setValidateResult({ ok: false, error: data.error || '测试连接失败（HTTP ' + res.status + '）' })
+        return
+      }
       setValidateResult(data)
     } catch (err) {
       setValidateResult({ ok: false, error: err instanceof Error ? err.message : '测试连接失败' })
