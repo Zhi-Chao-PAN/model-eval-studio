@@ -5,6 +5,15 @@ import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
 import { parseTrajectoryScreenshots } from '@/lib/trajectory-screenshots'
 import { getTaskAccess, hasAccessLevel, requireAccess } from '@/lib/task-access'
+import { clampDbText } from '@/lib/utils'
+
+const ALLOWED_CATEGORIES = new Set(['PRODUCT', 'CODING', 'DESIGN', 'RESEARCH', 'OTHER'])
+const ALLOWED_REQUIREMENT_TYPES = new Set(['CODING', 'AGENT'])
+const ALLOWED_STATUSES = new Set(['DRAFT', 'IN_PROGRESS', 'COMPLETED', 'DELETED'])
+const TITLE_MAX = 100
+const DESCRIPTION_MAX = 5_000
+const REQUIREMENT_NAME_MAX = 200
+const BACKGROUND_MAX = 5_000
 
 export async function GET(
   _request: Request,
@@ -160,6 +169,43 @@ export async function PUT(
         updateData[key] = data[key]
         updatedFields.push(key)
       }
+    }
+
+    // 字段校验
+    if ('title' in updateData) {
+      const t = typeof updateData.title === 'string' ? updateData.title.trim() : ''
+      if (!t) {
+        errorMsg = '任务名称必填'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      updateData.title = clampDbText(t, TITLE_MAX)
+    }
+    if ('category' in updateData && updateData.category != null) {
+      if (!ALLOWED_CATEGORIES.has(String(updateData.category))) {
+        errorMsg = 'category 非法'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+    }
+    if ('requirementType' in updateData && updateData.requirementType != null) {
+      if (!ALLOWED_REQUIREMENT_TYPES.has(String(updateData.requirementType))) {
+        errorMsg = 'requirementType 非法'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+    }
+    if ('status' in updateData && updateData.status != null) {
+      if (!ALLOWED_STATUSES.has(String(updateData.status))) {
+        errorMsg = 'status 非法'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+    }
+    if ('description' in updateData && updateData.description != null) {
+      updateData.description = clampDbText(String(updateData.description), DESCRIPTION_MAX)
+    }
+    if ('requirementName' in updateData && updateData.requirementName != null) {
+      updateData.requirementName = clampDbText(String(updateData.requirementName), REQUIREMENT_NAME_MAX)
+    }
+    if ('backgroundUsed' in updateData && updateData.backgroundUsed != null) {
+      updateData.backgroundUsed = clampDbText(String(updateData.backgroundUsed), BACKGROUND_MAX)
     }
 
     // 状态机：用户首次修改任务信息时，DRAFT → IN_PROGRESS
