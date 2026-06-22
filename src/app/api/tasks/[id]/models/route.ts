@@ -68,23 +68,28 @@ export async function POST(
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
-  // Rate limit model creation
-  const rl = await consumeRateLimit({
-    scope: 'model-create',
-    identifier: session.userId,
-    limit: 30,
-    windowMs: 10 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
-
-  const { id } = await params
-  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
-
+  let id = ''
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let addedCount = 0
 
   try {
+    // Rate limit model creation
+    const rl = await consumeRateLimit({
+      scope: 'model-create',
+      identifier: session.userId,
+      limit: 30,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
+    const paramsResult = await params
+    id = paramsResult.id
+    if (!isValidCuid(id)) {
+      errorMsg = '任务 ID 无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
     const body = await request.json().catch(() => null)
     if (!isObject(body)) {
       errorMsg = '请求内容格式无效'
@@ -181,23 +186,28 @@ export async function PUT(
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
-  // Rate limit model updates
-  const rl = await consumeRateLimit({
-    scope: 'model-update',
-    identifier: session.userId,
-    limit: 60,
-    windowMs: 10 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
-
-  const { id } = await params
-  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
-
+  let id = ''
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let modelCode = ''
 
   try {
+    // Rate limit model updates
+    const rl = await consumeRateLimit({
+      scope: 'model-update',
+      identifier: session.userId,
+      limit: 60,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
+    const paramsResult = await params
+    id = paramsResult.id
+    if (!isValidCuid(id)) {
+      errorMsg = '任务 ID 无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
     const body = await request.json().catch(() => null)
     if (!isObject(body)) {
       errorMsg = '请求内容格式无效'

@@ -28,15 +28,15 @@ export async function POST(
     return NextResponse.json({ error: '未登录' }, { status: 401 })
   }
 
-  const rl = await consumeRateLimit({
-    scope: 'task-duplicate',
-    identifier: session.userId,
-    limit: 20,
-    windowMs: 60 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
-
   try {
+    const rl = await consumeRateLimit({
+      scope: 'task-duplicate',
+      identifier: session.userId,
+      limit: 20,
+      windowMs: 60 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
     const { id } = await params
     sourceId = id
     if (!isValidCuid(id)) {
