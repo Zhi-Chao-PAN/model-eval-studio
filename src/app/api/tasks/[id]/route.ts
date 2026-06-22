@@ -327,6 +327,7 @@ export async function DELETE(
             artifacts: { select: { url: true } },
           },
         },
+        attachments: { select: { url: true } },
       },
     })
     if (!task) {
@@ -336,33 +337,27 @@ export async function DELETE(
 
     taskTitle = task.title
 
-    // 先级联清理所有产物 blob 文件（失败不阻断删除，仅警告）
-    const artifactUrls: string[] = []
-    const screenshotUrls: string[] = []
+    // 先级联清理所有 blob 文件（失败不阻断删除，仅警告）
+    const blobUrls = new Set<string>()
     for (const model of task.models) {
       for (const artifact of model.artifacts) {
-        if (artifact.url) artifactUrls.push(artifact.url)
+        if (artifact.url) blobUrls.add(artifact.url)
       }
-      // 收集轨迹截图 URL（去重，因为多个 model 可能引用同一张截图）
+      // 收集轨迹截图 URL（Set 自动去重）
       const screenshots = parseTrajectoryScreenshots((model as any).screenshotUrls)
       for (const s of screenshots) {
-        if (!screenshotUrls.includes(s.url)) screenshotUrls.push(s.url)
+        if (s.url) blobUrls.add(s.url)
       }
     }
-    if (artifactUrls.length > 0) {
-      await Promise.all(
-        artifactUrls.map((url) =>
-          deleteArtifactFile(url).catch((err) => {
-            console.warn('清理任务产物文件失败:', url, err instanceof Error ? err.message : String(err))
-          }),
-        ),
-      )
+    // 清理任务附件文件
+    for (const att of task.attachments) {
+      if (att.url) blobUrls.add(att.url)
     }
-    if (screenshotUrls.length > 0) {
+    if (blobUrls.size > 0) {
       await Promise.all(
-        screenshotUrls.map((url) =>
+        Array.from(blobUrls).map((url) =>
           deleteArtifactFile(url).catch((err) => {
-            console.warn('清理任务截图文件失败:', url, err instanceof Error ? err.message : String(err))
+            console.warn('清理任务关联文件失败:', url, err instanceof Error ? err.message : String(err))
           }),
         ),
       )
