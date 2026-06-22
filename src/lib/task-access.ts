@@ -113,32 +113,6 @@ export async function getTaskAccess(
 }
 
 /**
- * 检查用户对任务模型（TaskModel）的访问权限。
- * 本质上还是检查任务级别的权限。
- */
-export async function getModelAccess(
-  taskId: string,
-  modelId: string,
-  session: SessionData | null,
-  shareToken?: string,
-): Promise<{ access: AccessLevel | null; model: any | null; task: any | null }> {
-  const { access, task } = await getTaskAccess(taskId, session, shareToken)
-  if (!access) {
-    return { access: null, model: null, task: null }
-  }
-
-  const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, taskId },
-  })
-
-  if (!model) {
-    return { access: null, model: null, task: null }
-  }
-
-  return { access, model, task }
-}
-
-/**
  * 便捷函数：要求至少指定权限，否则抛出 apiError 风格的错误信息。
  * 返回 null 表示有权限，返回 { error, status } 表示无权限。
  */
