@@ -122,6 +122,8 @@ model Task {
   analysisJson    String?
 
   @@index([userId, updatedAt])
+  @@index([status, updatedAt])
+  @@index([deletedAt])
 }
 
 model TaskAttachment {
@@ -134,6 +136,8 @@ model TaskAttachment {
   mimeType  String?
   parsedText  String?
   createdAt DateTime @default(now())
+
+  @@index([taskId])
 }
 
 model TaskModel {
@@ -153,6 +157,7 @@ model TaskModel {
   artifactAnalysisRuns ArtifactAnalysisRun[]
 
   @@unique([taskId, modelCode])
+  @@index([taskId])
 }
 
 model ArtifactAnalysisRun {
