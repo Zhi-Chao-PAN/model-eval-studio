@@ -32,15 +32,18 @@ export async function GET() {
 // 更新用户背景
 export async function PUT(request: Request) {
   const startedAt = Date.now()
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
-  }
 
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
+  let sessionUserId = ''
 
   try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    sessionUserId = session.userId
+
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       errorMsg = '请求内容格式无效'
@@ -61,7 +64,7 @@ export async function PUT(request: Request) {
     const background = clampDbText(raw, MAX_BACKGROUND_CHARS)
 
     const user = await prisma.user.update({
-      where: { id: session.userId },
+      where: { id: sessionUserId },
       data: { background },
       select: { id: true, username: true, background: true },
     })
@@ -73,12 +76,14 @@ export async function PUT(request: Request) {
     errorMsg = message
     return NextResponse.json({ error: '更新背景失败：' + message }, { status: 500 })
   } finally {
-    logAudit(request, {
-      action: 'USER_SETTINGS_UPDATE',
-      userId: session.userId,
-      status,
-      error: errorMsg,
-      durationMs: Date.now() - startedAt,
-    })
+    if (sessionUserId) {
+      logAudit(request, {
+        action: 'USER_SETTINGS_UPDATE',
+        userId: sessionUserId,
+        status,
+        error: errorMsg,
+        durationMs: Date.now() - startedAt,
+      })
+    }
   }
 }

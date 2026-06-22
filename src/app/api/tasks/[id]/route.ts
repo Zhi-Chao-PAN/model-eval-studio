@@ -140,27 +140,33 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const startedAt = Date.now()
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
-  }
 
-  // Rate limit task updates to prevent abuse
-  const rl = await consumeRateLimit({
-    scope: 'task-update',
-    identifier: session.userId,
-    limit: 60,
-    windowMs: 10 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
-
-  const { id } = await params
-  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   const updatedFields: string[] = []
+  let sessionUserId = ''
+  let taskId = ''
 
   try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    sessionUserId = session.userId
+
+    // Rate limit task updates to prevent abuse
+    const rl = await consumeRateLimit({
+      scope: 'task-update',
+      identifier: session.userId,
+      limit: 60,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
+    const { id } = await params
+    if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
+    taskId = id
+
     const data = await request.json().catch(() => null)
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
       errorMsg = '请求内容格式无效'
@@ -270,15 +276,17 @@ export async function PUT(
     errorMsg = message
     return NextResponse.json({ error: '更新任务失败：' + message }, { status: 500 })
   } finally {
-    logAudit(request, {
-      action: 'TASK_UPDATE',
-      userId: session.userId,
-      taskId: id,
-      status,
-      error: errorMsg,
-      durationMs: Date.now() - startedAt,
-      detail: { updatedFields },
-    })
+    if (sessionUserId) {
+      logAudit(request, {
+        action: 'TASK_UPDATE',
+        userId: sessionUserId,
+        taskId,
+        status,
+        error: errorMsg,
+        durationMs: Date.now() - startedAt,
+        detail: { updatedFields },
+      })
+    }
   }
 }
 
@@ -287,27 +295,33 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const startedAt = Date.now()
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
-  }
 
-  // Rate limit task deletion
-  const rl = await consumeRateLimit({
-    scope: 'task-delete',
-    identifier: session.userId,
-    limit: 20,
-    windowMs: 10 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
-
-  const { id } = await params
-  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let taskTitle = ''
+  let sessionUserId = ''
+  let taskId = ''
 
   try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    sessionUserId = session.userId
+
+    // Rate limit task deletion
+    const rl = await consumeRateLimit({
+      scope: 'task-delete',
+      identifier: session.userId,
+      limit: 20,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
+    const { id } = await params
+    if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
+    taskId = id
+
     const { access } = await getTaskAccess(id, session)
     if (!access) {
       errorMsg = '任务不存在'
@@ -373,14 +387,16 @@ export async function DELETE(
     errorMsg = message
     return NextResponse.json({ error: '删除任务失败：' + message }, { status: 500 })
   } finally {
-    logAudit(request, {
-      action: 'TASK_DELETE',
-      userId: session.userId,
-      taskId: id,
-      status,
-      error: errorMsg,
-      durationMs: Date.now() - startedAt,
-      detail: { title: taskTitle },
-    })
+    if (sessionUserId) {
+      logAudit(request, {
+        action: 'TASK_DELETE',
+        userId: sessionUserId,
+        taskId,
+        status,
+        error: errorMsg,
+        durationMs: Date.now() - startedAt,
+        detail: { title: taskTitle },
+      })
+    }
   }
 }

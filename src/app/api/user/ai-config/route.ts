@@ -52,26 +52,29 @@ export async function GET() {
 // 更新 AI 配置
 export async function PUT(request: Request) {
   const startedAt = Date.now()
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
-  }
-
-  // Settings writes are cheap but should still be throttled to prevent
-  // runaway encrypt() churn if a session is abused.
-  const rl = await consumeRateLimit({
-    scope: 'ai-config-update',
-    identifier: session.userId,
-    limit: 20,
-    windowMs: 10 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
 
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let modelName = ''
+  let sessionUserId = ''
 
   try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    sessionUserId = session.userId
+
+    // Settings writes are cheap but should still be throttled to prevent
+    // runaway encrypt() churn if a session is abused.
+    const rl = await consumeRateLimit({
+      scope: 'ai-config-update',
+      identifier: session.userId,
+      limit: 20,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       errorMsg = '请求内容格式无效'
@@ -154,7 +157,7 @@ export async function PUT(request: Request) {
     }
 
     const user = await prisma.user.update({
-      where: { id: session.userId },
+      where: { id: sessionUserId },
       data,
       select: {
         aiProvider: true,
@@ -180,13 +183,15 @@ export async function PUT(request: Request) {
     errorMsg = message
     return NextResponse.json({ error: '更新 AI 配置失败：' + message }, { status: 500 })
   } finally {
-    logAudit(request, {
-      action: 'AI_CONFIG_UPDATE',
-      userId: session.userId,
-      status,
-      error: errorMsg,
-      durationMs: Date.now() - startedAt,
-      detail: { modelName },
-    })
+    if (sessionUserId) {
+      logAudit(request, {
+        action: 'AI_CONFIG_UPDATE',
+        userId: sessionUserId,
+        status,
+        error: errorMsg,
+        durationMs: Date.now() - startedAt,
+        detail: { modelName },
+      })
+    }
   }
 }
