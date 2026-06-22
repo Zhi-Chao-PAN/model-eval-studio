@@ -188,49 +188,106 @@ export function serializeEvidenceChain(items: ArtifactEvidence[], modelId: strin
 
 export function parseStoredEvidenceChain(raw?: string | null): SerializedEvidenceChain | null {
   if (!raw) return null
+  let value: any
   try {
-    const value = JSON.parse(raw)
-    if (
-      !value ||
-      value.version !== 1 ||
-      typeof value.modelId !== 'string' ||
-      !Array.isArray(value.items)
-    ) {
-      return null
-    }
-    const items: ArtifactEvidence[] = value.items
-      .filter((item: any) =>
-        item &&
-        typeof item.evidenceId === 'string' &&
-        typeof item.title === 'string' &&
-        typeof item.summary === 'string' &&
-        typeof item.evidenceType === 'string' &&
-        typeof item.source === 'string',
-      )
-      .slice(0, 200)
-      .map((item: any) => ({
+    value = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (
+    !value ||
+    value.version !== 1 ||
+    typeof value.modelId !== 'string' ||
+    !Array.isArray(value.items)
+  ) {
+    return null
+  }
+
+  const validSources = new Set<string>(EVIDENCE_SOURCE_VALUES)
+  const validTypes = new Set<string>(EVIDENCE_TYPE_VALUES)
+
+  const items: ArtifactEvidence[] = value.items
+    .filter((item: any) =>
+      item &&
+      typeof item.evidenceId === 'string' &&
+      typeof item.title === 'string' &&
+      typeof item.summary === 'string' &&
+      typeof item.evidenceType === 'string' &&
+      typeof item.source === 'string' &&
+      // 拒绝非法 evidenceType / source，避免老数据污染 UI 与报告 prompt
+      validTypes.has(item.evidenceType) &&
+      validSources.has(item.source),
+    )
+    .slice(0, 200)
+    .map((item: any) => {
+      const evidenceType = item.evidenceType as EvidenceType
+      const source = item.source as EvidenceSource
+      // 缺失或非 ISO 字符串的 createdAt 给一个稳定 fallback（epoch 0），
+      // 避免渲染时拿到 Invalid Date；同时不影响排序（与其它 fallback 一起按 0 排序）。
+      const createdAt = typeof item.createdAt === 'string' && item.createdAt
+        ? item.createdAt
+        : new Date(0).toISOString()
+      return {
         evidenceId: item.evidenceId,
         modelId: typeof item.modelId === 'string' ? item.modelId : value.modelId,
         artifactId: typeof item.artifactId === 'string' ? item.artifactId : null,
         runId: typeof item.runId === 'string' ? item.runId : null,
         artifactName: typeof item.artifactName === 'string' ? item.artifactName : null,
-        evidenceType: item.evidenceType as EvidenceType,
-        source: item.source as EvidenceSource,
-        title: typeof item.title === 'string' ? item.title : '',
-        summary: typeof item.summary === 'string' ? item.summary : '',
-        detail: typeof item.detail === 'string' ? item.detail : null,
-        metadata: item.metadata && typeof item.metadata === 'object' ? item.metadata : null,
-        createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date(0).toISOString(),
-      }))
-    return {
-      version: 1,
-      modelId: value.modelId,
-      generatedAt: typeof value.generatedAt === 'string' ? value.generatedAt : new Date(0).toISOString(),
-      items,
-    }
-  } catch {
-    return null
+        evidenceType,
+        source,
+        title: safeTruncateText(item.title, EVIDENCE_TITLE_MAX),
+        summary: safeTruncateText(item.summary, EVIDENCE_SUMMARY_MAX),
+        detail: typeof item.detail === 'string' ? safeTruncateText(item.detail, EVIDENCE_DETAIL_MAX) : null,
+        metadata: sanitizeStoredMetadata(item.metadata),
+        createdAt,
+      }
+    })
+
+  const generatedAt = typeof value.generatedAt === 'string' && value.generatedAt
+    ? value.generatedAt
+    : new Date(0).toISOString()
+
+  return {
+    version: 1,
+    modelId: value.modelId,
+    generatedAt,
+    items,
   }
+}
+
+function safeTruncateText(value: string, max: number): string {
+  if (typeof value !== 'string') return ''
+  const cleaned = value.replace(/\s+/g, ' ').trim()
+  if (!cleaned) return ''
+  if (cleaned.length <= max) return cleaned
+  return cleaned.slice(0, Math.max(0, max - 1)) + '…'
+}
+
+/**
+ * 对存储在 JSON 中的 metadata 再次清洗：去掉非 plain object、过滤非白名单基础类型、
+ * 字符串再截断。保证 UI 与报告 prompt 拿到的 metadata 一定安全。
+ */
+function sanitizeStoredMetadata(metadata: unknown): Record<string, unknown> | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const result: Record<string, unknown> = {}
+  let dropped = 0
+  for (const [key, value] of Object.entries(metadata as Record<string, unknown>)) {
+    if (typeof value === 'string') {
+      const cleaned = safeTruncateText(value, 600)
+      if (cleaned) result[key] = cleaned
+    } else if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
+      result[key] = value
+    } else if (Array.isArray(value)) {
+      result[key] = value.slice(0, 32).map(item =>
+        typeof item === 'string' ? safeTruncateText(item, 200) : item,
+      )
+    } else {
+      // 嵌套对象只保留纯字符串描述，避免把任意 JSON 塞到 UI
+      dropped += 1
+    }
+  }
+  if (dropped > 0) result._droppedKeys = dropped
+  return Object.keys(result).length > 0 ? result : null
 }
 
 // ── 报告引用辅助 ─────────────────────────────────────────────────────────
@@ -247,30 +304,177 @@ export function loadEvidenceChainFromAnalysis(
 }
 
 /**
+ * 证据类型在报告 prompt 中的优先级（数字越小越优先）：
+ *  - primary_artifact / parsed_content / quality_signal / auto_candidate
+ *    是报告生成最常用的参考；
+ *  - limitation 必须保留以说明 V1 边界；
+ *  - structure_check 与 file_manifest 一般只在前面没有关键证据时补足；
+ *  - error 仅在还没有更合适条目时兜底。
+ */
+export const REPORT_SUMMARY_TYPE_PRIORITY: Record<EvidenceType, number> = {
+  primary_artifact: 0,
+  quality_signal: 1,
+  auto_candidate: 2,
+  parsed_content: 3,
+  limitation: 4,
+  structure_check: 5,
+  error: 6,
+  file_manifest: 7,
+}
+
+export interface EvidenceSummaryOptions {
+  maxChars?: number
+  /**
+   * 允许进入报告 prompt 的 source 白名单。tester_upload 永远不进入；
+   * artifact_upload 也不进入（产物本身已在产物文本上下文中）。
+   */
+  allowSources?: ReadonlySet<EvidenceSource>
+}
+
+const DEFAULT_SUMMARY_SOURCES: ReadonlySet<EvidenceSource> = new Set<EvidenceSource>([
+  'auto_runner',
+  'parser',
+  'analysis_runtime',
+])
+
+/**
  * 给"交付效率 / 产物质量 / 综合评价"准备一段紧凑的证据摘要，注入报告 prompt。
- * 严格过滤：只挑选 auto_runner / parser / analysis_runtime 来源；
- * 不包含 tester_upload 的产物效果截图证据——那块由 `verificationSummary` 负责。
+ *
+ * 排序规则：
+ *  1. 仅 `auto_runner` / `parser` / `analysis_runtime` 来源会进入；
+ *  2. 按 REPORT_SUMMARY_TYPE_PRIORITY 升序：primary_artifact → quality_signal
+ *     → auto_candidate → parsed_content → limitation → structure_check →
+ *     file_manifest（兜底）；
+ *  3. file_manifest 自动被截到 SUMMARY_FILE_MANIFEST_MAX_CHARS，
+ *     避免一份长长的文件名清单挤占报告 token 预算。
  */
 export function buildEvidenceChainSummaryForReport(
   chain: SerializedEvidenceChain | null,
-  maxChars = 1800,
+  options: EvidenceSummaryOptions = {},
 ): string {
   if (!chain || chain.items.length === 0) return ''
-  const allowSources = new Set<EvidenceSource>(['auto_runner', 'parser', 'analysis_runtime'])
+  const maxChars = options.maxChars ?? 1800
+  const allowSources = options.allowSources ?? DEFAULT_SUMMARY_SOURCES
+
+  const prioritized = chain.items
+    .filter(item => allowSources.has(item.source))
+    .slice()
+    .sort((a, b) => {
+      const pa = REPORT_SUMMARY_TYPE_PRIORITY[a.evidenceType] ?? 99
+      const pb = REPORT_SUMMARY_TYPE_PRIORITY[b.evidenceType] ?? 99
+      if (pa !== pb) return pa - pb
+      // 同优先级按 createdAt 升序，让"先发现"的事实排在前面
+      return a.createdAt.localeCompare(b.createdAt)
+    })
+
   const lines: string[] = []
   let used = 0
-  for (const item of chain.items) {
-    if (!allowSources.has(item.source as EvidenceSource)) continue
+  for (const item of prioritized) {
     const head = `· [${item.evidenceType}] ${item.title}`
     const tail = item.summary ? ` — ${item.summary}` : ''
-    const line = head + tail
-    if (used + line.length + 1 > maxChars) break
+    const artifactTag = item.artifactName ? `（${item.artifactName}）` : ''
+    let line = head + tail + artifactTag
+
+    // file_manifest 单条单独限长，避免一份巨大清单占用整个摘要预算
+    if (item.evidenceType === 'file_manifest' && line.length > SUMMARY_FILE_MANIFEST_MAX_CHARS) {
+      line = line.slice(0, SUMMARY_FILE_MANIFEST_MAX_CHARS - 1) + '…'
+    }
+
+    if (used + line.length + 1 > maxChars) {
+      // 已经写过的条目至少都收下了；这里直接停止，避免截到一半
+      break
+    }
     lines.push(line)
     used += line.length + 1
   }
+
   if (!lines.length) return ''
   return [
-    '【后台候选证据摘要（自动运行器 V1 / 解析器 / 综合分析；不代表测试者本地验收）】',
+    '【后台候选证据摘要（来自自动运行器 V1 / 解析器 / 综合分析；这些只是后台候选证据，不等同于测试者本地验收截图，产物效果反馈仍需 tester_upload 截图）】',
     ...lines,
   ].join('\n')
+}
+
+export const SUMMARY_FILE_MANIFEST_MAX_CHARS = 360
+
+// ── UI 分组 ──────────────────────────────────────────────────────────────
+
+/**
+ * UI 展示用的稳定分组顺序；同一 evidenceType 总是落在同一组，便于用户记忆。
+ */
+export const EVIDENCE_GROUP_ORDER: ReadonlyArray<{
+  key: string
+  label: string
+  types: ReadonlyArray<EvidenceType>
+  description: string
+}> = [
+  {
+    key: 'file_manifest',
+    label: '文件清单',
+    types: ['file_manifest'],
+    description: '本次产物上传过程中识别到的文件清单与过滤结果。',
+  },
+  {
+    key: 'primary',
+    label: '主产物识别',
+    types: ['primary_artifact'],
+    description: '按产物类型、文件名权重、解析文本综合选出的主要产物。',
+  },
+  {
+    key: 'parsed',
+    label: '解析证据',
+    types: ['parsed_content'],
+    description: '解析器从主产物抽出的文本摘要；不展示整篇原文。',
+  },
+  {
+    key: 'structure',
+    label: '结构检查',
+    types: ['structure_check'],
+    description: '工程结构信号：README / 项目清单 / 入口 / 报告等是否存在。',
+  },
+  {
+    key: 'quality',
+    label: '质量信号',
+    types: ['quality_signal'],
+    description: '对产物可读性、可运行性、覆盖完整性的客观判断，仅基于产物内容。',
+  },
+  {
+    key: 'candidate',
+    label: '后台候选证据',
+    types: ['auto_candidate'],
+    description: '可作为交付效率、产物质量、综合评价的参考；不等同于测试者本地验收截图。',
+  },
+  {
+    key: 'limitations',
+    label: '限制与风险',
+    types: ['limitation'],
+    description: '本轮自动验收的明确边界，包括未执行不可信代码、未接入 Sandbox 等。',
+  },
+  {
+    key: 'errors',
+    label: '错误',
+    types: ['error'],
+    description: '证据链生成过程中遇到的具体错误。',
+  },
+]
+
+export interface EvidenceGroup {
+  key: string
+  label: string
+  description: string
+  items: ArtifactEvidence[]
+}
+
+export function groupEvidenceByType(items: ArtifactEvidence[]): EvidenceGroup[] {
+  const buckets = new Map<string, EvidenceGroup>()
+  for (const def of EVIDENCE_GROUP_ORDER) {
+    buckets.set(def.key, { key: def.key, label: def.label, description: def.description, items: [] })
+  }
+  for (const item of items) {
+    const def = EVIDENCE_GROUP_ORDER.find(d => d.types.includes(item.evidenceType))
+    if (!def) continue
+    const group = buckets.get(def.key)
+    if (group) group.items.push(item)
+  }
+  return Array.from(buckets.values()).filter(group => group.items.length > 0)
 }
