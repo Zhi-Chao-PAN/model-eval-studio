@@ -560,10 +560,7 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     detail: '产物内容分析结论已保存。生成评估报告时会优先复用本次结果；产物效果反馈仍以测试人员上传的本地验收截图为准。',
   })
 
-  // 自动触发报告生成（满足条件时）
-  // - 有 tester_upload 来源的验证截图
-  // - 模型尚未有报告
-  // - 用户有 AI 配置
+  // 自动触发报告生成：产物效果反馈需要截图，其余模块可先基于产物分析生成。
   try {
     const [modelWithReports, aiConfig] = await Promise.all([
       prisma.taskModel.findUnique({
@@ -580,54 +577,59 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     if (modelWithReports && aiConfig && modelWithReports.reports.length === 0) {
       const hasAuthenticEvidence = parseVerificationEvidence(modelWithReports.verificationScreenshotUrls)
         .some(isAuthenticVerificationEvidence)
-      if (hasAuthenticEvidence) {
+      await appendArtifactAnalysisEvent({
+        runId: input.runId,
+        phase: 'auto_report',
+        status: ARTIFACT_ANALYSIS_EVENT_STATUS.STARTED,
+        label: '自动生成评估报告中…',
+        detail: hasAuthenticEvidence
+          ? '已检测到测试者上传的产物效果截图，报告将同步生成产物效果反馈。'
+          : '尚未上传产物效果截图，将先生成交付效率、产物质量、综合评价和轨迹分析。',
+        metadata: { hasVerificationEvidence: hasAuthenticEvidence },
+      })
+
+      try {
+        const task = modelWithReports.task
+        const result = await generateReportForModel({
+          task,
+          model: modelWithReports,
+          aiConfig,
+        })
+
         await appendArtifactAnalysisEvent({
           runId: input.runId,
           phase: 'auto_report',
-          status: ARTIFACT_ANALYSIS_EVENT_STATUS.STARTED,
-          label: '自动生成评估报告中…',
+          status: ARTIFACT_ANALYSIS_EVENT_STATUS.COMPLETED,
+          label: '评估报告已自动生成',
+          detail: `报告已生成，综合评分 ${result.report.overallScore}/10。`,
+          metadata: { hasVerificationEvidence: hasAuthenticEvidence },
         })
 
-        try {
-          const task = modelWithReports.task
-          const result = await generateReportForModel({
-            task,
-            model: modelWithReports,
-            aiConfig,
-          })
-
-          await appendArtifactAnalysisEvent({
-            runId: input.runId,
-            phase: 'auto_report',
-            status: ARTIFACT_ANALYSIS_EVENT_STATUS.COMPLETED,
-            label: '评估报告已自动生成',
-            detail: `报告已生成，综合评分 ${result.report.overallScore}/10。`,
-          })
-
-          console.info('[auto-report] 报告生成成功', {
-            modelCode: modelWithReports.modelCode,
-            overallScore: result.report.overallScore,
-          })
-        } catch (reportErr) {
-          const sanitized = sanitizeAiError(reportErr)
-          await appendArtifactAnalysisEvent({
-            runId: input.runId,
-            phase: 'auto_report',
-            status: ARTIFACT_ANALYSIS_EVENT_STATUS.FAILED,
-            label: '自动生成报告失败',
-            detail: sanitized.message,
-          })
-          console.warn('[auto-report] 报告生成失败', {
-            modelCode: modelWithReports.modelCode,
-            error: sanitized.message,
-            category: sanitized.category,
-          })
-        }
+        console.info('[auto-report] report generated', {
+          modelCode: modelWithReports.modelCode,
+          overallScore: result.report.overallScore,
+          hasVerificationEvidence: hasAuthenticEvidence,
+        })
+      } catch (reportErr) {
+        const sanitized = sanitizeAiError(reportErr)
+        await appendArtifactAnalysisEvent({
+          runId: input.runId,
+          phase: 'auto_report',
+          status: ARTIFACT_ANALYSIS_EVENT_STATUS.FAILED,
+          label: '自动生成报告失败',
+          detail: sanitized.message,
+          metadata: { hasVerificationEvidence: hasAuthenticEvidence },
+        })
+        console.warn('[auto-report] report generation failed', {
+          modelCode: modelWithReports.modelCode,
+          error: sanitized.message,
+          category: sanitized.category,
+          hasVerificationEvidence: hasAuthenticEvidence,
+        })
       }
     }
   } catch (autoReportErr) {
-    // 自动报告失败不影响分析主流程
-    console.warn('[auto-report] 触发失败:', autoReportErr instanceof Error ? autoReportErr.message : String(autoReportErr))
+    console.warn('[auto-report] trigger failed:', autoReportErr instanceof Error ? autoReportErr.message : String(autoReportErr))
   }
 
   return { rerun: false }

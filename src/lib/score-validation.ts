@@ -70,3 +70,17 @@ export function normalizeScore(value: unknown, fallback?: number): number | null
   if (typeof value !== 'number' || Number.isNaN(value)) return null
   return value
 }
+
+function toClampedReportScore(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return 1
+  return Math.max(1, Math.min(10, n))
+}
+
+export function normalizeValidatedIntegerScore(value: unknown): number {
+  return Math.round(toClampedReportScore(value))
+}
+
+export function normalizeValidatedHalfStepScore(value: unknown): number {
+  return Math.round(toClampedReportScore(value) * 2) / 2
+}

@@ -135,8 +135,14 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
       })
       .then((data) => {
         if (cancelled) return
-        if (data && typeof data.verificationScreenshotUrls === 'string') {
-          setLoadedEvidenceRaw(data.verificationScreenshotUrls)
+        const serialized =
+          data && typeof data.verificationScreenshotUrls === 'string'
+            ? data.verificationScreenshotUrls
+            : data && typeof data.verificationScreenshotSerialized === 'string'
+              ? data.verificationScreenshotSerialized
+              : ''
+        if (serialized) {
+          setLoadedEvidenceRaw(serialized)
         } else {
           setLoadedEvidenceRaw(null)
         }
@@ -171,17 +177,18 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
   async function persist(nextEvidence: VerificationEvidence[], successMessage: string) {
     setSaving(true)
     try {
-      const res = await fetch(`/api/tasks/${taskId}/models`, {
+      const serialized = serializeVerificationEvidence(nextEvidence)
+      const res = await fetch(`/api/tasks/${taskId}/models/${model.id}/verification`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          modelId: model.id,
-          verificationScreenshotUrls: serializeVerificationEvidence(nextEvidence),
+          verificationScreenshotUrls: serialized,
         }),
       })
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(payload.error || '保存产物效果截图失败')
       setOptimisticEvidence({ modelId: model.id, evidence: nextEvidence })
+      setLoadedEvidenceRaw(nextEvidence.length ? serialized : null)
       onNotice('ok', successMessage)
       onRefresh()
     } catch (error) {
@@ -217,17 +224,18 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
       }
 
       const next = [...officialEvidence, ...additions]
-      const res = await fetch(`/api/tasks/${taskId}/models`, {
+      const serialized = serializeVerificationEvidence(next)
+      const res = await fetch(`/api/tasks/${taskId}/models/${model.id}/verification`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          modelId: model.id,
-          verificationScreenshotUrls: serializeVerificationEvidence(next),
+          verificationScreenshotUrls: serialized,
         }),
       })
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(payload.error || '保存产物效果截图失败')
       setOptimisticEvidence({ modelId: model.id, evidence: next })
+      setLoadedEvidenceRaw(serialized)
       onNotice('ok', `已保存 ${additions.length} 张产物效果截图`)
       onRefresh()
     } catch (error) {
@@ -324,6 +332,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
                 className="absolute inset-0"
                 title="查看原图"
               >
+                {/* eslint-disable-next-line @next/next/no-img-element -- Local data-url acceptance screenshots are previewed directly. */}
                 <img src={image.dataUrl} alt={image.name} className="h-full w-full object-cover" />
               </button>
               <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-1 bg-gradient-to-t from-black/85 to-transparent px-1.5 py-1.5">

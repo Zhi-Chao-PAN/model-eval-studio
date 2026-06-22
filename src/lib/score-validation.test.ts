@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
   validateScores,
   normalizeScore,
+  normalizeValidatedHalfStepScore,
+  normalizeValidatedIntegerScore,
   INTEGER_SCORE,
   HALF_STEP_SCORE,
 } from './score-validation'
@@ -63,12 +65,12 @@ test('validateScores: 超范围（<1 或 >10）拒绝', () => {
 
 test('validateScores: NaN / 字符串 / null 拒绝', () => {
   assert.ok(validateScores({ overallScore: NaN, efficiencyScore: 5, qualityScore: 5 }))
-  assert.ok(validateScores({ overallScore: '8' as any, efficiencyScore: 5, qualityScore: 5 }))
-  assert.ok(validateScores({ overallScore: null as any, efficiencyScore: 5, qualityScore: 5 }, { required: true }))
+  assert.ok(validateScores({ overallScore: '8' as unknown as number, efficiencyScore: 5, qualityScore: 5 }))
+  assert.ok(validateScores({ overallScore: null as unknown as number, efficiencyScore: 5, qualityScore: 5 }, { required: true }))
 })
 
 test('validateScores: 多个错误合并为中文分号分隔', () => {
-  const err = validateScores({ overallScore: 7.5, efficiencyScore: 11, qualityScore: 'bad' as any }, { required: true })
+  const err = validateScores({ overallScore: 7.5, efficiencyScore: 11, qualityScore: 'bad' as unknown as number }, { required: true })
   assert.ok(err)
   // 应包含至少 3 个错误信息
   const parts = err!.split('；')
@@ -90,12 +92,25 @@ test('normalizeScore: 合法数字原样返回', () => {
 
 test('normalizeScore: NaN/非数字 → null', () => {
   assert.equal(normalizeScore(NaN), null)
-  assert.equal(normalizeScore('abc' as any), null)
+  assert.equal(normalizeScore('abc'), null)
 })
 
 test('normalizeScore: fallback 参数仅对 undefined 生效（null 保持 null，显式空值）', () => {
   assert.equal(normalizeScore(undefined, 0), 0)
   assert.equal(normalizeScore(null, 0), null)
+})
+
+test('normalizeValidatedHalfStepScore: preserves and normalizes half-step scores', () => {
+  assert.equal(normalizeValidatedHalfStepScore(7.5), 7.5)
+  assert.equal(normalizeValidatedHalfStepScore('6.5'), 6.5)
+  assert.equal(normalizeValidatedHalfStepScore(7.4), 7.5)
+})
+
+test('normalizeValidatedIntegerScore: enforces integer scores in the 1-10 range', () => {
+  assert.equal(normalizeValidatedIntegerScore(7.5), 8)
+  assert.equal(normalizeValidatedIntegerScore(0), 1)
+  assert.equal(normalizeValidatedIntegerScore(10.5), 10)
+  assert.equal(normalizeValidatedIntegerScore(Number.NaN), 1)
 })
 
 test('常量: INTEGER_SCORE / HALF_STEP_SCORE 约束正确', () => {
