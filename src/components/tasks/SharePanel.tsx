@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -49,6 +50,8 @@ export function SharePanel({ taskId, onClose }: Props) {
   const [expiresDays, setExpiresDays] = useState('7')
   const [actingUserId, setActingUserId] = useState<string | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [confirmRemoveUser, setConfirmRemoveUser] = useState<string | null>(null)
+  const [confirmRevokeShare, setConfirmRevokeShare] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -138,8 +141,14 @@ export function SharePanel({ taskId, onClose }: Props) {
     }
   }
 
-  async function removeCollaborator(userId: string) {
-    if (!confirm('确定移除该协作者？移除后ta将无法再访问此任务。')) return
+  function promptRemoveCollaborator(userId: string) {
+    setConfirmRemoveUser(userId)
+  }
+
+  async function confirmRemoveCollaborator() {
+    const userId = confirmRemoveUser
+    if (!userId) return
+    setConfirmRemoveUser(null)
     setActingUserId(userId)
     setActionError(null)
     try {
@@ -187,8 +196,14 @@ export function SharePanel({ taskId, onClose }: Props) {
     }
   }
 
-  async function revokeShare(shareId: string) {
-    if (!confirm('确定吊销此共享链接？吊销后将无法通过该链接访问。')) return
+  function promptRevokeShare(shareId: string) {
+    setConfirmRevokeShare(shareId)
+  }
+
+  async function confirmRevokeShareAction() {
+    const shareId = confirmRevokeShare
+    if (!shareId) return
+    setConfirmRevokeShare(null)
     setRevokingId(shareId)
     setActionError(null)
     try {
@@ -382,7 +397,7 @@ export function SharePanel({ taskId, onClose }: Props) {
                           <option value="EDITOR" className="bg-[#0f0f17]">编辑者</option>
                         </select>
                         <button
-                          onClick={() => removeCollaborator(c.userId)}
+                          onClick={() => promptRemoveCollaborator(c.userId)}
                           disabled={actingUserId === c.userId}
                           className="p-1.5 rounded-md hover:bg-red-500/10 text-gray-500 hover:text-red-400 disabled:opacity-50"
                           title="移除"
@@ -466,7 +481,7 @@ export function SharePanel({ taskId, onClose }: Props) {
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                         <button
-                          onClick={() => revokeShare(s.id)}
+                          onClick={() => promptRevokeShare(s.id)}
                           disabled={revokingId === s.id}
                           className="p-1.5 rounded-md hover:bg-red-500/10 text-gray-500 hover:text-red-400 flex-shrink-0 disabled:opacity-50"
                           title="吊销"
@@ -502,6 +517,32 @@ export function SharePanel({ taskId, onClose }: Props) {
           )}
         </div>
       </div>
+
+      {/* Remove Collaborator Confirmation */}
+      <ConfirmDialog
+        open={!!confirmRemoveUser}
+        title="移除协作者"
+        message={confirmRemoveUser ? '确定移除该协作者？移除后该用户将无法再访问此任务。' : ''}
+        confirmText="确认移除"
+        cancelText="取消"
+        variant="danger"
+        loading={!!(confirmRemoveUser && actingUserId === confirmRemoveUser)}
+        onConfirm={confirmRemoveCollaborator}
+        onCancel={() => setConfirmRemoveUser(null)}
+      />
+
+      {/* Revoke Share Confirmation */}
+      <ConfirmDialog
+        open={!!confirmRevokeShare}
+        title="吊销共享链接"
+        message={confirmRevokeShare ? '确定吊销此共享链接？吊销后将无法通过该链接访问本任务。' : ''}
+        confirmText="确认吊销"
+        cancelText="取消"
+        variant="warning"
+        loading={!!(confirmRevokeShare && revokingId === confirmRevokeShare)}
+        onConfirm={confirmRevokeShareAction}
+        onCancel={() => setConfirmRevokeShare(null)}
+      />
     </div>
   )
 }
