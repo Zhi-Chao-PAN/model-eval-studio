@@ -83,7 +83,6 @@ export async function POST(
     }
 
     const modelsData = task.models.map((m) => {
-      const metrics = m.hardMetricsJson ? JSON.parse(m.hardMetricsJson) : null
       return {
         modelCode: m.modelCode,
         hardMetricsJson: m.hardMetricsJson,
