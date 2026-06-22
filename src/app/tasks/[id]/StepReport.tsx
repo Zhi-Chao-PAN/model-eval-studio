@@ -574,6 +574,24 @@ export default function StepReport({ task, onRefresh }: Props) {
           </div>
         </div>
 
+        {/* Prerequisite warnings */}
+        {models.length === 0 && (
+          <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.05]">
+            <AlertTriangle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="text-[12px] text-amber-200/80 leading-relaxed">
+              尚未添加任何待测模型。请先在「截图分析」步骤上传看板截图识别模型，或在「产物分析」步骤手动添加模型代号。
+            </div>
+          </div>
+        )}
+        {models.length > 0 && !models.some((m: any) => m.artifacts?.length > 0) && (
+          <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.05]">
+            <AlertTriangle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="text-[12px] text-amber-200/80 leading-relaxed">
+              模型尚未上传产物。建议先在「产物分析」步骤为每个模型上传输出产物，以获得更准确的评估结果。
+            </div>
+          </div>
+        )}
+
         {/* Model tabs */}
         {models.length > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap">
