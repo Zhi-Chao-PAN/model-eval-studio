@@ -43,6 +43,12 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
   const abortRef = useRef<AbortController | null>(null)
   const promptAbortRef = useRef<AbortController | null>(null)
 
+  // Clean up any in-flight streams when the component unmounts
+  useEffect(() => () => {
+    abortRef.current?.abort()
+    promptAbortRef.current?.abort()
+  }, [])
+
   // 如果任务已有 description，预填
   useEffect(() => {
     if (task.description && !generatedPrompt) {

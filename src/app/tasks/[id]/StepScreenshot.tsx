@@ -162,6 +162,11 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
   const [streamText, setStreamText] = useState('')
   const abortRef = useRef<AbortController | null>(null)
 
+  // Abort any in-flight screenshot analysis stream on unmount
+  useEffect(() => () => {
+    abortRef.current?.abort()
+  }, [])
+
   const models = task.models || []
 
   async function loadSavedScreenshots() {

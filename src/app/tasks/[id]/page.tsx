@@ -172,6 +172,12 @@ export default function TaskPage() {
   useEffect(() => { loadTask(); loadMessages() }, [taskId])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamingContent, currentStep, chatOpen])
 
+  // Clean up any in-flight chat stream and auto-report timer on unmount
+  useEffect(() => () => {
+    abortRef.current?.abort()
+    if (autoReportNoteTimerRef.current) window.clearTimeout(autoReportNoteTimerRef.current)
+  }, [])
+
   // 点击外部关闭导出菜单
   useEffect(() => {
     if (!exportMenuOpen) return
