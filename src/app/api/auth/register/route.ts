@@ -8,6 +8,16 @@ import { consumeRateLimit, getRequestIp, rateLimitResponse } from '@/lib/rate-li
 
 class RegistrationError extends Error {}
 
+// Usernames allow:
+//  - ASCII letters, digits
+//  - CJK Unified Ideographs (Chinese/Japanese/Korean characters)
+//  - underscore, hyphen, dot separators (no leading/trailing due to trim)
+// Prohibits: whitespace, control chars, angle brackets, slashes, quotes,
+// backslashes, @ (reserved for future email login), etc.
+const USERNAME_RE = /^[\p{L}\p{N}_.-]{3,32}$/u
+const MAX_INVITE_CODE_LENGTH = 64
+const MAX_PASSWORD_LENGTH = 200
+
 export async function POST(request: Request) {
   const startedAt = Date.now()
   let userId: string | null = null
@@ -16,7 +26,12 @@ export async function POST(request: Request) {
   let username = ''
 
   try {
-    const body = await request.json()
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      errorMsg = '请求内容格式无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
     const inviteCode = typeof body.inviteCode === 'string' ? body.inviteCode.trim() : ''
     username = typeof body.username === 'string' ? body.username.trim() : ''
     const password = typeof body.password === 'string' ? body.password : ''
@@ -36,12 +51,21 @@ export async function POST(request: Request) {
       errorMsg = '注册请求过于频繁'
       return rateLimitResponse(rateLimit)
     }
-    if (username.length < 3 || username.length > 32) {
-      errorMsg = '用户名长度需为 3-32 个字符'
+
+    if (inviteCode.length > MAX_INVITE_CODE_LENGTH) {
+      errorMsg = '邀请码格式无效'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
-    if (password.length < 8 || password.length > 128) {
-      errorMsg = '密码长度需为 8-128 个字符'
+    if (!USERNAME_RE.test(username)) {
+      errorMsg = '用户名仅允许 3-32 位中英文、数字、下划线、连字符或点'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (password.length < 8) {
+      errorMsg = '密码长度不能少于 8 个字符'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (password.length > MAX_PASSWORD_LENGTH) {
+      errorMsg = '密码长度不能超过 200 个字符'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
@@ -94,10 +118,12 @@ export async function POST(request: Request) {
       throw error
     }
 
+    // Regenerate session on privilege change (login after registration) to
+    // prevent session fixation. iron-session save() rotates the cookie.
     const session = await getSession()
     session.userId = user.id
     session.username = user.username
-    session.role = user.role as any
+    session.role = user.role as 'ADMIN' | 'USER'
     await session.save()
 
     userId = user.id
