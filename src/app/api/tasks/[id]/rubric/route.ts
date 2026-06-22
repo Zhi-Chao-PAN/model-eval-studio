@@ -11,6 +11,7 @@ import {
 } from '@/lib/rubric-templates'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { isValidCuid } from '@/lib/utils'
 
 // 获取任务的评分规则
 export async function GET(
@@ -21,6 +22,7 @@ export async function GET(
     const session = await requireAuth()
     if (!session) return apiError('未登录', 401)
     const { id } = await params
+    if (!isValidCuid(id)) return apiError('任务 ID 无效', 400)
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'VIEWER')
@@ -72,6 +74,7 @@ export async function PUT(
     if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id } = await params
+    if (!isValidCuid(id)) return apiError('任务 ID 无效', 400)
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'OWNER')

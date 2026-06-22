@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
 import { parseTrajectoryScreenshots } from '@/lib/trajectory-screenshots'
 import { getTaskAccess, hasAccessLevel, requireAccess } from '@/lib/task-access'
-import { clampDbText } from '@/lib/utils'
+import { clampDbText, isValidCuid } from '@/lib/utils'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { safeServerError } from '@/lib/api-error'
 
@@ -31,6 +31,7 @@ export async function GET(
     }
 
     const { id } = await params
+    if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
     const { access, task: accessTask } = await getTaskAccess(id, session)
     const accessDenied = requireAccess(access, 'VIEWER')
@@ -154,6 +155,7 @@ export async function PUT(
   if (!rl.allowed) return rateLimitResponse(rl)
 
   const { id } = await params
+  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   const updatedFields: string[] = []
@@ -300,6 +302,7 @@ export async function DELETE(
   if (!rl.allowed) return rateLimitResponse(rl)
 
   const { id } = await params
+  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let taskTitle = ''

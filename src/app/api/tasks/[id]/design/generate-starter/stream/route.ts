@@ -11,6 +11,7 @@ import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
+import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -39,6 +40,9 @@ export async function POST(
     return new Response(JSON.stringify({ error: '未登录' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
   }
   const { id } = await params
+  if (!isValidCuid(id)) {
+    return new Response(JSON.stringify({ error: '任务 ID 无效' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
 
   const rateLimit = await consumeRateLimit({
     scope: 'ai-design',

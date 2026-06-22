@@ -82,6 +82,7 @@ export async function POST(
     userId = session.userId
 
     const { id, modelId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId)) return apiError('参数格式无效', 400)
     taskId = id
     const rateLimit = await consumeRateLimit({
       scope: 'ai-artifact',

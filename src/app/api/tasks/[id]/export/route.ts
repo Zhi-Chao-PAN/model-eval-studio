@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -178,6 +179,7 @@ export async function GET(
   if (!session) return apiError('未登录', 401)
   userId = session.userId
   const { id } = await params
+  if (!isValidCuid(id)) return apiError('任务 ID 无效', 400)
   taskId = id
 
   // Export builds a ZIP in memory and serializes all task data; moderate

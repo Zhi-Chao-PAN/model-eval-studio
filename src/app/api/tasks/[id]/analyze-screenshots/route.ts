@@ -10,7 +10,7 @@ import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
-import { clampDbText } from '@/lib/utils'
+import { clampDbText, isValidCuid } from '@/lib/utils'
 import { storeArtifactFile, deleteArtifactFile } from '@/lib/artifact-storage'
 import {
   parseTrajectoryScreenshots,
@@ -104,6 +104,7 @@ export async function POST(
     return apiError('未登录', 401)
   }
   const { id } = await params
+  if (!isValidCuid(id)) return apiError('任务 ID 无效', 400)
 
   const rateLimit = await consumeRateLimit({
     scope: 'ai-screenshot',
