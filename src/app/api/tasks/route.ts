@@ -127,26 +127,29 @@ export async function GET() {
 // 创建新任务
 export async function POST(request: Request) {
   const startedAt = Date.now()
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
-  }
-
-  // Rate limit task creation to prevent abuse
-  const rl = await consumeRateLimit({
-    scope: 'task-create',
-    identifier: session.userId,
-    limit: 30,
-    windowMs: 10 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
 
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let taskId: string | null = null
   let safeTitle = ''
+  let sessionUserId = ''
 
   try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    sessionUserId = session.userId
+
+    // Rate limit task creation to prevent abuse
+    const rl = await consumeRateLimit({
+      scope: 'task-create',
+      identifier: session.userId,
+      limit: 30,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       errorMsg = '请求内容格式无效'
@@ -208,14 +211,16 @@ export async function POST(request: Request) {
     errorMsg = message
     return NextResponse.json({ error: '创建任务失败：' + message }, { status: 500 })
   } finally {
-    logAudit(request, {
-      action: 'TASK_CREATE',
-      userId: session.userId,
-      taskId,
-      status,
-      error: errorMsg,
-      durationMs: Date.now() - startedAt,
-      detail: { title: safeTitle },
-    })
+    if (sessionUserId) {
+      logAudit(request, {
+        action: 'TASK_CREATE',
+        userId: sessionUserId,
+        taskId,
+        status,
+        error: errorMsg,
+        durationMs: Date.now() - startedAt,
+        detail: { title: safeTitle },
+      })
+    }
   }
 }

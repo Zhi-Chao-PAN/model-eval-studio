@@ -13,27 +13,33 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; modelId: string }> },
 ) {
   const startedAt = Date.now()
-  const session = await requireAuth()
-  if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
-  // Rate limit model deletion
-  const rl = await consumeRateLimit({
-    scope: 'model-delete',
-    identifier: session.userId,
-    limit: 30,
-    windowMs: 10 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
-
-  const { id, modelId } = await params
-  if (!isValidCuid(id) || !isValidCuid(modelId)) {
-    return NextResponse.json({ error: '参数格式无效' }, { status: 400 })
-  }
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let modelCode = ''
+  let sessionUserId = ''
+  let taskId = ''
 
   try {
+    const session = await requireAuth()
+    if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    sessionUserId = session.userId
+
+    // Rate limit model deletion
+    const rl = await consumeRateLimit({
+      scope: 'model-delete',
+      identifier: session.userId,
+      limit: 30,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
+    const { id, modelId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId)) {
+      return NextResponse.json({ error: '参数格式无效' }, { status: 400 })
+    }
+    taskId = id
+
     const { access } = await getTaskAccess(id, session)
     if (access !== 'OWNER') {
       errorMsg = '只有任务创建者可以删除模型'
@@ -69,14 +75,16 @@ export async function DELETE(
     errorMsg = message
     return NextResponse.json({ error: '删除模型失败：' + message }, { status: 500 })
   } finally {
-    logAudit(request, {
-      action: 'MODEL_DELETE',
-      userId: session.userId,
-      taskId: id,
-      status,
-      error: errorMsg,
-      durationMs: Date.now() - startedAt,
-      detail: { modelCode },
-    })
+    if (sessionUserId) {
+      logAudit(request, {
+        action: 'MODEL_DELETE',
+        userId: sessionUserId,
+        taskId,
+        status,
+        error: errorMsg,
+        durationMs: Date.now() - startedAt,
+        detail: { modelCode },
+      })
+    }
   }
 }

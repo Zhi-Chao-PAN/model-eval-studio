@@ -11,24 +11,27 @@ const MIN_PASSWORD_LENGTH = 8
 
 export async function PUT(request: Request) {
   const startedAt = Date.now()
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
-  }
-
-  // Rate limit password changes to prevent brute-force of current password
-  const rl = await consumeRateLimit({
-    scope: 'user-password-change',
-    identifier: session.userId,
-    limit: 10,
-    windowMs: 30 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
 
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
+  let sessionUserId = ''
 
   try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    sessionUserId = session.userId
+
+    // Rate limit password changes to prevent brute-force of current password
+    const rl = await consumeRateLimit({
+      scope: 'user-password-change',
+      identifier: session.userId,
+      limit: 10,
+      windowMs: 30 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       errorMsg = '请求内容格式无效'
@@ -86,12 +89,14 @@ export async function PUT(request: Request) {
     errorMsg = message
     return NextResponse.json({ error: '修改密码失败：' + message }, { status: 500 })
   } finally {
-    logAudit(request, {
-      action: 'PASSWORD_CHANGE',
-      userId: session.userId,
-      status,
-      error: errorMsg,
-      durationMs: Date.now() - startedAt,
-    })
+    if (sessionUserId) {
+      logAudit(request, {
+        action: 'PASSWORD_CHANGE',
+        userId: sessionUserId,
+        status,
+        error: errorMsg,
+        durationMs: Date.now() - startedAt,
+      })
+    }
   }
 }

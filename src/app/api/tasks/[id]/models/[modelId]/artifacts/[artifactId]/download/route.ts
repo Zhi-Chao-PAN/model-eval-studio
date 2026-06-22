@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/session'
 import { hasStoredArtifactFile, readArtifactFile } from '@/lib/artifact-storage'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
@@ -64,6 +65,15 @@ export async function GET(
   try {
     const session = await requireAuth()
     if (!session) return Response.json({ error: '未登录' }, { status: 401 })
+
+    // Rate limit downloads to prevent bandwidth abuse
+    const rl = await consumeRateLimit({
+      scope: 'artifact-download',
+      identifier: session.userId,
+      limit: 60,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id, modelId, artifactId } = await params
     if (!isValidCuid(id) || !isValidCuid(modelId) || !isValidCuid(artifactId)) {

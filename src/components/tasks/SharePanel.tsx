@@ -466,6 +466,7 @@ export function SharePanel({ taskId, onClose }: Props) {
                           onClick={() => copyShareUrl(s.token)}
                           className="p-1.5 rounded-md hover:bg-white/5 text-gray-500 hover:text-gray-300 flex-shrink-0"
                           title="复制链接"
+                          aria-label={copiedToken === s.token ? '已复制链接' : '复制共享链接'}
                         >
                           {copiedToken === s.token
                             ? <Check className="h-3.5 w-3.5 text-emerald-400" />
@@ -477,6 +478,7 @@ export function SharePanel({ taskId, onClose }: Props) {
                           rel="noopener,noreferrer"
                           className="p-1.5 rounded-md hover:bg-white/5 text-gray-500 hover:text-indigo-300 flex-shrink-0"
                           title="打开链接预览"
+                          aria-label="打开共享链接预览"
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
@@ -485,6 +487,7 @@ export function SharePanel({ taskId, onClose }: Props) {
                           disabled={revokingId === s.id}
                           className="p-1.5 rounded-md hover:bg-red-500/10 text-gray-500 hover:text-red-400 flex-shrink-0 disabled:opacity-50"
                           title="吊销"
+                          aria-label="吊销此共享链接"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
