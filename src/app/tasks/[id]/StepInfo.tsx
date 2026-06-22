@@ -10,6 +10,7 @@ interface Props {
   task: any
   onUpdate: (data: any) => void
   onNext?: () => void
+  onPrev?: () => void
 }
 
 const TEMPLATE_OPTIONS = [
@@ -17,7 +18,7 @@ const TEMPLATE_OPTIONS = [
   { key: 'AGENT', label: 'Agent 智能体评测（6 维度加权）', desc: '指令遵循+规划+工具+推理+幻觉+交付' },
 ]
 
-export default function StepInfo({ task, onUpdate, onNext }: Props) {
+export default function StepInfo({ task, onUpdate, onNext, onPrev }: Props) {
   const [form, setForm] = useState({
     title: task.title || '',
     description: task.description || '',
@@ -326,11 +327,17 @@ export default function StepInfo({ task, onUpdate, onNext }: Props) {
       </div>
 
       <div className="flex items-center gap-3 pt-1">
+        {onPrev && (
+          <Button onClick={onPrev} variant="ghost" disabled={saving}>
+            ← 返回任务设计
+          </Button>
+        )}
+        <div className="flex-1" />
         <Button onClick={save} loading={saving} variant="secondary">
           <Save className="h-3.5 w-3.5" /> 保存信息
         </Button>
         {onNext && (
-          <Button onClick={() => { save().then(() => onNext()) }} disabled={saving}>
+          <Button onClick={() => { save().then((ok) => { if (ok !== false) onNext() }) }} disabled={saving}>
             下一步：截图分析 <ArrowRight className="h-3.5 w-3.5 ml-1" />
           </Button>
         )}

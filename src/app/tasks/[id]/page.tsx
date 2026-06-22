@@ -384,10 +384,10 @@ export default function TaskPage() {
     if (!task) return null
     switch (currentStep) {
       case 'DESIGN': return <StepDesign task={task} onUpdate={handleTaskUpdate} onGoToInfo={() => goToStep('INFO')} />
-      case 'INFO': return <StepInfo task={task} onUpdate={handleTaskUpdate} onNext={() => goToStep('SCREENSHOT')} />
-      case 'SCREENSHOT': return <StepScreenshot task={task} onRefresh={() => loadTask({ forceStep: 'SCREENSHOT' })} onNext={() => goToStep('ARTIFACT')} />
-      case 'ARTIFACT': return <StepArtifact task={task} onRefresh={() => loadTask({ forceStep: 'ARTIFACT' })} onNext={() => goToStep('REPORT')} />
-      case 'REPORT': return <StepReport task={task} onRefresh={() => loadTask({ forceStep: 'REPORT' })} />
+      case 'INFO': return <StepInfo task={task} onUpdate={handleTaskUpdate} onNext={() => goToStep('SCREENSHOT')} onPrev={() => goToStep('DESIGN')} />
+      case 'SCREENSHOT': return <StepScreenshot task={task} onRefresh={() => loadTask({ forceStep: 'SCREENSHOT' })} onNext={() => goToStep('ARTIFACT')} onPrev={() => goToStep('INFO')} />
+      case 'ARTIFACT': return <StepArtifact task={task} onRefresh={() => loadTask({ forceStep: 'ARTIFACT' })} onNext={() => goToStep('REPORT')} onPrev={() => goToStep('SCREENSHOT')} />
+      case 'REPORT': return <StepReport task={task} onRefresh={() => loadTask({ forceStep: 'REPORT' })} onPrev={() => goToStep('ARTIFACT')} />
       default: return null
     }
   }
