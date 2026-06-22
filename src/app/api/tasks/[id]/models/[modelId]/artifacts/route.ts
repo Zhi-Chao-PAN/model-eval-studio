@@ -5,6 +5,8 @@ import { buildFilePreview, parseFile, parseZip, sanitizeParsedText } from '@/lib
 import { deleteArtifactFile, storeArtifactFile } from '@/lib/artifact-storage'
 import { logAudit } from '@/lib/audit'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { sanitizeFileName, validateFileName, validateMimeType } from '@/lib/file-validation'
 
 export const runtime = 'nodejs'
 
@@ -12,16 +14,6 @@ const MAX_FILES_PER_UPLOAD = 10
 const MAX_SINGLE_UPLOAD_BYTES = 25 * 1024 * 1024
 const MAX_TOTAL_UPLOAD_BYTES = 60 * 1024 * 1024
 const MAX_STORED_TEXT_CHARS = 240_000
-const MAX_FILENAME_LENGTH = 180
-// Block executable/binary types that can cause harm if downloaded and run.
-// Code artifacts (.js, .py, .sh, .ps1, .bat, .cmd, .html) are allowed as they
-// are evaluation subjects served with Content-Disposition: attachment.
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'msi', 'msix', 'msp', 'mst', 'com', 'scr', 'pif', 'dll', 'sys',
-  'drv', 'ocx', 'cpl', 'hta', 'vbs', 'vbe', 'wsh', 'wsf', 'app', 'dmg', 'so',
-  'deb', 'rpm', 'apk', 'jar', 'wasm',
-])
-const MIME_TYPE_RE = /^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+(?:\s*;\s*[a-zA-Z0-9!#$&^_.+-]+=[^\s;]+)*$/
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -31,48 +23,8 @@ function dbText(value: unknown): string {
   return sanitizeParsedText(String(value || '')).slice(0, MAX_STORED_TEXT_CHARS)
 }
 
-function sanitizeFileName(raw: string, fallback: string): string {
-  if (typeof raw !== 'string' || !raw) return fallback
-  // Normalize NFKC, strip control chars + null bytes, replace path separators and unsafe chars
-  let name = raw.normalize('NFKC').replace(/[\x00-\x1f\x7f\\/]/g, '-').trim()
-  // Collapse runs of dashes / whitespace that resulted from stripping
-  name = name.replace(/\s+/g, ' ').replace(/-{2,}/g, '-')
-  if (!name) return fallback
-  if (name.length > MAX_FILENAME_LENGTH) name = name.slice(0, MAX_FILENAME_LENGTH)
-  // Prevent leading dots (hidden files on *nix)
-  name = name.replace(/^\.+/, '')
-  return name || fallback
-}
-
 function fileName(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') return fallback
   return sanitizeFileName(value, fallback)
-}
-
-function getFileExtension(name: string): string {
-  const base = name.split(/[\\/]/).pop() || name
-  const dot = base.lastIndexOf('.')
-  if (dot < 0 || dot === base.length - 1) return ''
-  return base.slice(dot + 1).toLowerCase()
-}
-
-function validateFileName(name: string): string | null {
-  if (!name) return '文件名不能为空'
-  if (name.length > MAX_FILENAME_LENGTH) return `文件名不能超过 ${MAX_FILENAME_LENGTH} 个字符`
-  // Check final extension (defends against double extensions like report.pdf.exe)
-  const ext = getFileExtension(name)
-  if (ext && BLOCKED_EXTENSIONS.has(ext)) {
-    return `不允许上传可执行文件类型（.${ext}）`
-  }
-  return null
-}
-
-function validateMimeType(mime: string): string | null {
-  if (!mime) return null
-  if (mime.length > 120) return 'MIME 类型过长'
-  if (/[\x00-\x1f\x7f]/.test(mime)) return 'MIME 类型含非法字符'
-  if (!MIME_TYPE_RE.test(mime.trim())) return 'MIME 类型格式不合法'
-  return null
 }
 
 async function requireModel(taskId: string, modelId: string) {
@@ -99,6 +51,14 @@ export async function POST(
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
     userId = session.userId
 
+    const rateLimit = await consumeRateLimit({
+      scope: 'artifact-upload',
+      identifier: session.userId,
+      limit: 30,
+      windowMs: 60 * 60_000,
+    })
+    if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
+
     const { id, modelId } = await params
     taskId = id
 
@@ -112,6 +72,19 @@ export async function POST(
     const model = await requireModel(id, modelId)
     if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
     modelCode = model.modelCode
+
+    // Defense-in-depth: reject oversized requests at the header level before
+    // streaming/parsing the multipart body. The per-file limits below still
+    // apply as a second layer.
+    const contentLengthHeader = request.headers.get('content-length')
+    if (contentLengthHeader) {
+      const declaredLen = Number(contentLengthHeader)
+      if (Number.isFinite(declaredLen) && declaredLen > MAX_TOTAL_UPLOAD_BYTES + 1024 * 1024) {
+        // Allow 1MB of multipart overhead (boundaries, headers per part)
+        errorMsg = `请求体过大，单次上传总大小不能超过 ${Math.round(MAX_TOTAL_UPLOAD_BYTES / 1024 / 1024)}MB`
+        return NextResponse.json({ error: errorMsg }, { status: 413 })
+      }
+    }
 
     const contentType = request.headers.get('content-type') || ''
 
@@ -235,9 +208,11 @@ export async function POST(
         parsedText = '[图片文件已保存，请下载到本地打开验收后上传产物效果截图]'
       }
 
-      const ext = getFileExtension(safeName)
+      const isZip = /\.zip$/i.test(safeName)
+        || declaredMime === 'application/zip'
+        || declaredMime === 'application/x-zip-compressed'
       try {
-        if (ext === 'zip' || declaredMime === 'application/zip' || declaredMime === 'application/x-zip-compressed') {
+        if (isZip) {
           const zipResult = await parseZip(buffer)
           parsedText = parsedText || zipResult.files.map((entry) => `=== ${entry.name} ===\n${entry.text}`).join('\n\n')
           if (zipResult.preview) {
