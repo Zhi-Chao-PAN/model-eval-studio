@@ -45,7 +45,7 @@ export default function StepInfo({ task, onUpdate }: Props) {
     try {
       const res = await fetch('/api/tasks/' + task.id + '/rubric')
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || '评分规则加载失败（HTTP ' + res.status + '）')
+      if (!res.ok) throw new Error(data.error || '评分规则加载失败，请稍后重试')
       if (data.rubric) {
         setRubric(data.rubric)
         setIsCustom(data.isCustom || false)
@@ -65,8 +65,8 @@ export default function StepInfo({ task, onUpdate }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       })
-      let data; try { data = await res.json(); } catch { throw new Error('保存失败（HTTP ' + res.status + '）') }
-      if (!res.ok) throw new Error(data.error || '保存失败')
+      let data; try { data = await res.json(); } catch { throw new Error('保存失败，服务器返回了非预期内容') }
+      if (!res.ok) throw new Error(data.error || '保存失败，请稍后重试')
       if (data.task) {
         onUpdate(data.task)
         setSaved(true)

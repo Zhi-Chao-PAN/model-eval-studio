@@ -71,12 +71,12 @@ export function SharePanel({ taskId, onClose }: Props) {
       if (activeTab === 'collaborators') {
         const res = await fetch('/api/tasks/' + taskId + '/collaborators')
         const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.error || '加载协作者列表失败（HTTP ' + res.status + '）')
+        if (!res.ok) throw new Error(data.error || '加载协作者列表失败，请稍后重试')
         setCollaborators(data.collaborators || [])
       } else {
         const res = await fetch('/api/tasks/' + taskId + '/shares')
         const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.error || '加载共享链接失败（HTTP ' + res.status + '）')
+        if (!res.ok) throw new Error(data.error || '加载共享链接失败，请稍后重试')
         setShares(data.shares || [])
       }
     } catch (e: any) {
@@ -102,14 +102,14 @@ export function SharePanel({ taskId, onClose }: Props) {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        flashError(data.error || '添加失败')
+        flashError(data.error || '添加失败，请稍后重试')
         return
       }
       setAddUsername('')
       flashSuccess('已添加协作者 ' + username)
       loadData()
     } catch (e: any) {
-      flashError(e?.message || '添加失败')
+      flashError(e?.message || '添加失败，请检查网络连接')
     } finally {
       setAdding(false)
     }
@@ -126,13 +126,13 @@ export function SharePanel({ taskId, onClose }: Props) {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        flashError(data.error || '角色更新失败')
+        flashError(data.error || '角色更新失败，请稍后重试')
         return
       }
       flashSuccess('角色已更新')
       loadData()
     } catch (e: any) {
-      flashError(e?.message || '角色更新失败')
+      flashError(e?.message || '角色更新失败，请检查网络连接')
     } finally {
       setActingUserId(null)
     }
@@ -148,13 +148,13 @@ export function SharePanel({ taskId, onClose }: Props) {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        flashError(data.error || '移除失败')
+        flashError(data.error || '移除失败，请稍后重试')
         return
       }
       flashSuccess('协作者已移除')
       loadData()
     } catch (e: any) {
-      flashError(e?.message || '移除失败')
+      flashError(e?.message || '移除失败，请检查网络连接')
     } finally {
       setActingUserId(null)
     }
@@ -175,13 +175,13 @@ export function SharePanel({ taskId, onClose }: Props) {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        flashError(data.error || '创建失败')
+        flashError(data.error || '创建共享链接失败，请稍后重试')
         return
       }
       flashSuccess('共享链接已创建')
       loadData()
     } catch (e: any) {
-      flashError(e?.message || '创建失败')
+      flashError(e?.message || '创建失败，请检查网络连接')
     } finally {
       setCreatingShare(false)
     }
@@ -195,13 +195,13 @@ export function SharePanel({ taskId, onClose }: Props) {
       const res = await fetch('/api/tasks/' + taskId + '/shares/' + shareId, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        flashError(data.error || '吊销失败')
+        flashError(data.error || '吊销链接失败，请稍后重试')
         return
       }
       flashSuccess('共享链接已吊销')
       loadData()
     } catch (e: any) {
-      flashError(e?.message || '吊销失败')
+      flashError(e?.message || '吊销失败，请检查网络连接')
     } finally {
       setRevokingId(null)
     }

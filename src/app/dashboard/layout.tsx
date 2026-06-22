@@ -1,6 +1,12 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/session'
 import { Topbar } from '@/components/topbar'
+
+export const metadata: Metadata = {
+  title: '控制台',
+  description: '查看你的评测任务列表，管理和跟踪所有模型测试评估项目。',
+}
 
 export default async function DashboardLayout({
   children,

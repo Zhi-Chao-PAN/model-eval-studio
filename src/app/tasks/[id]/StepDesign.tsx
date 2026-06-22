@@ -80,7 +80,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
       })
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'HTTP ' + res.status)
+        throw new Error(data.error || '出题服务暂不可用，请稍后重试')
       }
       setPromptPhase('streaming')
       const reader = res.body.getReader()
@@ -186,7 +186,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
       })
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'HTTP ' + res.status)
+        throw new Error(data.error || '起始代码生成服务暂不可用，请稍后重试')
       }
       setStarterPhase('streaming')
       const reader = res.body.getReader()
@@ -269,7 +269,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || '保存失败')
+      if (!res.ok) throw new Error(data.error || '保存失败，请稍后重试')
       if (data.task) {
         onUpdate(data.task)
         onGoToInfo()
