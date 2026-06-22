@@ -236,6 +236,17 @@ export function parseStoredEvidenceChain(raw?: string | null): SerializedEvidenc
 // ── 报告引用辅助 ─────────────────────────────────────────────────────────
 
 /**
+ * 从 `StoredModelArtifactAnalysis`（含可选 `evidenceChain` JSON 字符串）中
+ * 解析出可用的 SerializedEvidenceChain。无 evidenceChain 时返回 null。
+ */
+export function loadEvidenceChainFromAnalysis(
+  analysis: { evidenceChain?: string | null } | null | undefined,
+): SerializedEvidenceChain | null {
+  if (!analysis || !analysis.evidenceChain) return null
+  return parseStoredEvidenceChain(analysis.evidenceChain)
+}
+
+/**
  * 给"交付效率 / 产物质量 / 综合评价"准备一段紧凑的证据摘要，注入报告 prompt。
  * 严格过滤：只挑选 auto_runner / parser / analysis_runtime 来源；
  * 不包含 tester_upload 的产物效果截图证据——那块由 `verificationSummary` 负责。
@@ -245,11 +256,11 @@ export function buildEvidenceChainSummaryForReport(
   maxChars = 1800,
 ): string {
   if (!chain || chain.items.length === 0) return ''
-  const allowSources = new Set<EVIDENCE_SOURCE_VALUES>(['auto_runner', 'parser', 'analysis_runtime'])
+  const allowSources = new Set<EvidenceSource>(['auto_runner', 'parser', 'analysis_runtime'])
   const lines: string[] = []
   let used = 0
   for (const item of chain.items) {
-    if (!allowSources.has(item.source as EVIDENCE_SOURCE_VALUES)) continue
+    if (!allowSources.has(item.source as EvidenceSource)) continue
     const head = `· [${item.evidenceType}] ${item.title}`
     const tail = item.summary ? ` — ${item.summary}` : ''
     const line = head + tail

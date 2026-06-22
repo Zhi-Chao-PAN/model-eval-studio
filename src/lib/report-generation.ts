@@ -34,6 +34,10 @@ import {
   FILE_ANALYSIS_CHAR_LIMIT,
 } from '@/lib/model-artifact-analysis'
 import {
+  buildEvidenceChainSummaryForReport,
+  loadEvidenceChainFromAnalysis,
+} from '@/lib/artifact-evidence-chain'
+import {
   ReportParseError,
   parseReportStrict,
   type ParsedModelReport,
@@ -332,6 +336,11 @@ export async function generateReportForModel(
     verificationSummary,
     hasTrajectory: Boolean(processText?.trim()),
     taskType: task.requirementType || undefined,
+    evidenceChainSummary: buildEvidenceChainSummaryForReport(
+      loadEvidenceChainFromAnalysis(
+        parseStoredModelArtifactAnalysis(model.artifactAnalysisJson),
+      ),
+    ),
     rubricGuidance,
   })
 
