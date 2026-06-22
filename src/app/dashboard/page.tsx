@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, FlaskConical, FileText, Image as ImageIcon, Wand2,
   Package, FileCheck2, Loader2, ArrowRight, Trash2, Circle,
-  AlertTriangle, RefreshCw, Lightbulb,
+  AlertTriangle, RefreshCw, Lightbulb, Code2, Bot,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,6 +52,7 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [newTitle, setNewTitle] = useState('')
+  const [newCategory, setNewCategory] = useState<'CODING' | 'AGENT'>('CODING')
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'mine' | 'shared'>('mine')
@@ -87,7 +88,7 @@ export default function DashboardPage() {
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTitle.trim() }),
+        body: JSON.stringify({ title: newTitle.trim(), category: newCategory }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.task) {
@@ -172,21 +173,50 @@ export default function DashboardPage() {
 
       {showNew && (
         <div className="panel p-5 mb-6 animate-rise">
-          <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1">
-              <Input
-                autoFocus
-                value={newTitle}
-                onChange={e => setNewTitle(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Escape') { setShowNew(false); setNewTitle('') } }}
-                placeholder="输入新任务名称，例如：作品集项目方向决策评估"
-              />
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <Input
+                  autoFocus
+                  value={newTitle}
+                  onChange={e => setNewTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Escape') { setShowNew(false); setNewTitle('') } }}
+                  placeholder="输入新任务名称，例如：作品集项目方向决策评估"
+                />
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button type="button" variant="ghost" size="sm" onClick={() => { setShowNew(false); setNewTitle('') }}>取消</Button>
+                <Button type="submit" size="sm" loading={creating} disabled={!newTitle.trim()}>
+                  创建并进入 <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <Button type="button" variant="ghost" size="sm" onClick={() => { setShowNew(false); setNewTitle('') }}>取消</Button>
-              <Button type="submit" size="sm" loading={creating} disabled={!newTitle.trim()}>
-                创建并进入 <ArrowRight className="h-3.5 w-3.5" />
-              </Button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-500 flex-shrink-0">任务类型：</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewCategory('CODING')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-all ${
+                    newCategory === 'CODING'
+                      ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-200'
+                      : 'border-white/10 text-gray-400 hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <Code2 className="h-3.5 w-3.5" /> 编程类
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewCategory('AGENT')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-all ${
+                    newCategory === 'AGENT'
+                      ? 'bg-fuchsia-500/20 border-fuchsia-500/40 text-fuchsia-200'
+                      : 'border-white/10 text-gray-400 hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <Bot className="h-3.5 w-3.5" /> Agent 类
+                </button>
+              </div>
             </div>
           </form>
         </div>
