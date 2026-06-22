@@ -69,3 +69,4 @@ COM4
 LPT1
 LPT2
 LPT3
+.vercel/.env.production.local
