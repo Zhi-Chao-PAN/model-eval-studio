@@ -5,7 +5,7 @@ import { decrypt } from '@/lib/crypto'
 import { validateApiKey, sanitizeAiError } from '@/lib/ai'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
-import { normalizeAiBaseUrl, parseAiProvider, assertSafeAiBaseUrl } from '@/lib/ai-endpoint'
+import { parseAiProvider, assertSafeAiBaseUrl } from '@/lib/ai-endpoint'
 
 const MAX_VALIDATE_MODEL_NAME = 120
 const MAX_VALIDATE_KEY = 500

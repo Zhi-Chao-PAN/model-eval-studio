@@ -145,7 +145,7 @@ export async function mapReduceSummarize(
   }
 
   // Reduce 阶段：合并所有摘要，再做一轮总摘要
-  let merged = summaries.join('\n\n---\n\n')
+  const merged = summaries.join('\n\n---\n\n')
 
   // 如果合并后还是超长，递归
   const maxMerged = Math.ceil(threshold * 0.8)

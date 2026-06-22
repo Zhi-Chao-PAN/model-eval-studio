@@ -158,7 +158,7 @@ export async function POST(request: Request) {
 
     const rawTitle = ((body as Record<string, unknown>).title ?? '').toString().trim()
     const { category: cat, requirementType: rt, requirementName: rn } = body as Record<string, unknown>
-    let { description: desc } = body as Record<string, unknown>
+    const { description: desc } = body as Record<string, unknown>
 
     if (!rawTitle) {
       errorMsg = '任务名称必填'
