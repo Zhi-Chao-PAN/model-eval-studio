@@ -5,6 +5,7 @@ import { requireAuth } from '@/lib/session'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { safeServerError } from '@/lib/api-error'
+import { isValidCuid } from '@/lib/utils'
 
 const ALLOWED_ROLES = new Set(['user', 'assistant', 'system'])
 const MAX_MESSAGE_LENGTH = 100_000
@@ -19,6 +20,7 @@ export async function GET(
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     const { id } = await params
+    if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'VIEWER')
@@ -53,6 +55,7 @@ export async function POST(
     if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
     const { id } = await params
+    if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return NextResponse.json({ error: '请求内容格式无效' }, { status: 400 })

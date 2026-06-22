@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
+import { isValidCuid } from '@/lib/utils'
 
 export async function POST(
   request: Request,
@@ -17,6 +18,7 @@ export async function POST(
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
   const { id } = await params
+  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
   const rateLimit = await consumeRateLimit({
     scope: 'ai-artifact-legacy',

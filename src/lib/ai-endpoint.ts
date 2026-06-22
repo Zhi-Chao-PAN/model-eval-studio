@@ -22,7 +22,13 @@ function isPrivateIpv4(address: string): boolean {
 function isPrivateIpv6(address: string): boolean {
   const normalized = address.toLowerCase().split('%')[0]
   if (normalized === '::' || normalized === '::1') return true
-  if (normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe8') || normalized.startsWith('fe9') || normalized.startsWith('fea') || normalized.startsWith('feb')) return true
+  // Unique local (fc00::/7), link-local (fe80::/10)
+  if (/^f[cd][0-9a-f]{2}/.test(normalized)) return true
+  if (/^fe[89ab][0-9a-f]/.test(normalized)) return true
+  // Multicast (ff00::/8)
+  if (normalized.startsWith('ff')) return true
+  // Site-local (fec0::/10 - deprecated)
+  if (/^fe[cd][0-9a-f]/.test(normalized)) return true
   const mapped = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)
   return mapped ? isPrivateIpv4(mapped[1]) : false
 }

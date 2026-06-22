@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/session'
 import { safeServerError } from '@/lib/api-error'
 import { getTaskAccess, hasAccessLevel } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { isValidCuid } from '@/lib/utils'
 
 const MAX_USERNAME_LENGTH = 64
 const MAX_COLLABORATORS_PER_TASK = 50
@@ -22,6 +23,7 @@ export async function GET(
     const session = await requireAuth()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
     const { id } = await params
+    if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
     const { access } = await getTaskAccess(id, session)
     if (!access || !hasAccessLevel(access, 'VIEWER')) {

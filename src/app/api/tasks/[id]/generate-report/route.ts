@@ -33,7 +33,7 @@ import {
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
-import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
+import { clampDbText, clampRequiredText, DB_TEXT_LIMITS, isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -79,6 +79,7 @@ export async function POST(
   }
 
   const { id } = await params
+  if (!isValidCuid(id)) return apiError('任务 ID 无效', 400)
   const rateLimit = await consumeRateLimit({
     scope: 'ai-report',
     identifier: session.userId,
