@@ -30,3 +30,23 @@ test('selects the real deliverable from a legacy concatenated zip', () => {
   assert.equal(preview?.primaryKind, 'document')
   assert.equal(preview?.entries?.some(entry => entry.name.includes('.fonts')), false)
 })
+
+test('blocks zip-slip path-traversal entries (../ and absolute paths)', () => {
+  // Classic zip-slip
+  assert.equal(shouldIgnoreArchiveEntry('../../../etc/passwd'), true)
+  assert.equal(shouldIgnoreArchiveEntry('subdir/../../malicious.sh'), true)
+  // Backslash variant
+  assert.equal(shouldIgnoreArchiveEntry('..\\..\\Windows\\System32\\cmd.exe'), true)
+  // Absolute paths
+  assert.equal(shouldIgnoreArchiveEntry('/etc/passwd'), true)
+  assert.equal(shouldIgnoreArchiveEntry('/var/log/evil'), true)
+  // Windows drive letters
+  assert.equal(shouldIgnoreArchiveEntry('C:\\Windows\\System32\\drivers\\etc\\hosts'), true)
+  assert.equal(shouldIgnoreArchiveEntry('D:/malware.exe'), true)
+  // Null-byte injection
+  assert.equal(shouldIgnoreArchiveEntry('report.pdf\x00.exe'), true)
+  // Normal nested entries are still allowed
+  assert.equal(shouldIgnoreArchiveEntry('src/main.py'), false)
+  assert.equal(shouldIgnoreArchiveEntry('deliverables/report.docx'), false)
+  assert.equal(shouldIgnoreArchiveEntry('README.md'), false)
+})

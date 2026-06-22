@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs'
 import mammoth from 'mammoth'
+import { sanitizeFileName } from '@/lib/file-validation'
 import {
   artifactEntryScore,
   escapePreviewHtml,
@@ -214,6 +215,31 @@ export async function buildFilePreview(
 const MAX_ARCHIVE_FILES = 200
 const MAX_ARCHIVE_ENTRY_BYTES = 15 * 1024 * 1024
 const MAX_ARCHIVE_TOTAL_BYTES = 60 * 1024 * 1024
+const MAX_ARCHIVE_ENTRY_NAME = 240
+
+function sanitizeEntryName(raw: string): string {
+  // Normalize path separators, strip traversal + control chars, cap length.
+  // We do NOT strip path segments entirely — nested folders inside a zip are
+  // normal (src/main.py) — but we strip any leading slashes / drive letters
+  // that survive shouldIgnoreArchiveEntry.
+  let name = raw
+    .replace(/\0/g, '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/^[a-zA-Z]:\//, '')
+  // Collapse any '/../' or '/./' traversal remnants
+  name = name.split('/').filter(s => s && s !== '..' && s !== '.').join('/')
+  if (name.length > MAX_ARCHIVE_ENTRY_NAME) {
+    // Preserve basename while truncating long directory prefix
+    const lastSlash = name.lastIndexOf('/')
+    const base = lastSlash >= 0 ? name.slice(lastSlash + 1) : name
+    const baseName = sanitizeFileName(base, 'entry')
+    const prefixLen = Math.max(0, MAX_ARCHIVE_ENTRY_NAME - baseName.length - 1)
+    const prefix = lastSlash >= 0 ? name.slice(0, prefixLen) : ''
+    name = prefix ? `${prefix}/${baseName}` : baseName
+  }
+  return name || 'entry'
+}
 
 export async function parseZip(buffer: Buffer): Promise<{
   files: { name: string; text: string }[]
@@ -224,8 +250,9 @@ export async function parseZip(buffer: Buffer): Promise<{
   const files: Array<{ name: string; text: string; buffer: Buffer; score: number }> = []
   let totalBytes = 0
 
-  for (const [name, file] of Object.entries(zip.files) as [string, ZipFileEntry][]) {
-    if (file.dir || shouldIgnoreArchiveEntry(name) || files.length >= MAX_ARCHIVE_FILES) continue
+  for (const [rawName, file] of Object.entries(zip.files) as [string, ZipFileEntry][]) {
+    if (file.dir || shouldIgnoreArchiveEntry(rawName) || files.length >= MAX_ARCHIVE_FILES) continue
+    const name = sanitizeEntryName(rawName)
     try {
       const fileBuffer = await file.async('nodebuffer')
       if (fileBuffer.length > MAX_ARCHIVE_ENTRY_BYTES) continue
