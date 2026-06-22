@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -47,6 +47,7 @@ const statusMeta: Record<string, { label: string; variant: any }> = {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [sharedTasks, setSharedTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -81,6 +82,33 @@ export default function DashboardPage() {
   }
 
   useEffect(() => { loadTasks() }, [])
+
+  // Keyboard shortcut: press '/' to focus search (when not in an input)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const active = document.activeElement as HTMLElement | null
+        if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return
+        if (active && active.isContentEditable) return
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      }
+      // 'N' key to open new task dialog (Shift+N also works)
+      if ((e.key === 'n' || e.key === 'N') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        const active = document.activeElement as HTMLElement | null
+        if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return
+        if (active && active.isContentEditable) return
+        e.preventDefault()
+        setShowNew(true)
+      }
+      if (e.key === 'Escape' && showNew) {
+        setShowNew(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showNew])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -163,7 +191,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索任务..." className="pl-8 w-56" />
+            <Input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索任务... （按 / 聚焦）" className="pl-8 w-56" />
           </div>
           <Button onClick={() => setShowNew(v => !v)}>
             <Plus className="h-3.5 w-3.5" /> 新建任务
