@@ -100,6 +100,9 @@ model InviteCode {
   createdById  String
   createdBy    User     @relation("CreatedInvites", fields: [createdById], references: [id])
   createdAt    DateTime @default(now())
+
+  @@index([createdById])
+  @@index([active])
 }
 
 model Task {
