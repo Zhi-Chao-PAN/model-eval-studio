@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 interface Props {
   /** JSON string to detect + render. */
@@ -127,6 +127,18 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
   const [savedColumns, setSavedColumns] = useState<string[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [addColOpen, setAddColOpen] = useState(false)
+  const [newColName, setNewColName] = useState('')
+  const newColInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Focus the new column input when the add-column UI opens
+  useEffect(() => {
+    if (addColOpen) {
+      setTimeout(() => newColInputRef.current?.focus(), 30)
+    } else {
+      setNewColName('')
+    }
+  }, [addColOpen])
 
   const parsed = extractFirstJson(text)
   if (!parsed) return null
@@ -191,19 +203,28 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
     }
   }
 
-  function addColumn() {
-    const name = prompt('新列名（如：综合得分、效率、质量 等）')
-    if (!name || !name.trim()) return
-    if (editedColumns.includes(name.trim())) return
-    setEditedColumns((prev) => [...prev, name.trim()])
+  function confirmAddColumn() {
+    const name = newColName.trim()
+    if (!name) {
+      setAddColOpen(false)
+      return
+    }
+    if (editedColumns.includes(name)) {
+      setAddColOpen(false)
+      setNewColName('')
+      return
+    }
+    setEditedColumns((prev) => [...prev, name])
     setEditedRows((prev) => {
       const next = { ...prev }
       rows.forEach((r) => {
         if (!next[r.modelCode]) next[r.modelCode] = {}
-        next[r.modelCode][name.trim()] = ''
+        next[r.modelCode][name] = ''
       })
       return next
     })
+    setAddColOpen(false)
+    setNewColName('')
   }
 
   function removeColumn(col: string) {
@@ -230,6 +251,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
               <button
                 type="button"
                 onClick={startEditing}
+                aria-label="编辑或补充表格数据"
                 className="text-xs text-indigo-300 hover:text-indigo-300"
               >
                 编辑/补充
@@ -238,6 +260,8 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
                 <button
                   type="button"
                   onClick={() => setRawOpen((v) => !v)}
+                  aria-expanded={rawOpen}
+                  aria-label={rawOpen ? '收起原始JSON' : '查看原始JSON'}
                   className="text-xs text-gray-500 hover:text-gray-200"
                 >
                   {rawOpen ? '收起 JSON' : '原始 JSON'}
@@ -246,24 +270,61 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
             </>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={addColumn}
-                className="text-xs text-indigo-300 hover:text-indigo-300"
-              >
-                + 添加列
-              </button>
+              {addColOpen ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={newColInputRef}
+                    type="text"
+                    value={newColName}
+                    onChange={(e) => setNewColName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') confirmAddColumn()
+                      if (e.key === 'Escape') setAddColOpen(false)
+                    }}
+                    placeholder="新列名"
+                    aria-label="新列名称"
+                    className="w-28 px-1.5 py-0.5 border border-white/[0.14] rounded text-xs bg-transparent focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={confirmAddColumn}
+                    aria-label="确认添加列"
+                    className="text-xs px-1.5 py-0.5 text-emerald-400 hover:text-emerald-300"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddColOpen(false)}
+                    aria-label="取消添加列"
+                    className="text-xs px-1 py-0.5 text-gray-500 hover:text-gray-200"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAddColOpen(true)}
+                  aria-label="添加新列"
+                  className="text-xs text-indigo-300 hover:text-indigo-300"
+                >
+                  + 添加列
+                </button>
+              )}
               <button
                 type="button"
                 onClick={saveEditing}
-                disabled={saving}
-                className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700"
+                disabled={saving || addColOpen}
+                aria-label="保存编辑"
+                className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving ? '保存中...' : '保存'}
               </button>
               <button
                 type="button"
                 onClick={cancelEditing}
+                aria-label="取消编辑"
                 className="text-xs text-gray-500 hover:text-gray-200"
               >
                 取消
@@ -274,7 +335,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
       </div>
 
       {saveError && (
-        <div className="border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        <div role="alert" className="border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           保存失败：{saveError}
         </div>
       )}
@@ -292,6 +353,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
                       onClick={() => removeColumn(c.key)}
                       className="ml-1 text-red-400 hover:text-red-300"
                       title="删除此列"
+                      aria-label={`删除列 ${c.label}`}
                     >
                       ×
                     </button>
@@ -319,6 +381,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
                             }))
                           }}
                           className="w-full px-1.5 py-0.5 border border-white/[0.14] rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          aria-label={`${r.modelCode} 的 ${c.label}`}
                           placeholder="-"
                         />
                       </td>
