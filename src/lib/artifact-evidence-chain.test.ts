@@ -5,7 +5,10 @@ import {
   buildEvidenceChainSummaryForReport,
   EVIDENCE_TYPE_VALUES,
   EVIDENCE_SOURCE_VALUES,
+  groupEvidenceByType,
+  loadEvidenceChainFromAnalysis,
   parseStoredEvidenceChain,
+  REPORT_SUMMARY_TYPE_PRIORITY,
   serializeEvidenceChain,
   type ArtifactEvidence,
 } from './artifact-evidence-chain'
@@ -211,4 +214,181 @@ test('buildEvidenceChainSummaryForReport: 超长会提前截断，不再追加�
   const chain = serializeEvidenceChain(items, 'm')
   const summary = buildEvidenceChainSummaryForReport(chain, { maxChars: 400 })
   assert.ok(summary.length <= 800, `expected truncated, got ${summary.length}`)
+})
+// ── V1.1 解析/分组/摘要硬化 ────────────────────────────────────────────
+
+test('parseStoredEvidenceChain: 非法 evidenceType / source 被过滤', () => {
+  const raw = JSON.stringify({
+    version: 1,
+    modelId: 'm',
+    generatedAt: '2026-06-23T00:00:00.000Z',
+    items: [
+      {
+        evidenceId: 'evi-ok',
+        title: 'ok',
+        summary: 's',
+        evidenceType: 'primary_artifact',
+        source: 'auto_runner',
+        createdAt: '2026-06-23T00:00:00.000Z',
+      },
+      {
+        evidenceId: 'evi-bad-type',
+        title: 'bad type',
+        summary: 's',
+        evidenceType: 'unknown_type',
+        source: 'auto_runner',
+        createdAt: '2026-06-23T00:00:00.000Z',
+      },
+      {
+        evidenceId: 'evi-bad-source',
+        title: 'bad source',
+        summary: 's',
+        evidenceType: 'quality_signal',
+        source: 'tester_upload', // 非法，不应进入 chain
+        createdAt: '2026-06-23T00:00:00.000Z',
+      },
+    ],
+  })
+  const parsed = parseStoredEvidenceChain(raw)
+  assert.ok(parsed)
+  assert.equal(parsed!.items.length, 1)
+  assert.equal(parsed!.items[0].evidenceId, 'evi-ok')
+})
+
+test('parseStoredEvidenceChain: 缺失 createdAt 给稳定 fallback；metadata 超长字符串被截断', () => {
+  const longStr = 'x'.repeat(2_000)
+  const raw = JSON.stringify({
+    version: 1,
+    modelId: 'm',
+    generatedAt: '', // 缺失，应 fallback
+    items: [
+      {
+        evidenceId: 'evi-no-time',
+        title: 'no time',
+        summary: 's',
+        evidenceType: 'quality_signal',
+        source: 'auto_runner',
+        // createdAt 缺失
+        metadata: { description: longStr, nested: { a: 1 } },
+      },
+    ],
+  })
+  const parsed = parseStoredEvidenceChain(raw)
+  assert.ok(parsed)
+  const item = parsed!.items[0]
+  // createdAt fallback
+  assert.equal(item.createdAt, new Date(0).toISOString())
+  // generatedAt fallback
+  assert.equal(parsed!.generatedAt, new Date(0).toISOString())
+  // metadata: description 被截断到 600；嵌套对象被丢，记录 _droppedKeys
+  const md = item.metadata as Record<string, unknown>
+  assert.equal(typeof md.description, 'string')
+  assert.ok((md.description as string).length <= 600)
+  assert.equal(md._droppedKeys, 1)
+})
+
+test('parseStoredEvidenceChain: 损坏 JSON / 错误 version 不抛错', () => {
+  assert.equal(parseStoredEvidenceChain('not-json'), null)
+  assert.equal(parseStoredEvidenceChain('{"version":2,"items":[]}'), null)
+  assert.equal(parseStoredEvidenceChain(JSON.stringify({ version: 1, items: 'not-array' })), null)
+  assert.equal(parseStoredEvidenceChain(JSON.stringify({ version: 1 })), null)
+  assert.equal(parseStoredEvidenceChain(null), null)
+  assert.equal(parseStoredEvidenceChain(undefined), null)
+})
+
+test('loadEvidenceChainFromAnalysis: 缺失 evidenceChain 返回 null，不抛错', () => {
+  assert.equal(loadEvidenceChainFromAnalysis(null), null)
+  assert.equal(loadEvidenceChainFromAnalysis({}), null)
+  assert.equal(loadEvidenceChainFromAnalysis({ evidenceChain: '' }), null)
+  assert.equal(loadEvidenceChainFromAnalysis({ evidenceChain: 'invalid-json' }), null)
+})
+
+test('groupEvidenceByType: 按固定顺序分组，未知 type 跳过', () => {
+  const items: ArtifactEvidence[] = [
+    buildEvidence({ modelId: 'm', evidenceType: 'quality_signal', source: 'auto_runner', title: 'Q', summary: 's' }),
+    buildEvidence({ modelId: 'm', evidenceType: 'primary_artifact', source: 'auto_runner', title: 'P', summary: 's' }),
+    buildEvidence({ modelId: 'm', evidenceType: 'limitation', source: 'auto_runner', title: 'L', summary: 's' }),
+  ]
+  const groups = groupEvidenceByType(items)
+  // 顺序：file_manifest → primary → parsed → structure → quality → candidate → limitations → errors
+  // 只保留有内容的组
+  assert.equal(groups.length, 3)
+  assert.equal(groups[0].key, 'primary')
+  assert.equal(groups[1].key, 'quality')
+  assert.equal(groups[2].key, 'limitations')
+  // 每组内容正确
+  assert.equal(groups[0].items[0].title, 'P')
+  assert.equal(groups[1].items[0].title, 'Q')
+  assert.equal(groups[2].items[0].title, 'L')
+})
+
+test('groupEvidenceByType: 空数组返回空数组，不抛错', () => {
+  assert.deepEqual(groupEvidenceByType([]), [])
+})
+
+test('REPORT_SUMMARY_TYPE_PRIORITY: primary_artifact 优先级最高，file_manifest 最低', () => {
+  assert.ok(REPORT_SUMMARY_TYPE_PRIORITY.primary_artifact < REPORT_SUMMARY_TYPE_PRIORITY.quality_signal)
+  assert.ok(REPORT_SUMMARY_TYPE_PRIORITY.quality_signal < REPORT_SUMMARY_TYPE_PRIORITY.auto_candidate)
+  assert.ok(REPORT_SUMMARY_TYPE_PRIORITY.auto_candidate < REPORT_SUMMARY_TYPE_PRIORITY.parsed_content)
+  assert.ok(REPORT_SUMMARY_TYPE_PRIORITY.parsed_content < REPORT_SUMMARY_TYPE_PRIORITY.limitation)
+  assert.ok(REPORT_SUMMARY_TYPE_PRIORITY.limitation < REPORT_SUMMARY_TYPE_PRIORITY.structure_check)
+  assert.ok(REPORT_SUMMARY_TYPE_PRIORITY.structure_check < REPORT_SUMMARY_TYPE_PRIORITY.file_manifest)
+})
+
+test('buildEvidenceChainSummaryForReport: 按优先级排序，primary_artifact 排在 file_manifest 前', () => {
+  const items: ArtifactEvidence[] = [
+    buildEvidence({ modelId: 'm', evidenceType: 'file_manifest', source: 'auto_runner', title: 'manifest', summary: 'long manifest content'.repeat(8), createdAt: '2026-06-23T01:00:00.000Z' }),
+    buildEvidence({ modelId: 'm', evidenceType: 'primary_artifact', source: 'auto_runner', title: 'primary', summary: 'primary summary', createdAt: '2026-06-23T02:00:00.000Z' }),
+    buildEvidence({ modelId: 'm', evidenceType: 'limitation', source: 'auto_runner', title: 'limit', summary: 'limit summary', createdAt: '2026-06-23T03:00:00.000Z' }),
+  ]
+  const chain = serializeEvidenceChain(items, 'm')
+  const summary = buildEvidenceChainSummaryForReport(chain, { maxChars: 1800 })
+  const idxPrimary = summary.indexOf('[primary_artifact]')
+  const idxFileManifest = summary.indexOf('[file_manifest]')
+  const idxLimitation = summary.indexOf('[limitation]')
+  assert.ok(idxPrimary >= 0 && idxFileManifest >= 0 && idxLimitation >= 0)
+  assert.ok(idxPrimary < idxLimitation)
+  assert.ok(idxPrimary < idxFileManifest)
+  assert.ok(idxLimitation < idxFileManifest, 'limitation should still come before file_manifest by priority')
+})
+
+test('buildEvidenceChainSummaryForReport: tester_upload / artifact_upload 永不进入', () => {
+  const items: ArtifactEvidence[] = [
+    buildEvidence({ modelId: 'm', evidenceType: 'primary_artifact', source: 'tester_upload', title: 'forbidden tester', summary: 'should not appear' }),
+    buildEvidence({ modelId: 'm', evidenceType: 'quality_signal', source: 'artifact_upload', title: 'forbidden artifact', summary: 'should not appear' }),
+    buildEvidence({ modelId: 'm', evidenceType: 'quality_signal', source: 'auto_runner', title: 'auto runner OK', summary: 'should appear' }),
+  ]
+  const chain = serializeEvidenceChain(items, 'm')
+  const summary = buildEvidenceChainSummaryForReport(chain)
+  assert.match(summary, /auto runner OK/)
+  assert.doesNotMatch(summary, /forbidden tester/)
+  assert.doesNotMatch(summary, /forbidden artifact/)
+})
+
+test('buildEvidenceChainSummaryForReport: file_manifest 单条独立限长，不挤占摘要 token', () => {
+  const hugeSummary = '大清单'.repeat(500) // ~1500 chars
+  const items: ArtifactEvidence[] = [
+    buildEvidence({
+      modelId: 'm',
+      evidenceType: 'file_manifest',
+      source: 'auto_runner',
+      title: 'manifest',
+      summary: hugeSummary,
+    }),
+  ]
+  const chain = serializeEvidenceChain(items, 'm')
+  const summary = buildEvidenceChainSummaryForReport(chain, { maxChars: 1800 })
+  // 整段摘要长度不应被 file_manifest 撑爆
+  assert.ok(summary.length <= 800, `expected truncated, got ${summary.length}`)
+})
+
+test('buildEvidenceChainSummaryForReport: 顶部 banner 永远提示后台候选不等于本地验收', () => {
+  const items: ArtifactEvidence[] = [
+    buildEvidence({ modelId: 'm', evidenceType: 'primary_artifact', source: 'auto_runner', title: 't', summary: 's' }),
+  ]
+  const chain = serializeEvidenceChain(items, 'm')
+  const summary = buildEvidenceChainSummaryForReport(chain)
+  assert.match(summary, /后台候选/)
+  assert.match(summary, /测试者本地验收/)
+  assert.match(summary, /tester_upload/)
 })
