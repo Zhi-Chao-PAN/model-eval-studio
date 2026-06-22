@@ -332,7 +332,7 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
             </div>
           </div>
           <p className="text-[13px] text-gray-400 mb-1">暂无待测模型</p>
-          <p className="text-[11px] text-gray-600">
+          <p className="text-[11px] text-gray-400">
             请先在「看板识别」步骤上传数据看板截图，AI 会自动识别模型代号；
             或使用上方输入框手动添加。
           </p>
@@ -428,7 +428,7 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
                 ) : (
                   <div className="text-xs text-gray-500 py-4 text-center border border-dashed border-white/[0.06] rounded-lg space-y-1">
                     <p>尚未上传该模型的产物</p>
-                    <p className="text-gray-600 px-3">
+                    <p className="text-gray-400 px-3">
                       点击「上传文件」选择 ZIP / 代码 / 文档 / 图片，或「粘贴文本」直接粘贴模型输出内容，
                       上传后会自动开始产物预分析。
                     </p>

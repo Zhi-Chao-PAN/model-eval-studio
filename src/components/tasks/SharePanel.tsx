@@ -363,7 +363,7 @@ export function SharePanel({ taskId, onClose }: Props) {
                 {collaborators.length === 0 ? (
                   <div className="text-center text-sm text-gray-500 py-6 space-y-1">
                     <p>暂无协作者，添加用户来共享此任务</p>
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs text-gray-400">
                       输入对方注册时使用的用户名即可添加。协作者登录后会在工作台的「与我共享」中看到此任务。
                     </p>
                   </div>
@@ -451,7 +451,7 @@ export function SharePanel({ taskId, onClose }: Props) {
                 {shares.length === 0 ? (
                   <div className="text-center text-sm text-gray-500 py-6 space-y-1">
                     <p>暂无共享链接，创建后可分享给任何人查看</p>
-                    <p className="text-xs text-gray-600">公开链接为只读权限，可随时吊销。</p>
+                    <p className="text-xs text-gray-400">公开链接为只读权限，可随时吊销。</p>
                   </div>
                 ) : (
                   shares.map(s => (

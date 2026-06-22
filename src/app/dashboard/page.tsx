@@ -350,7 +350,7 @@ export default function DashboardPage() {
                           <div className={`h-6 w-6 rounded-md flex items-center justify-center transition-colors ${
                             done ? 'bg-emerald-500/15 text-emerald-400' :
                             current ? 'bg-indigo-500/20 text-indigo-300' :
-                            'bg-white/[0.03] text-gray-600'
+                            'bg-white/[0.03] text-gray-400'
                           }`}>
                             {done ? <Check className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
                           </div>
@@ -376,7 +376,7 @@ export default function DashboardPage() {
                   >
                     {deletingId === task.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </button>
-                  <ArrowRight className="h-4 w-4 text-gray-600 group-hover:text-white group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                  <ArrowRight className="h-4 w-4 text-gray-400 group-hover:text-white group-hover:translate-x-0.5 transition-all flex-shrink-0" />
                 </div>
               </div>
             )

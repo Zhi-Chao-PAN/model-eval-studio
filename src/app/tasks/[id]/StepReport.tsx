@@ -691,7 +691,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                     <span className={cn('display text-4xl tabular leading-none', tierText(m.overall))}>
                       {formatScore(m.overall, 'integer')}
                     </span>
-                    {m.overall > 0 && <span className="text-[10px] text-gray-600 mono mb-1">/10</span>}
+                    {m.overall > 0 && <span className="text-[10px] text-gray-400 mono mb-1">/10</span>}
                   </div>
                   <div className="flex gap-3 mt-2.5 text-[11px] text-gray-500 mono">
                     <span>效率 <span className={tierText(m.efficiency)}>{formatScore(m.efficiency)}</span></span>
@@ -809,7 +809,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                         <span className="text-gray-500">综合评分</span>
                         <span className={cn('tabular display text-lg', tierText(latestReport.overallScore))}>
                           {formatScore(latestReport.overallScore, 'integer')}
-                          <span className="text-[10px] text-gray-600 font-normal ml-0.5">/10</span>
+                          <span className="text-[10px] text-gray-400 font-normal ml-0.5">/10</span>
                         </span>
                       </div>
                     </>
@@ -900,7 +900,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                                   </div>
                                   <div className="text-[11px] font-mono">
                                     <span className={tierText(v.overallScore)}>{formatScore(v.overallScore, 'integer')}</span>
-                                    <span className="text-gray-600">/10</span>
+                                    <span className="text-gray-400">/10</span>
                                   </div>
                                 </div>
                                 {v.editNote && (
@@ -985,7 +985,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                                   <span className={cn('display text-xl tabular leading-none', tierText(section.score))}>
                                     {formatScore(section.score, section.scoreMode)}
                                   </span>
-                                  <span className="text-[10px] text-gray-600 mono">/ 10</span>
+                                  <span className="text-[10px] text-gray-400 mono">/ 10</span>
                                 </div>
                               )}
                             </div>
@@ -1001,7 +1001,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                           </button>
                         </div>
                         <p className="text-[13px] text-gray-300 whitespace-pre-wrap leading-relaxed pl-[42px]">
-                          {section.content || <span className="text-gray-600 italic">（暂无内容）</span>}
+                          {section.content || <span className="text-gray-400 italic">（暂无内容）</span>}
                         </p>
                       </div>
                     )
@@ -1067,7 +1067,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
         </div>
       ) : (
         <div className="panel p-12 text-center">
-          <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-gray-600" />
+          <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-gray-400" />
           <p className="text-sm text-gray-500">暂无待测模型，请先完成第 3 / 4 步</p>
         </div>
       )}

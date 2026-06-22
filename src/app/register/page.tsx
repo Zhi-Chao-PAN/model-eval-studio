@@ -150,7 +150,7 @@ export default function RegisterPage() {
                       passwordStrength.score <= 2 ? 'text-red-400' :
                       passwordStrength.score <= 3 ? 'text-amber-400' : 'text-emerald-400'
                     }>{passwordStrength.label}</span>
-                    <span className="text-gray-600 ml-2">建议使用大小写字母+数字+符号</span>
+                    <span className="text-gray-400 ml-2">建议使用大小写字母+数字+符号</span>
                   </p>
                 </div>
               )}

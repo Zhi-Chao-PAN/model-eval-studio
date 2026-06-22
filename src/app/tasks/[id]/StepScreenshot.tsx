@@ -567,7 +567,7 @@ function UploadBox({ label, images, onUpload, onRemove, accent }: {
           <span className="text-sm text-gray-400 group-hover:text-white transition-colors">
             点击上传{label}截图（可多张）
           </span>
-          <div className="text-xs text-gray-600 mt-0.5 mono">PNG · JPG · WebP，最多 {MAX_SCREENSHOTS_PER_TAB} 张</div>
+          <div className="text-xs text-gray-400 mt-0.5 mono">PNG · JPG · WebP，最多 {MAX_SCREENSHOTS_PER_TAB} 张</div>
         </div>
       </label>
 
