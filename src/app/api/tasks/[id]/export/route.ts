@@ -5,6 +5,7 @@ import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { apiError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -167,6 +168,16 @@ export async function GET(
   const session = await requireAuth()
   if (!session) return apiError('未登录', 401)
   const { id } = await params
+
+  // Export builds a ZIP in memory and serializes all task data; moderate
+  // rate limit to prevent CPU/memory abuse.
+  const rl = await consumeRateLimit({
+    scope: 'task-export',
+    identifier: session.userId,
+    limit: 20,
+    windowMs: 10 * 60_000,
+  })
+  if (!rl.allowed) return rateLimitResponse(rl)
 
   const url = new URL(request.url)
   const format = resolveFormat(url.searchParams)
