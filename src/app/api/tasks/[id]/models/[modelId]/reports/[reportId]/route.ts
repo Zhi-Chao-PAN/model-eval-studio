@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/session'
 import { apiError, errorMessage } from '@/lib/api-error'
 import { createReportRevision } from '@/lib/report-versioning'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { validateScores } from '@/lib/score-validation'
 
 // 获取单条报告详情（含生成依据快照）
 export async function GET(
@@ -32,22 +33,14 @@ export async function GET(
   let generationSnapshot: unknown = null
   let generationConfig: unknown = null
   try {
-    if (report.generationSnapshot) {
-      generationSnapshot = JSON.parse(report.generationSnapshot)
-    }
-    if (report.generationConfig) {
-      generationConfig = JSON.parse(report.generationConfig)
-    }
+    if (report.generationSnapshot) generationSnapshot = JSON.parse(report.generationSnapshot)
+    if (report.generationConfig) generationConfig = JSON.parse(report.generationConfig)
   } catch {
-    // 解析失败不影响主流程
+    // 解析失败不影响主流程（快照损坏时继续返回其余字段）
   }
 
   return NextResponse.json({
-    report: {
-      ...report,
-      generationSnapshot,
-      generationConfig,
-    },
+    report: { ...report, generationSnapshot, generationConfig },
   })
 }
 
@@ -89,24 +82,13 @@ export async function POST(
       editNote,
     } = body
 
-    // 基本校验：综合分整数 1-10，效率/质量 0.5 步长
-    function validateScore(v: unknown, label: string, step: number): string | null {
-      if (v === undefined || v === null) return null
-      if (typeof v !== 'number' || Number.isNaN(v)) return label + '必须是数字'
-      if (v < 1 || v > 10) return label + '必须在 1-10 之间'
-      const multiples = 1 / step
-      if (Math.round(v * multiples) / multiples !== v) return label + '的步长必须为 ' + step
-      return null
-    }
-    const errs = [
-      validateScore(overallScore, '综合评分', 1),
-      validateScore(efficiencyScore, '交付效率', 0.5),
-      validateScore(qualityScore, '产物质量', 0.5),
-    ].filter(Boolean) as string[]
-    if (errs.length > 0) return apiError(errs.join('；'), 400)
+    // 统一评分校验（综合 1-10 整数步长；效率/质量 1-10 步长 0.5）
+    const scoreErr = validateScores({ overallScore, efficiencyScore, qualityScore })
+    if (scoreErr) return apiError(scoreErr, 400)
 
     // editNote 长度限制（截断到 500 字符以内）
-    const safeEditNote = typeof editNote === 'string' && editNote.trim() ? editNote.trim().slice(0, 500) : null
+    const safeEditNote =
+      typeof editNote === 'string' && editNote.trim() ? editNote.trim().slice(0, 500) : null
 
     const report = await createReportRevision({
       taskModelId: modelId,
