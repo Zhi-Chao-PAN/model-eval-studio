@@ -5,6 +5,11 @@ import { decrypt } from '@/lib/crypto'
 import { validateApiKey, sanitizeAiError } from '@/lib/ai'
 import { apiError } from '@/lib/api-error'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { normalizeAiBaseUrl, parseAiProvider } from '@/lib/ai-endpoint'
+
+const MAX_VALIDATE_MODEL_NAME = 120
+const MAX_VALIDATE_KEY = 500
+const MAX_VALIDATE_URL = 500
 
 // 验证 AI 配置是否可用
 // - 请求体为空：验证当前已保存的配置
@@ -28,19 +33,51 @@ export async function POST(request: Request) {
   let apiKey: string
   let model: string
 
-  let body: { provider?: string; baseUrl?: string; apiKey?: string; modelName?: string } | null = null
-  try {
-    body = await request.json()
-  } catch {
-    // 没有 body，使用 DB 中已保存的配置
-  }
+  const body = await request.json().catch(() => null)
 
-  if (body && body.baseUrl && body.apiKey && body.modelName) {
-    // 使用传入的临时配置（测试未保存的配置）
-    provider = body.provider || 'OPENAI_COMPAT'
-    baseUrl = body.baseUrl
-    apiKey = body.apiKey
-    model = body.modelName
+  const hasInline =
+    body &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    typeof (body as any).baseUrl === 'string' &&
+    typeof (body as any).apiKey === 'string' &&
+    typeof (body as any).modelName === 'string'
+
+  if (hasInline) {
+    const b = body as { baseUrl: string; apiKey: string; modelName: string; provider?: unknown }
+    // Length-cap inline credentials BEFORE any network/decrypt work
+    if (b.baseUrl.length > MAX_VALIDATE_URL) {
+      return NextResponse.json({ ok: false, error: 'Base URL 过长' }, { status: 400 })
+    }
+    if (b.apiKey.length > MAX_VALIDATE_KEY) {
+      return NextResponse.json({ ok: false, error: 'API Key 过长' }, { status: 400 })
+    }
+    if (b.modelName.length > MAX_VALIDATE_MODEL_NAME) {
+      return NextResponse.json({ ok: false, error: '模型名称过长' }, { status: 400 })
+    }
+    const trimmedKey = b.apiKey.trim()
+    if (!trimmedKey) {
+      return NextResponse.json({ ok: false, error: 'API Key 不能为空' }, { status: 400 })
+    }
+    let parsedProvider
+    try {
+      parsedProvider = parseAiProvider(b.provider || 'OPENAI_COMPAT')
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'provider 无效' }, { status: 400 })
+    }
+    try {
+      // Use the synchronous normalizer (no DNS resolution) for inline test
+      // values — DNS SSRF protection is applied on save in the PUT handler.
+      baseUrl = normalizeAiBaseUrl(b.baseUrl)
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'Base URL 无效' }, { status: 400 })
+    }
+    provider = parsedProvider
+    apiKey = trimmedKey
+    model = b.modelName.trim()
+    if (!model) {
+      return NextResponse.json({ ok: false, error: '模型名称不能为空' }, { status: 400 })
+    }
   } else {
     // 使用 DB 中已保存的配置
     const user = await prisma.user.findUnique({

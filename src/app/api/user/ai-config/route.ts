@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
-import { encrypt, decrypt } from '@/lib/crypto'
+import { encrypt } from '@/lib/crypto'
 import { logAudit } from '@/lib/audit'
 import { assertSafeAiBaseUrl, parseAiMaxTokens, parseAiProvider } from '@/lib/ai-endpoint'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+
+const MAX_MODEL_NAME_LENGTH = 120
+const MIN_API_KEY_LENGTH = 4
+const MAX_API_KEY_LENGTH = 500
 
 // 获取 AI 配置（不返回 apiKey 明文）
 export async function GET() {
@@ -46,25 +51,78 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: '未登录' }, { status: 401 })
   }
 
+  // Settings writes are cheap but should still be throttled to prevent
+  // runaway encrypt() churn if a session is abused.
+  const rl = await consumeRateLimit({
+    scope: 'ai-config-update',
+    identifier: session.userId,
+    limit: 20,
+    windowMs: 10 * 60_000,
+  })
+  if (!rl.allowed) return rateLimitResponse(rl)
+
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let modelName = ''
 
   try {
-    const body = await request.json()
-    const { provider: providerInput, baseUrl: baseUrlInput, apiKey, modelName: mn, maxTokens } = body
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      errorMsg = '请求内容格式无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    const {
+      provider: providerInput,
+      baseUrl: baseUrlInput,
+      apiKey: apiKeyInput,
+      modelName: mn,
+      maxTokens,
+    } = body as Record<string, unknown>
+
     modelName = typeof mn === 'string' ? mn.trim() : ''
 
-    if (!providerInput || !baseUrlInput || !modelName) {
-      errorMsg = 'provider、baseUrl、modelName 必填'
+    if (typeof providerInput !== 'string' || !providerInput.trim()) {
+      errorMsg = 'provider 必填'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (typeof baseUrlInput !== 'string' || !baseUrlInput.trim()) {
+      errorMsg = 'baseUrl 必填'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (!modelName) {
+      errorMsg = 'modelName 必填'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (modelName.length > MAX_MODEL_NAME_LENGTH) {
+      errorMsg = `modelName 不能超过 ${MAX_MODEL_NAME_LENGTH} 个字符`
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    // Validate apiKey (if provided) before any network/encryption work
+    let encryptedApiKey: string | undefined
+    if (apiKeyInput !== undefined && apiKeyInput !== null && apiKeyInput !== '') {
+      if (typeof apiKeyInput !== 'string') {
+        errorMsg = 'apiKey 必须是字符串'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      const trimmedKey = apiKeyInput.trim()
+      if (trimmedKey.length < MIN_API_KEY_LENGTH) {
+        errorMsg = `apiKey 长度不能少于 ${MIN_API_KEY_LENGTH} 个字符`
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      if (trimmedKey.length > MAX_API_KEY_LENGTH) {
+        errorMsg = `apiKey 不能超过 ${MAX_API_KEY_LENGTH} 个字符`
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      encryptedApiKey = encrypt(trimmedKey)
     }
 
     let provider
     let baseUrl
     let normalizedMaxTokens
     try {
-      provider = parseAiProvider(providerInput)
+      provider = parseAiProvider(providerInput.trim())
       baseUrl = await assertSafeAiBaseUrl(baseUrlInput)
       normalizedMaxTokens = parseAiMaxTokens(maxTokens)
     } catch (error) {
@@ -72,16 +130,21 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
-    const data: any = {
+    const data: {
+      aiProvider: typeof provider
+      aiBaseUrl: string
+      aiModelName: string
+      aiMaxTokens: number
+      aiApiKey?: string
+    } = {
       aiProvider: provider,
       aiBaseUrl: baseUrl,
       aiModelName: modelName,
       aiMaxTokens: normalizedMaxTokens,
     }
 
-    // 只有传了 apiKey 才更新
-    if (apiKey) {
-      data.aiApiKey = encrypt(apiKey)
+    if (encryptedApiKey) {
+      data.aiApiKey = encryptedApiKey
     }
 
     const user = await prisma.user.update({
