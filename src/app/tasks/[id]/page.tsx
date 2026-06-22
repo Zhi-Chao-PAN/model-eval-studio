@@ -377,6 +377,24 @@ export default function TaskPage() {
     }
   }
 
+  async function copyMarkdownReport() {
+    try {
+      const res = await fetch('/api/tasks/' + taskId + '/export?format=md')
+      if (!res.ok) throw new Error('导出失败')
+      const text = await res.text()
+      await navigator.clipboard.writeText(text)
+      // Briefly show success feedback
+      const btn = document.getElementById('copy-md-btn')
+      if (btn) {
+        const orig = btn.innerHTML
+        btn.innerHTML = '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> 已复制'
+        setTimeout(() => { btn.innerHTML = orig }, 2000)
+      }
+    } catch (e: any) {
+      console.error('copy markdown error', e)
+    }
+  }
+
   // Compute which steps are actually completed based on task data
   const completedSteps = useMemo(() => {
     const set = new Set<string>()
@@ -575,6 +593,10 @@ export default function TaskPage() {
           <Button variant="secondary" size="sm" onClick={handleDuplicate} disabled={duplicating} title="复制任务">
             {duplicating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline ml-1.5">复制</span>
+          </Button>
+          <Button variant="secondary" size="sm" onClick={copyMarkdownReport} id="copy-md-btn" title="复制 Markdown 报告到剪贴板">
+            <FileText className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline ml-1.5">复制 MD</span>
           </Button>
           <Button
             variant={deleteConfirm ? 'danger' : 'ghost'}
