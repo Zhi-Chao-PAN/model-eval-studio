@@ -195,17 +195,16 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab === 'audit') {
       setAuditPage(1)
-      loadAuditLogs()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditAction, auditUserId, auditStatus, auditRange])
 
   useEffect(() => {
-    if (tab === 'audit' && auditPage > 1) {
+    if (tab === 'audit') {
       loadAuditLogs()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditPage])
+  }, [auditPage, tab])
 
   async function generate() {
     setGenerating(true)
@@ -513,7 +512,7 @@ export default function AdminPage() {
                           </code>
                           <div className="text-[10px] text-gray-600 mt-0.5">由 {inv.createdBy.username} 创建</div>
                         </div>
-                        <button onClick={() => copy(inv.code, inv.id)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/10 text-gray-500 hover:text-white flex-shrink-0">
+                        <button onClick={() => copy(inv.code, inv.id)} className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-white flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity" title="复制邀请码">
                           {copiedId === inv.id ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                         </button>
                       </div>

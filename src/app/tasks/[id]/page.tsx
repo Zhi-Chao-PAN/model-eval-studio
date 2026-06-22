@@ -66,7 +66,7 @@ export default function TaskPage() {
   const [task, setTask] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [currentStep, setCurrentStep] = useState<string>('INFO')
+  const [currentStep, setCurrentStep] = useState<string>('DESIGN')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [streaming, setStreaming] = useState(false)
