@@ -172,6 +172,15 @@ export default function TaskPage() {
   useEffect(() => { loadTask(); loadMessages() }, [taskId])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamingContent, currentStep, chatOpen])
 
+  // Update document title with task name
+  useEffect(() => {
+    const original = document.title
+    if (task?.title) {
+      document.title = task.title + ' · ModelEval Studio'
+    }
+    return () => { document.title = original }
+  }, [task?.title])
+
   // Clean up any in-flight chat stream and auto-report timer on unmount
   useEffect(() => () => {
     abortRef.current?.abort()
