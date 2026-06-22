@@ -3,6 +3,7 @@ import { TaskStep } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 const ALLOWED_ROLES = new Set(['user', 'assistant', 'system'])
 const MAX_MESSAGE_LENGTH = 100_000
@@ -35,6 +36,15 @@ export async function POST(
 ) {
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+
+  const rateLimit = await consumeRateLimit({
+    scope: 'message-write',
+    identifier: session.userId,
+    limit: 120,
+    windowMs: 10 * 60_000,
+  })
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
+
   const { id } = await params
   const body = await request.json().catch(() => null)
   if (!body || typeof body !== 'object' || Array.isArray(body)) {

@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/session'
 import { decrypt } from '@/lib/crypto'
 import { validateApiKey, sanitizeAiError } from '@/lib/ai'
 import { apiError } from '@/lib/api-error'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 // 验证 AI 配置是否可用
 // - 请求体为空：验证当前已保存的配置
@@ -13,6 +14,14 @@ export async function POST(request: Request) {
   if (!session) {
     return apiError('未登录', 401)
   }
+
+  const rateLimit = await consumeRateLimit({
+    scope: 'ai-config-validate',
+    identifier: session.userId,
+    limit: 10,
+    windowMs: 10 * 60_000,
+  })
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
   let provider: string
   let baseUrl: string

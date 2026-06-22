@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { apiError } from '@/lib/api-error'
+import { consumeRateLimit, getRequestIp, rateLimitResponse } from '@/lib/rate-limit'
 
 // 公开只读页允许返回的报告字段（白名单，禁止泄露 generationSnapshot / generationConfig 等内部字段）
 const PUBLIC_REPORT_SELECT = {
@@ -27,11 +28,25 @@ const PUBLIC_MODEL_SELECT = {
 } as const
 
 // 通过公开链接获取任务信息（只读，无需登录）
+// 使用基于 IP 的速率限制以防御共享 token 枚举/抓取。
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  const ip = getRequestIp(request)
+  const rateLimit = await consumeRateLimit({
+    scope: 'public-share',
+    identifier: ip,
+    limit: 120,
+    windowMs: 10 * 60_000,
+  })
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
+
   const { token } = await params
+
+  if (typeof token !== 'string' || token.length < 8) {
+    return apiError('共享链接无效', 404)
+  }
 
   const share = await prisma.taskShare.findUnique({
     where: { token },
