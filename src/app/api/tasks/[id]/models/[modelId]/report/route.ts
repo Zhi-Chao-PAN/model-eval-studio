@@ -64,21 +64,21 @@ export async function POST(
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
-  // Rate limit manual report creation
-  const rl = await consumeRateLimit({
-    scope: 'report-create',
-    identifier: session.userId,
-    limit: 30,
-    windowMs: 10 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
-
-  const { id, modelId } = await params
-  if (!isValidCuid(id) || !isValidCuid(modelId)) {
-    return NextResponse.json({ error: '参数格式无效' }, { status: 400 })
-  }
-
   try {
+    // Rate limit manual report creation
+    const rl = await consumeRateLimit({
+      scope: 'report-create',
+      identifier: session.userId,
+      limit: 30,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
+    const { id, modelId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId)) {
+      return NextResponse.json({ error: '参数格式无效' }, { status: 400 })
+    }
+
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return NextResponse.json({ error: '请求内容格式无效' }, { status: 400 })

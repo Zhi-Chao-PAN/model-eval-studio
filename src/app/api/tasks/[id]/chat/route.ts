@@ -19,17 +19,8 @@ export async function POST(
   const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
-  const { id } = await params
-  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
-  const rateLimit = await consumeRateLimit({
-    scope: 'ai-chat',
-    identifier: session.userId,
-    limit: 30,
-    windowMs: 10 * 60_000,
-  })
-  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
-
+  let id = ''
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let tokenInput: number | null = null
@@ -37,6 +28,21 @@ export async function POST(
   let userMessage = ''
 
   try {
+    const paramsResult = await params
+    id = paramsResult.id
+    if (!isValidCuid(id)) {
+      errorMsg = '任务 ID 无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    const rateLimit = await consumeRateLimit({
+      scope: 'ai-chat',
+      identifier: session.userId,
+      limit: 30,
+      windowMs: 10 * 60_000,
+    })
+    if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
+
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       errorMsg = '请求内容格式无效'

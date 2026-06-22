@@ -17,17 +17,8 @@ export async function POST(
   const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
-  const { id } = await params
-  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
-  const rateLimit = await consumeRateLimit({
-    scope: 'ai-artifact-legacy',
-    identifier: session.userId,
-    limit: 6,
-    windowMs: 10 * 60_000,
-  })
-  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
-
+  let id = ''
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let tokenInput: number | null = null
@@ -35,6 +26,21 @@ export async function POST(
   let taskTitle = ''
 
   try {
+    const paramsResult = await params
+    id = paramsResult.id
+    if (!isValidCuid(id)) {
+      errorMsg = '任务 ID 无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    const rateLimit = await consumeRateLimit({
+      scope: 'ai-artifact-legacy',
+      identifier: session.userId,
+      limit: 6,
+      windowMs: 10 * 60_000,
+    })
+    if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
+
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'EDITOR')
     if (denied) {

@@ -78,59 +78,92 @@ export async function POST(
     return apiError('未登录', 401)
   }
 
-  const { id } = await params
-  if (!isValidCuid(id)) return apiError('任务 ID 无效', 400)
-  const rateLimit = await consumeRateLimit({
-    scope: 'ai-report',
-    identifier: session.userId,
-    limit: 10,
-    windowMs: 10 * 60_000,
-  })
-  if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
-
-  const body = await request.json().catch(() => null)
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return apiError('请求内容格式无效', 400)
+  // Outer try/catch: any failure in pre-stream setup (auth-validated above is
+  // the only step we allow to escape), rate-limit, body parse, access check,
+  // task/model lookup, or AI-config fetch should return a structured JSON
+  // error instead of an opaque Next.js 500. The streaming logic has its own
+  // inner try/catch inside ReadableStream.start.
+  let id: string
+  let modelId: string
+  let adjustInstruction: string
+  let task: Awaited<ReturnType<typeof prisma.task.findUnique>> & {
+    models: Array<{
+      id: string
+      modelCode: string
+      artifacts: any[]
+      reports: any[]
+      verificationScreenshotUrls: string | null
+      processText: string | null
+      hardMetricsJson: string | null
+      artifactAnalysisJson: string | null
+    }>
   }
-  const modelId = typeof (body as Record<string, unknown>).modelId === 'string'
-    ? (body as Record<string, unknown>).modelId as string
-    : ''
-  const adjustInstructionRaw = (body as Record<string, unknown>).adjustInstruction
-  const adjustInstruction = typeof adjustInstructionRaw === 'string'
-    ? adjustInstructionRaw.slice(0, 2000)
-    : ''
+  let model: NonNullable<typeof task>['models'][number]
+  let aiConfig: Awaited<ReturnType<typeof getUserAiConfig>>
 
-  if (!modelId) {
-    return apiError('modelId 必填', 400)
-  }
+  try {
+    const paramsResult = await params
+    id = paramsResult.id
+    if (!isValidCuid(id)) return apiError('任务 ID 无效', 400)
+    const rateLimit = await consumeRateLimit({
+      scope: 'ai-report',
+      identifier: session.userId,
+      limit: 10,
+      windowMs: 10 * 60_000,
+    })
+    if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
-  const { access } = await getTaskAccess(id, session)
-  const denied = requireAccess(access, 'EDITOR')
-  if (denied) return apiError(denied.error, denied.status)
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return apiError('请求内容格式无效', 400)
+    }
+    const rawBody = body as Record<string, unknown>
+    modelId = typeof rawBody.modelId === 'string' ? rawBody.modelId : ''
+    const adjustInstructionRaw = rawBody.adjustInstruction
+    adjustInstruction = typeof adjustInstructionRaw === 'string'
+      ? adjustInstructionRaw.slice(0, 2000)
+      : ''
 
-  const task = await prisma.task.findUnique({
-    where: { id },
-    include: {
-      models: {
-        include: {
-          artifacts: true,
-          reports: { orderBy: { version: 'desc' }, take: 1 },
+    if (!modelId) {
+      return apiError('modelId 必填', 400)
+    }
+
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'EDITOR')
+    if (denied) return apiError(denied.error, denied.status)
+
+    const foundTask = await prisma.task.findUnique({
+      where: { id },
+      include: {
+        models: {
+          include: {
+            artifacts: true,
+            reports: { orderBy: { version: 'desc' }, take: 1 },
+          },
         },
       },
-    },
-  })
-  if (!task) return apiError('任务不存在', 404)
+    })
+    if (!foundTask) return apiError('任务不存在', 404)
+    task = foundTask as typeof task
 
-  const model = task.models.find((item) => item.id === modelId)
-  if (!model) return apiError('模型不存在', 404)
+    const foundModel = task.models.find((item) => item.id === modelId)
+    if (!foundModel) return apiError('模型不存在', 404)
+    model = foundModel
+
+    const foundAiConfig = await getUserAiConfig(session.userId)
+    if (!foundAiConfig) {
+      return apiError('请先配置 AI API', 400)
+    }
+    aiConfig = foundAiConfig
+  } catch (err: unknown) {
+    // Re-throw Response instances (apiError / rateLimitResponse early-returns)
+    if (err instanceof Response) return err
+    const { message } = safeServerError(err, 'ai-report-setup')
+    return apiError(message, 500)
+  }
 
   const testerEvidence = parseVerificationEvidence(model.verificationScreenshotUrls)
     .filter(isAuthenticVerificationEvidence)
-
-  const aiConfig = await getUserAiConfig(session.userId)
-  if (!aiConfig) {
-    return apiError('请先配置 AI API', 400)
-  }
 
   const encoder = new TextEncoder()
   let totalTokenInput = 0
