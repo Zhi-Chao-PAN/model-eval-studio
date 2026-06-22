@@ -18,7 +18,7 @@ import { DesktopStepSidebar, MobileStepBar } from '@/components/tasks/StepSideba
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { SharePanel } from '@/components/tasks/SharePanel'
 import { filterConversationMessages } from '@/lib/task-messages'
-import { cn } from '@/lib/utils'
+import { cn, formatRelativeTime } from '@/lib/utils'
 import {
   isAuthenticVerificationEvidence,
   parseVerificationEvidence,
@@ -531,7 +531,7 @@ export default function TaskPage() {
                 创建 {new Date(task.createdAt).toLocaleDateString('zh-CN')}
               </span>
               <span className="mono px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/10">
-                更新 {formatTime(task.updatedAt)}
+                更新 {formatRelativeTime(task.updatedAt)}
               </span>
             </div>
           </div>
@@ -666,14 +666,4 @@ export default function TaskPage() {
       )}
     </div>
   )
-}
-
-function formatTime(s: string) {
-  const d = new Date(s)
-  const diff = (Date.now() - d.getTime()) / 1000
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前'
-  if (diff < 86400) return Math.floor(diff/3600) + ' 小时前'
-  if (diff < 604800) return Math.floor(diff/86400) + ' 天前'
-  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
