@@ -518,12 +518,17 @@ export default function StepScreenshot({ task, onRefresh, onNext }: Props) {
           </Button>
         </div>
       )}
-      {onNext && task.models && task.models.length === 0 && !analyzing && (dashboardImages.length > 0 || skippedProcess) && (
+      {onNext && task.models && task.models.length === 0 && !analyzing && ((result !== null && dashboardImages.length > 0) || dashboardImages.length === 0) && (
         <div className="flex items-center gap-3 pt-1">
-          <span className="text-xs text-gray-500">提示：上传截图后点击「开始 AI 分析」识别模型，或手动添加模型代号</span>
+          <span className="text-xs text-amber-400/80">
+            {dashboardImages.length === 0
+              ? '提示：未上传截图，将在下一步手动添加模型代号'
+              : '提示：AI 未识别到模型，可在下一步手动添加模型代号'
+            }
+          </span>
           <div className="flex-1" />
           <Button onClick={onNext} variant="secondary">
-            跳过，直接上传产物 <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            继续：上传产物 <ArrowRight className="h-3.5 w-3.5 ml-1" />
           </Button>
         </div>
       )}
