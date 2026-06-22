@@ -43,6 +43,46 @@ function setIfAbsent(res: NextResponse, name: string, value: string) {
 }
 
 export function middleware(request: NextRequest) {
+  // CSRF protection: verify Origin/Referer header matches the target origin
+  // for all state-changing API requests. SameSite=Lax cookies provide baseline
+  // protection, but this adds defense-in-depth against cross-origin attacks
+  // (e.g., via top-level navigations that bypass SameSite=Lax for GET requests,
+  // or misconfigured cookie attributes).
+  if (
+    request.nextUrl.pathname.startsWith('/api/') &&
+    !request.nextUrl.pathname.startsWith('/api/share/') &&
+    !request.nextUrl.pathname.startsWith('/.well-known/') &&
+    ['POST', 'PUT', 'DELETE', 'PATCH'].includes(request.method)
+  ) {
+    const origin = request.headers.get('origin')
+    const referer = request.headers.get('referer')
+    const host = request.headers.get('host')
+
+    // In dev, allow requests without Origin/Referer (e.g., curl/Postman tests)
+    if (isProd && host) {
+      const expectedOrigin = (request.headers.get('x-forwarded-proto')?.includes('https') ? 'https' : 'https') + '://' + host
+      const originOk = origin === expectedOrigin
+      let refererOk = false
+      if (referer) {
+        try {
+          refererOk = new URL(referer).origin === expectedOrigin
+        } catch {
+          refererOk = false
+        }
+      }
+
+      if (!originOk && !refererOk) {
+        return new NextResponse(
+          JSON.stringify({ error: 'CSRF 校验失败：请求来源不合法' }),
+          {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        )
+      }
+    }
+  }
+
   const response = NextResponse.next()
 
   // MIME sniffing defense
