@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/session'
 import { hasStoredArtifactFile, readArtifactFile } from '@/lib/artifact-storage'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
+import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -65,6 +66,9 @@ export async function GET(
     if (!session) return Response.json({ error: '未登录' }, { status: 401 })
 
     const { id, modelId, artifactId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId) || !isValidCuid(artifactId)) {
+      return new Response('参数格式无效', { status: 400 })
+    }
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'VIEWER')
