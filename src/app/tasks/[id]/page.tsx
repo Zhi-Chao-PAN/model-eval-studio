@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Download, Trash2, Loader2, Check, CheckCircle, Share2,
-  AlertTriangle, Sparkles, X, FileJson, FileSpreadsheet, FileText, ChevronDown,
+  AlertTriangle, Sparkles, X, FileJson, FileSpreadsheet, FileText, ChevronDown, Copy,
 } from 'lucide-react'
 import StepInfo from './StepInfo'
 import StepScreenshot from './StepScreenshot'
@@ -74,6 +74,7 @@ export default function TaskPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
   const [chatOpen, setChatOpen] = useState(true)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -361,6 +362,21 @@ export default function TaskPage() {
     window.open('/api/tasks/' + taskId + '/export?format=' + format, '_blank', 'noopener,noreferrer')
   }
 
+  async function handleDuplicate() {
+    setDuplicating(true)
+    try {
+      const res = await fetch('/api/tasks/' + taskId + '/duplicate', { method: 'POST' })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '复制失败')
+      router.push('/tasks/' + data.id)
+      router.refresh()
+    } catch (e: any) {
+      console.error('duplicate error', e)
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   // Compute which steps are actually completed based on task data
   const completedSteps = useMemo(() => {
     const set = new Set<string>()
@@ -556,6 +572,10 @@ export default function TaskPage() {
               </div>
             )}
           </div>
+          <Button variant="secondary" size="sm" onClick={handleDuplicate} disabled={duplicating} title="复制任务">
+            {duplicating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline ml-1.5">复制</span>
+          </Button>
           <Button
             variant={deleteConfirm ? 'danger' : 'ghost'}
             size="sm"
