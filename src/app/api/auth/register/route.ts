@@ -15,7 +15,8 @@ class RegistrationError extends Error {}
 // Prohibits: whitespace, control chars, angle brackets, slashes, quotes,
 // backslashes, @ (reserved for future email login), etc.
 const USERNAME_RE = /^[\p{L}\p{N}_.-]{3,32}$/u
-const MAX_INVITE_CODE_LENGTH = 64
+const MAX_INVITE_CODE_LENGTH = 32
+const INVITE_CODE_RE = /^[A-F0-9]{8,32}$/
 const MAX_PASSWORD_LENGTH = 200
 
 export async function POST(request: Request) {
@@ -32,9 +33,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
-    const inviteCode = typeof body.inviteCode === 'string' ? body.inviteCode.trim() : ''
+    // Normalize invite code: trim, uppercase, strip dashes/spaces users may paste
+    const inviteCodeRaw = typeof body.inviteCode === 'string' ? body.inviteCode.trim().toUpperCase().replace(/[\s-]+/g, '') : ''
     username = typeof body.username === 'string' ? body.username.trim() : ''
     const password = typeof body.password === 'string' ? body.password : ''
+    const inviteCode = inviteCodeRaw
 
     if (!inviteCode || !username || !password) {
       errorMsg = '邀请码、用户名、密码必填'
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
       return rateLimitResponse(rateLimit)
     }
 
-    if (inviteCode.length > MAX_INVITE_CODE_LENGTH) {
+    if (!INVITE_CODE_RE.test(inviteCode)) {
       errorMsg = '邀请码格式无效'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
