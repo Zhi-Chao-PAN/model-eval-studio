@@ -1,19 +1,14 @@
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
-import { logAudit } from '@/lib/audit'
+import { safeServerError } from '@/lib/api-error'
 
-export async function POST(request: Request) {
-  const startedAt = Date.now()
-  const session = await getSession()
-  const userId = session.userId || null
-  session.destroy()
-
-  logAudit(request, {
-    action: 'LOGOUT',
-    userId,
-    status: 'success',
-    durationMs: Date.now() - startedAt,
-  })
-
-  return NextResponse.json({ ok: true })
+export async function POST() {
+  try {
+    const session = await getSession()
+    session.destroy()
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    const { message } = safeServerError(err, 'auth-logout')
+    return NextResponse.json({ error: '退出登录失败：' + message }, { status: 500 })
+  }
 }

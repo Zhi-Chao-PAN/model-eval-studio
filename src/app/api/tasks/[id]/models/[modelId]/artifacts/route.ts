@@ -299,10 +299,30 @@ export async function DELETE(
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
     userId = session.userId
 
+    // Rate limit artifact deletion
+    const rl = await consumeRateLimit({
+      scope: 'artifact-delete',
+      identifier: session.userId,
+      limit: 60,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
     const { id, modelId } = await params
     taskId = id
-    const body = await request.json()
-    const artifactId = body.artifactId
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      errorMsg = '请求内容格式无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    const artifactId = typeof (body as Record<string, unknown>).artifactId === 'string'
+      ? (body as Record<string, unknown>).artifactId as string
+      : ''
+    if (!artifactId || !/^[a-z0-9]{20,32}$/.test(artifactId)) {
+      errorMsg = 'artifactId 格式无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'EDITOR')
@@ -333,9 +353,9 @@ export async function DELETE(
     status = 'success'
     return NextResponse.json({ ok: true })
   } catch (error: unknown) {
-    errorMsg = errorMessage(error)
-    console.error('Artifact delete failed:', error)
-    return NextResponse.json({ error: '产物删除失败：' + errorMsg }, { status: 500 })
+    const { message } = safeServerError(error, 'ARTIFACT_DELETE')
+    errorMsg = message
+    return NextResponse.json({ error: '产物删除失败：' + message }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'ARTIFACT_DELETE',

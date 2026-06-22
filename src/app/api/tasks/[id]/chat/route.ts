@@ -9,6 +9,7 @@ import { filterConversationMessages, getWorkflowContent } from '@/lib/task-messa
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { safeServerError } from '@/lib/api-error'
 
 export async function POST(
   request: Request,
@@ -172,9 +173,10 @@ export async function POST(
       assistantMessage: assistantMsg,
       reply: result.content,
     })
-  } catch (e: any) {
-    errorMsg = e?.message || String(e)
-    return NextResponse.json({ error: 'AI 对话失败：' + errorMsg }, { status: 502 })
+  } catch (e: unknown) {
+    const { message } = safeServerError(e, 'ai-chat')
+    errorMsg = message
+    return NextResponse.json({ error: 'AI 对话失败，请稍后重试' }, { status: 502 })
   } finally {
     logAudit(request, {
       action: 'AI_CHAT',

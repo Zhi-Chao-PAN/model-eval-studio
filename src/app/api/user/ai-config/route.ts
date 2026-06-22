@@ -5,6 +5,7 @@ import { encrypt } from '@/lib/crypto'
 import { logAudit } from '@/lib/audit'
 import { assertSafeAiBaseUrl, parseAiMaxTokens, parseAiProvider } from '@/lib/ai-endpoint'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { safeServerError } from '@/lib/api-error'
 
 const MAX_MODEL_NAME_LENGTH = 120
 const MIN_API_KEY_LENGTH = 4
@@ -12,35 +13,40 @@ const MAX_API_KEY_LENGTH = 500
 
 // 获取 AI 配置（不返回 apiKey 明文）
 export async function GET() {
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
+  try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        aiProvider: true,
+        aiBaseUrl: true,
+        aiModelName: true,
+        aiApiKey: true,
+        aiMaxTokens: true,
+      },
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: '用户不存在' }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      config: {
+        provider: user.aiProvider,
+        baseUrl: user.aiBaseUrl,
+        modelName: user.aiModelName,
+        maxTokens: user.aiMaxTokens,
+        hasApiKey: !!user.aiApiKey,
+      },
+    })
+  } catch (err) {
+    const { message } = safeServerError(err, 'ai-config-get')
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: {
-      aiProvider: true,
-      aiBaseUrl: true,
-      aiModelName: true,
-      aiApiKey: true,
-      aiMaxTokens: true,
-    },
-  })
-
-  if (!user) {
-    return NextResponse.json({ error: '用户不存在' }, { status: 404 })
-  }
-
-  return NextResponse.json({
-    config: {
-      provider: user.aiProvider,
-      baseUrl: user.aiBaseUrl,
-      modelName: user.aiModelName,
-      maxTokens: user.aiMaxTokens,
-      hasApiKey: !!user.aiApiKey,
-    },
-  })
 }
 
 // 更新 AI 配置
@@ -169,6 +175,10 @@ export async function PUT(request: Request) {
         hasApiKey: !!user.aiApiKey,
       },
     })
+  } catch (err) {
+    const { message } = safeServerError(err, 'ai-config-update')
+    errorMsg = message
+    return NextResponse.json({ error: '更新 AI 配置失败：' + message }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'AI_CONFIG_UPDATE',

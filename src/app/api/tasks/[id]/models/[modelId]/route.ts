@@ -4,6 +4,8 @@ import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { safeServerError } from '@/lib/api-error'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 export async function DELETE(
   request: Request,
@@ -12,6 +14,15 @@ export async function DELETE(
   const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+
+  // Rate limit model deletion
+  const rl = await consumeRateLimit({
+    scope: 'model-delete',
+    identifier: session.userId,
+    limit: 30,
+    windowMs: 10 * 60_000,
+  })
+  if (!rl.allowed) return rateLimitResponse(rl)
 
   const { id, modelId } = await params
   let status: 'success' | 'error' = 'error'
@@ -50,6 +61,10 @@ export async function DELETE(
     await prisma.taskModel.delete({ where: { id: modelId } })
     status = 'success'
     return NextResponse.json({ ok: true })
+  } catch (err) {
+    const { message } = safeServerError(err, 'model-delete')
+    errorMsg = message
+    return NextResponse.json({ error: '删除模型失败：' + message }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'MODEL_DELETE',

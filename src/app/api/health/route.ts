@@ -20,8 +20,13 @@ export async function GET() {
     // $executeRaw 或 $queryRaw 做最小 SELECT 1 连通性检查
     await prisma.$executeRaw(Prisma.sql`SELECT 1`)
     dbOk = true
-  } catch (err: any) {
-    dbError = err?.message ? String(err.message).slice(0, 200) : 'unknown'
+  } catch (err: unknown) {
+    // In production, do NOT leak internal error details (hostnames, connection strings, etc.)
+    if (process.env.NODE_ENV === 'production') {
+      dbError = 'connection failed'
+    } else {
+      dbError = err instanceof Error ? String(err.message).slice(0, 200) : 'unknown'
+    }
   }
 
   const body = {
