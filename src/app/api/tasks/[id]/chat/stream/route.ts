@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { TaskStep } from '@prisma/client'
 import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
 import { streamChat } from '@/lib/ai-stream'
@@ -30,9 +31,33 @@ export async function POST(
   })
   if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
+  // Parse and validate body BEFORE DB access to fail fast on invalid input
+  const body = await request.json().catch(() => null)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return new Response(JSON.stringify({ error: '请求内容格式无效' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  const { message: rawMessage, step: rawStep, modelId: rawModelId } = body as { message?: unknown; step?: unknown; modelId?: unknown }
+  const userMessageText = typeof rawMessage === 'string' ? rawMessage : ''
+  const step = typeof rawStep === 'string' ? rawStep : ''
+  const modelId = typeof rawModelId === 'string' && rawModelId.trim() ? rawModelId.trim() : null
+
+  if (typeof rawMessage !== 'string' || !userMessageText.trim()) {
+    return new Response(JSON.stringify({ error: 'message 不能为空' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (!step) {
+    return new Response(JSON.stringify({ error: 'step 必填' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (!Object.values(TaskStep).includes(step as TaskStep)) {
+    return new Response(JSON.stringify({ error: '任务阶段无效' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (userMessageText.length > 100_000) {
+    return new Response(JSON.stringify({ error: '消息内容过长（最多 10 万字）' }), { status: 413, headers: { 'Content-Type': 'application/json' } })
+  }
+  const message = userMessageText
+  const validatedStep = step as TaskStep
+
   let tokenInput: number | null = null
   let tokenOutput: number | null = null
-  let userMessageText = ''
 
   const { access } = await getTaskAccess(id, session)
   const denied = requireAccess(access, 'EDITOR')
@@ -76,14 +101,6 @@ export async function POST(
     return new Response(JSON.stringify({ error: '请先在设置中配置 AI 模型' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
   }
 
-  const body = await request.json()
-  const { message, step, modelId } = body
-  userMessageText = message || ''
-
-  if (!message || !step) {
-    return new Response(JSON.stringify({ error: 'message 和 step 必填' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
-  }
-
   const history = await prisma.taskMessage.findMany({
     where: { taskId: id },
     orderBy: { createdAt: 'desc' },
@@ -123,7 +140,7 @@ export async function POST(
 
   // Persist the user message first so the conversation is saved even if stream is aborted
   const userMsg = await prisma.taskMessage.create({
-    data: { taskId: id, role: 'user', content: message, step, modelId },
+    data: { taskId: id, role: 'user', content: message, step: validatedStep, modelId },
   })
 
   const encoder = new TextEncoder()
@@ -158,7 +175,7 @@ export async function POST(
         }
 
         const assistantMsg = await prisma.taskMessage.create({
-          data: { taskId: id, role: 'assistant', content: fullText, step, modelId },
+          data: { taskId: id, role: 'assistant', content: fullText, step: validatedStep, modelId },
         })
 
         send('done', { full: fullText, message: assistantMsg })

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { TaskStep } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
@@ -33,13 +34,32 @@ export async function POST(
   let userMessage = ''
 
   try {
-    const body = await request.json()
-    const { message, step, modelId } = body
-    userMessage = message || ''
-
-    if (!message || !step) {
-      errorMsg = 'message 和 step 必填'
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      errorMsg = '请求内容格式无效'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    const { message: rawMessage, step: rawStep, modelId: rawModelId } = body as { message?: unknown; step?: unknown; modelId?: unknown }
+    const message = typeof rawMessage === 'string' ? rawMessage : ''
+    const step = typeof rawStep === 'string' ? rawStep : ''
+    const modelId = typeof rawModelId === 'string' && rawModelId.trim() ? rawModelId.trim() : null
+    userMessage = message
+
+    if (!message.trim()) {
+      errorMsg = 'message 不能为空'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (!step) {
+      errorMsg = 'step 必填'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (!Object.values(TaskStep).includes(step as TaskStep)) {
+      errorMsg = '任务阶段无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (message.length > 100_000) {
+      errorMsg = '消息内容过长（最多 10 万字）'
+      return NextResponse.json({ error: errorMsg }, { status: 413 })
     }
 
     const { access } = await getTaskAccess(id, session)
@@ -139,10 +159,10 @@ export async function POST(
 
     const [userMsg, assistantMsg] = await Promise.all([
       prisma.taskMessage.create({
-        data: { taskId: id, role: 'user', content: message, step, modelId },
+        data: { taskId: id, role: 'user', content: message, step: step as TaskStep, modelId },
       }),
       prisma.taskMessage.create({
-        data: { taskId: id, role: 'assistant', content: result.content, step, modelId },
+        data: { taskId: id, role: 'assistant', content: result.content, step: step as TaskStep, modelId },
       }),
     ])
 

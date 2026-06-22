@@ -12,6 +12,16 @@ const MAX_FILES_PER_UPLOAD = 10
 const MAX_SINGLE_UPLOAD_BYTES = 25 * 1024 * 1024
 const MAX_TOTAL_UPLOAD_BYTES = 60 * 1024 * 1024
 const MAX_STORED_TEXT_CHARS = 240_000
+const MAX_FILENAME_LENGTH = 180
+// Block executable/binary types that can cause harm if downloaded and run.
+// Code artifacts (.js, .py, .sh, .ps1, .bat, .cmd, .html) are allowed as they
+// are evaluation subjects served with Content-Disposition: attachment.
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'msi', 'msix', 'msp', 'mst', 'com', 'scr', 'pif', 'dll', 'sys',
+  'drv', 'ocx', 'cpl', 'hta', 'vbs', 'vbe', 'wsh', 'wsf', 'app', 'dmg', 'so',
+  'deb', 'rpm', 'apk', 'jar', 'wasm',
+])
+const MIME_TYPE_RE = /^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+(?:\s*;\s*[a-zA-Z0-9!#$&^_.+-]+=[^\s;]+)*$/
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -21,14 +31,48 @@ function dbText(value: unknown): string {
   return sanitizeParsedText(String(value || '')).slice(0, MAX_STORED_TEXT_CHARS)
 }
 
-function fileName(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') return fallback
-  const trimmed = value.trim().replace(/[\\/]+/g, '-')
-  return trimmed.slice(0, 180) || fallback
+function sanitizeFileName(raw: string, fallback: string): string {
+  if (typeof raw !== 'string' || !raw) return fallback
+  // Normalize NFKC, strip control chars + null bytes, replace path separators and unsafe chars
+  let name = raw.normalize('NFKC').replace(/[\x00-\x1f\x7f\\/]/g, '-').trim()
+  // Collapse runs of dashes / whitespace that resulted from stripping
+  name = name.replace(/\s+/g, ' ').replace(/-{2,}/g, '-')
+  if (!name) return fallback
+  if (name.length > MAX_FILENAME_LENGTH) name = name.slice(0, MAX_FILENAME_LENGTH)
+  // Prevent leading dots (hidden files on *nix)
+  name = name.replace(/^\.+/, '')
+  return name || fallback
 }
 
-function isImageFile(file: File): boolean {
-  return file.type?.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name)
+function fileName(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  return sanitizeFileName(value, fallback)
+}
+
+function getFileExtension(name: string): string {
+  const base = name.split(/[\\/]/).pop() || name
+  const dot = base.lastIndexOf('.')
+  if (dot < 0 || dot === base.length - 1) return ''
+  return base.slice(dot + 1).toLowerCase()
+}
+
+function validateFileName(name: string): string | null {
+  if (!name) return '文件名不能为空'
+  if (name.length > MAX_FILENAME_LENGTH) return `文件名不能超过 ${MAX_FILENAME_LENGTH} 个字符`
+  // Check final extension (defends against double extensions like report.pdf.exe)
+  const ext = getFileExtension(name)
+  if (ext && BLOCKED_EXTENSIONS.has(ext)) {
+    return `不允许上传可执行文件类型（.${ext}）`
+  }
+  return null
+}
+
+function validateMimeType(mime: string): string | null {
+  if (!mime) return null
+  if (mime.length > 120) return 'MIME 类型过长'
+  if (/[\x00-\x1f\x7f]/.test(mime)) return 'MIME 类型含非法字符'
+  if (!MIME_TYPE_RE.test(mime.trim())) return 'MIME 类型格式不合法'
+  return null
 }
 
 async function requireModel(taskId: string, modelId: string) {
@@ -79,14 +123,29 @@ export async function POST(
         return NextResponse.json({ error: errorMsg }, { status: 400 })
       }
       const parsedText = dbText(body.parsedText || textContent)
-      const name = fileName(body.name, '文本内容.txt')
+      const rawName = typeof body.name === 'string' ? body.name : '文本内容.txt'
+      const name = sanitizeFileName(rawName, '文本内容.txt')
+      const nameErr = validateFileName(name)
+      if (nameErr) {
+        errorMsg = nameErr
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      let mimeType = 'text/plain'
+      if (typeof body.mimeType === 'string' && body.mimeType.trim()) {
+        const mtErr = validateMimeType(body.mimeType)
+        if (mtErr) {
+          errorMsg = mtErr
+          return NextResponse.json({ error: errorMsg }, { status: 400 })
+        }
+        mimeType = body.mimeType.trim().toLowerCase()
+      }
       const artifact = await prisma.modelArtifact.create({
         data: {
           taskModelId: modelId,
           name,
           url: '',
           textContent: textContent || null,
-          mimeType: typeof body.mimeType === 'string' ? body.mimeType : 'text/plain',
+          mimeType,
           size: Buffer.byteLength(textContent, 'utf8'),
           parsedText: parsedText || null,
         },
@@ -124,6 +183,23 @@ export async function POST(
       return NextResponse.json({ error: errorMsg }, { status: 413 })
     }
 
+    // Validate filenames and MIME types BEFORE doing any storage/parsing work
+    for (const file of files) {
+      const safeName = sanitizeFileName(file.name, 'uploaded-file')
+      const nameErr = validateFileName(safeName)
+      if (nameErr) {
+        errorMsg = `${file.name || '文件'}: ${nameErr}`
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      if (file.type) {
+        const mtErr = validateMimeType(file.type)
+        if (mtErr) {
+          errorMsg = `${file.name || '文件'}: ${mtErr}`
+          return NextResponse.json({ error: errorMsg }, { status: 400 })
+        }
+      }
+    }
+
     // Phase 1: 全部存入 blob 并解析内容（不写 DB）
     type PreparedArtifact = {
       name: string
@@ -137,11 +213,13 @@ export async function POST(
     const prepared: PreparedArtifact[] = []
 
     for (const file of files) {
+      const safeName = sanitizeFileName(file.name, 'uploaded-file')
+      const declaredMime = (file.type || '').trim()
       const buffer = Buffer.from(await file.arrayBuffer())
       const stored = await storeArtifactFile({
         buffer,
-        fileName: file.name,
-        contentType: file.type || 'application/octet-stream',
+        fileName: safeName,
+        contentType: declaredMime || 'application/octet-stream',
         userId: session.userId,
         taskId: id,
         modelId,
@@ -150,36 +228,38 @@ export async function POST(
 
       let parsedText = ''
       let previewJson: string | null = null
-      const image = isImageFile(file)
+      // Detect images using sanitized name + declared MIME
+      const image = declaredMime.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(safeName)
 
       if (image) {
         parsedText = '[图片文件已保存，请下载到本地打开验收后上传产物效果截图]'
       }
 
+      const ext = getFileExtension(safeName)
       try {
-        if (file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip') {
+        if (ext === 'zip' || declaredMime === 'application/zip' || declaredMime === 'application/x-zip-compressed') {
           const zipResult = await parseZip(buffer)
           parsedText = parsedText || zipResult.files.map((entry) => `=== ${entry.name} ===\n${entry.text}`).join('\n\n')
           if (zipResult.preview) {
-            zipResult.preview.sourceName = file.name
+            zipResult.preview.sourceName = safeName
             previewJson = JSON.stringify(zipResult.preview)
           }
         } else if (!image) {
-          parsedText = await parseFile(buffer, file.name, file.type)
-          const preview = await buildFilePreview(buffer, file.name, file.type, parsedText)
+          parsedText = await parseFile(buffer, safeName, declaredMime)
+          const preview = await buildFilePreview(buffer, safeName, declaredMime, parsedText)
           if (preview) previewJson = JSON.stringify(preview)
         }
       } catch (error: unknown) {
         const message = errorMessage(error)
-        console.error('文件解析失败:', file.name, message)
+        console.error('文件解析失败:', safeName, message)
         if (!parsedText) parsedText = '[文件解析失败: ' + (message || '未知错误') + ']'
       }
 
       const safeParsedText = dbText(parsedText)
       prepared.push({
-        name: file.name,
+        name: safeName,
         url: stored.url,
-        mimeType: file.type || stored.contentType,
+        mimeType: declaredMime || stored.contentType || 'application/octet-stream',
         size: stored.size,
         textContent: '',
         parsedText: safeParsedText || '[无法解析该文件格式，但原文件已保存，可下载验收]',
