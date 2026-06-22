@@ -33,6 +33,7 @@ import {
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -42,6 +43,30 @@ const FILE_ANALYSIS_LIMIT = 4
 const FILE_ANALYSIS_CHAR_LIMIT = 32_000
 const AUXILIARY_CALL_TIMEOUT_MS = 45_000
 const REPORT_CALL_TIMEOUT_MS = 90_000
+
+/**
+ * Sanitize AI-parsed report fields before writing to DB, applying the same
+ * length limits used by the manual report creation endpoint.
+ */
+function clampReportFields(parsed: ParsedModelReport, verificationSummary: string) {
+  return {
+    productFeedback: clampRequiredText(String(parsed.productFeedback || ''), DB_TEXT_LIMITS.COMMENT),
+    verificationSummary: clampDbText(verificationSummary, DB_TEXT_LIMITS.VERIFICATION),
+    overallScore: clampScore(parsed.overallScore),
+    overallComment: clampRequiredText(String(parsed.overallComment || ''), DB_TEXT_LIMITS.COMMENT),
+    efficiencyScore: clampScore(parsed.efficiencyScore),
+    efficiencyComment: clampRequiredText(String(parsed.efficiencyComment || ''), DB_TEXT_LIMITS.COMMENT),
+    qualityScore: clampScore(parsed.qualityScore),
+    qualityComment: clampRequiredText(String(parsed.qualityComment || ''), DB_TEXT_LIMITS.COMMENT),
+    trajectoryAnalysis: clampRequiredText(String(parsed.trajectoryAnalysis || '未提供轨迹截图。'), DB_TEXT_LIMITS.ANALYSIS),
+  }
+}
+
+function clampScore(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
 
 export async function POST(
   request: Request,
@@ -194,19 +219,12 @@ export async function POST(
 
           phase('saving')
           const parsed = validated.parsed
+          const fields = clampReportFields(parsed, verificationSummary)
           const report = await prisma.modelReport.create({
             data: {
               taskModelId: modelId,
-              productFeedback: parsed.productFeedback,
               verificationScreenshotUrls,
-              verificationSummary,
-              overallScore: parsed.overallScore,
-              overallComment: parsed.overallComment,
-              efficiencyScore: parsed.efficiencyScore,
-              efficiencyComment: parsed.efficiencyComment,
-              qualityScore: parsed.qualityScore,
-              qualityComment: parsed.qualityComment,
-              trajectoryAnalysis: parsed.trajectoryAnalysis,
+              ...fields,
             },
           })
           await prisma.task.update({ where: { id }, data: { currentStep: 'REPORT' } })
@@ -287,7 +305,8 @@ export async function POST(
                 totalTokenOutput += imgResult.usage.completionTokens
               }
             } catch (err: any) {
-              verificationSummary = '已提供产物效果截图，但视觉解读失败：' + (err?.message || String(err))
+              // Sanitize error message — do not leak raw AI/network errors into DB
+              verificationSummary = '已提供产物效果截图，但视觉解读失败，请稍后重试。'
             }
           } else {
             verificationSummary = missingEvidenceSummary(storedEvidence.length > 0)
@@ -473,19 +492,12 @@ export async function POST(
 
           phase('saving')
           const parsed = validated.parsed
+          const fields = clampReportFields(parsed, verificationSummary)
           const report = await prisma.modelReport.create({
             data: {
               taskModelId: modelId,
-              productFeedback: parsed.productFeedback,
               verificationScreenshotUrls,
-              verificationSummary,
-              overallScore: parsed.overallScore,
-              overallComment: parsed.overallComment,
-              efficiencyScore: parsed.efficiencyScore,
-              efficiencyComment: parsed.efficiencyComment,
-              qualityScore: parsed.qualityScore,
-              qualityComment: parsed.qualityComment,
-              trajectoryAnalysis: parsed.trajectoryAnalysis,
+              ...fields,
             },
           })
           await prisma.task.update({ where: { id }, data: { currentStep: 'REPORT' } })
