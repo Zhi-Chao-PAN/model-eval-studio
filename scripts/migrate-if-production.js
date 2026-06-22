@@ -59,7 +59,13 @@ function runCapture(cmd) {
       timeout: 30_000,
     }).toString()
   } catch (err) {
-    return null
+    // 命令返回非零退出码时（如 `prisma migrate status` 有未应用迁移），
+    // execSync 会抛错。我们仍然需要它的 stdout/stderr 来做后续判断，
+    // 否则会把"有待应用迁移"误判成"全新数据库"。
+    const stdout = err && err.stdout ? err.stdout.toString() : ''
+    const stderr = err && err.stderr ? err.stderr.toString() : ''
+    const combined = stdout + stderr
+    return combined.length > 0 ? combined : null
   }
 }
 
@@ -83,22 +89,25 @@ function isFreshDatabase() {
   // 通过 prisma migrate status 来判断：如果返回 "Database not yet in sync" 或 similar 模式
   const out = runCapture(prismaBin + ' migrate status --schema prisma/schema.prisma')
   if (out == null) {
-    // 命令失败 → 可能是数据库还没初始化
-    return true
+    // 命令完全失败且没任何输出 → 可能是网络/权限问题，保守不当作 fresh
+    console.log('[migrate] ⚠️  migrate status 无输出，保守判定为非全新（走 migrate deploy）')
+    return false
   }
-  // 如果输出里有 "Database is up to date" 则不是全新
+  // 已有迁移历史 / schema 已同步 → 不是 fresh
   if (/database schema is up to date/i.test(out) || /already in sync/i.test(out)) {
     return false
   }
-  // P1001/P1003 = connection/DB missing; 还有 "need to apply" 但没 _prisma_migrations 表时也是空
-  if (/P1001|P1003|does not exist|relation "_prisma_migrations" does not exist|no migrations have been applied/i.test(out)) {
+  // 有迁移历史但需要应用新迁移 → 不是 fresh
+  if (/migrations? have not yet been applied/i.test(out) || /following migrations? have not yet been applied/i.test(out)) {
+    return false
+  }
+  // 数据库本身不存在 / _prisma_migrations 表不存在 / 没任何迁移应用过 → fresh
+  if (/P1001|P1003|relation "_prisma_migrations" does not exist|no migration found in/i.test(out) || /no migrations have been applied/i.test(out)) {
     return true
   }
-  // 默认保守：有任何错误信息就视为需要初始化
-  if (/error/i.test(out)) {
-    console.log('[migrate] migrate status 输出:', out.slice(0, 800))
-    return true
-  }
+  // 其他未知情况：打印输出供排查，默认 **不当作 fresh**，由 migrate deploy 决定
+  console.log('[migrate] ⚠️  无法明确判定数据库状态，按非全新处理。migrate status 输出（前 800 字符）:')
+  console.log(out.slice(0, 800))
   return false
 }
 
