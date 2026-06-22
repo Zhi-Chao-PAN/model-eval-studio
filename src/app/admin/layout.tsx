@@ -1,6 +1,12 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/session'
 import { Topbar } from '@/components/topbar'
+
+export const metadata: Metadata = {
+  title: '管理后台',
+  description: 'ModelEval Studio 系统管理：用户管理、邀请码、审计日志。',
+}
 
 export default async function AdminLayout({
   children,

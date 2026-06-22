@@ -4,11 +4,11 @@ import { getSession } from '@/lib/session'
 import { Topbar } from '@/components/topbar'
 
 export const metadata: Metadata = {
-  title: '控制台',
-  description: '查看你的评测任务列表，管理和跟踪所有模型测试评估项目。',
+  title: '设置',
+  description: '管理你的个人信息、AI 配置和账号安全设置。',
 }
 
-export default async function DashboardLayout({
+export default async function SettingsLayout({
   children,
 }: {
   children: React.ReactNode
