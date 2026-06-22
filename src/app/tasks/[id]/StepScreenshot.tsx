@@ -294,7 +294,7 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
       })
       if (!res.ok || !res.body) {
         const txt = await res.text().catch(() => '')
-        let msg = '分析失败（HTTP ' + res.status + '）'
+        let msg = '截图分析服务暂不可用，请稍后重试'
         try {
           const j = JSON.parse(txt)
           if (j.error || j.message) msg = j.error || j.message

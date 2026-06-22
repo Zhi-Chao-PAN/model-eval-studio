@@ -122,18 +122,18 @@ export default function AdminPage() {
   async function loadInvites() {
     try {
       const res = await fetch('/api/admin/invites')
-      if (!res.ok) throw new Error('邀请码列表加载失败（HTTP ' + res.status + '）')
-      const data = await res.json()
+      if (!res.ok) throw new Error('邀请码列表加载失败，请稍后重试')
+      const data = await res.json().catch(() => ({}))
       if (data.invites) setInvites(data.invites)
-    } catch (e: any) { setLoadError(e?.message || '加载失败') }
+    } catch (e: any) { setLoadError(e?.message || '邀请码加载失败，请检查网络连接') }
   }
   async function loadUsers() {
     try {
       const res = await fetch('/api/admin/users')
-      if (!res.ok) throw new Error('用户列表加载失败（HTTP ' + res.status + '）')
-      const data = await res.json()
+      if (!res.ok) throw new Error('用户列表加载失败，请稍后重试')
+      const data = await res.json().catch(() => ({}))
       if (data.users) setUsers(data.users)
-    } catch (e: any) { setLoadError(e?.message || '加载失败') }
+    } catch (e: any) { setLoadError(e?.message || '用户列表加载失败，请检查网络连接') }
   }
   async function loadAuditLogs() {
     setAuditLoading(true)
@@ -159,8 +159,8 @@ export default function AdminPage() {
         fetch('/api/admin/audit-logs?' + params.toString()),
         fetch('/api/admin/audit-stats?range=' + auditRange),
       ])
-      if (!logsRes.ok) throw new Error('审计日志加载失败（HTTP ' + logsRes.status + '）')
-      if (!statsRes.ok) throw new Error('审计统计加载失败（HTTP ' + statsRes.status + '）')
+      if (!logsRes.ok) throw new Error('审计日志加载失败，请稍后重试')
+      if (!statsRes.ok) throw new Error('审计统计加载失败，请稍后重试')
       const [logsData, statsData] = await Promise.all([
         logsRes.json().catch(() => ({ logs: [], total: 0 })),
         statsRes.json().catch(() => ({ stats: null })),
@@ -185,7 +185,7 @@ export default function AdminPage() {
         if (tab === 'audit') loads.push(loadAuditLogs())
         await Promise.all(loads)
       } catch (e: any) {
-        setLoadError(e?.message || '数据加载失败')
+        setLoadError(e?.message || '数据加载失败，请检查网络连接后重试')
       } finally {
         setLoading(false)
       }
@@ -217,13 +217,13 @@ export default function AdminPage() {
         body: JSON.stringify({ count, maxUses, expiresAt }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || '生成失败（HTTP ' + res.status + '）')
+      if (!res.ok) throw new Error(data.error || '生成邀请码失败，请稍后重试')
       if (data.invites) {
         setInvites([...data.invites, ...invites])
         flash('ok', '已生成 ' + data.invites.length + ' 个邀请码')
       }
     } catch (e: any) {
-      flash('err', e?.message || '生成邀请码失败')
+      flash('err', e?.message || '生成邀请码失败，请检查网络连接')
     } finally { setGenerating(false) }
   }
 
@@ -236,11 +236,11 @@ export default function AdminPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || '切换失败')
+        throw new Error(data.error || '切换失败，请稍后重试')
       }
       loadInvites()
     } catch (e: any) {
-      flash('err', e?.message || '切换邀请码状态失败')
+      flash('err', e?.message || '切换邀请码状态失败，请检查网络连接')
     }
   }
 

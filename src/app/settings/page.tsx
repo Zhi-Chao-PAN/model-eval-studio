@@ -103,12 +103,12 @@ export default function SettingsPage() {
         meRes.json().catch(() => ({})),
         aiRes.json().catch(() => ({})),
       ])
-      if (!meRes.ok) throw new Error(data.error || '账户信息加载失败（HTTP ' + meRes.status + '）')
+      if (!meRes.ok) throw new Error(data.error || '账户信息加载失败，请稍后重试')
       if (data.user) {
         setMe(data.user)
         setBackground(data.user.background || '')
       }
-      if (!aiRes.ok) throw new Error(aiData.error || 'AI 配置加载失败（HTTP ' + aiRes.status + '）')
+      if (!aiRes.ok) throw new Error(aiData.error || 'AI 配置加载失败，请稍后重试')
       if (aiData.config) {
         setProvider(aiData.config.provider)
         setBaseUrl(aiData.config.baseUrl || '')
@@ -137,12 +137,12 @@ export default function SettingsPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || '保存失败')
+        throw new Error(data.error || '保存失败，请稍后重试')
       }
       setBgSaved(true)
       setTimeout(() => setBgSaved(false), 2000)
     } catch (err) {
-      setBgError(err instanceof Error ? err.message : String(err))
+      setBgError(err instanceof Error ? err.message : '保存失败，请检查网络连接')
     } finally {
       setSavingBg(false)
     }
@@ -163,14 +163,14 @@ export default function SettingsPage() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || '保存失败')
+        throw new Error(data.error || '保存失败，请稍后重试')
       }
       setAiSaved(true)
       setHasApiKey(true)
       setApiKey('')
       setTimeout(() => setAiSaved(false), 2000)
     } catch (err) {
-      setAiError(err instanceof Error ? err.message : String(err))
+      setAiError(err instanceof Error ? err.message : '保存失败，请检查网络连接')
     } finally {
       setSavingAi(false)
     }
@@ -199,12 +199,12 @@ export default function SettingsPage() {
       let data: any = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { ok: false, error: '服务器返回了非预期内容' } }
       if (!res.ok && !data.ok) {
-        setValidateResult({ ok: false, error: data.error || '测试连接失败（HTTP ' + res.status + '）' })
+        setValidateResult({ ok: false, error: data.error || '测试连接失败，请检查配置后重试' })
         return
       }
       setValidateResult(data)
     } catch (err) {
-      setValidateResult({ ok: false, error: err instanceof Error ? err.message : '测试连接失败' })
+      setValidateResult({ ok: false, error: err instanceof Error ? err.message : '测试连接失败，请检查网络' })
     } finally {
       setValidating(false)
     }
