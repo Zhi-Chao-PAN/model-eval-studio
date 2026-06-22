@@ -354,10 +354,14 @@ test('buildEvidenceChainSummaryForReport: 按优先级排序，primary_artifact 
 
 test('buildEvidenceChainSummaryForReport: tester_upload / artifact_upload 永不进入', () => {
   const items: ArtifactEvidence[] = [
-    buildEvidence({ modelId: 'm', evidenceType: 'primary_artifact', source: 'tester_upload', title: 'forbidden tester', summary: 'should not appear' }),
-    buildEvidence({ modelId: 'm', evidenceType: 'quality_signal', source: 'artifact_upload', title: 'forbidden artifact', summary: 'should not appear' }),
+    // 通过 raw 序列化绕过 builder 类型，让非法 source 能进入测试数据
+    // 模拟"如果历史数据里有 tester_upload 也会被拒"
+    ...JSON.parse(JSON.stringify([
+      { evidenceId: 'evi-tester', modelId: 'm', artifactId: null, runId: null, artifactName: null, evidenceType: 'primary_artifact', source: 'tester_upload', title: 'forbidden tester', summary: 'should not appear', detail: null, metadata: null, createdAt: '2026-06-23T00:00:00.000Z' },
+      { evidenceId: 'evi-art', modelId: 'm', artifactId: null, runId: null, artifactName: null, evidenceType: 'quality_signal', source: 'artifact_upload', title: 'forbidden artifact', summary: 'should not appear', detail: null, metadata: null, createdAt: '2026-06-23T00:00:00.000Z' },
+    ])),
     buildEvidence({ modelId: 'm', evidenceType: 'quality_signal', source: 'auto_runner', title: 'auto runner OK', summary: 'should appear' }),
-  ]
+  ] as ArtifactEvidence[]
   const chain = serializeEvidenceChain(items, 'm')
   const summary = buildEvidenceChainSummaryForReport(chain)
   assert.match(summary, /auto runner OK/)
