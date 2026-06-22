@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
 
 interface ConfirmDialogProps {
@@ -20,7 +20,8 @@ interface ConfirmDialogProps {
  * Reusable confirmation dialog that replaces window.confirm().
  * - Backdrop click to cancel
  * - Escape key to cancel
- * - Focus trap returns to trigger element
+ * - Focus trap (Tab cycles within dialog)
+ * - Returns focus to trigger element on close
  * - Body scroll lock when open
  * - Accessible role="dialog" + aria-modal
  */
@@ -36,6 +37,7 @@ export function ConfirmDialog({
   onCancel,
   children,
 }: ConfirmDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null)
   const triggerRef = useRef<HTMLElement | null>(null)
 
@@ -60,6 +62,30 @@ export function ConfirmDialog({
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [open, onCancel])
+
+  // Focus trap: keep Tab/Shift+Tab within the dialog
+  const handleTrapFocus = useCallback((e: KeyboardEvent) => {
+    if (e.key !== 'Tab' || !dialogRef.current) return
+    const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    document.addEventListener('keydown', handleTrapFocus)
+    return () => document.removeEventListener('keydown', handleTrapFocus)
+  }, [open, handleTrapFocus])
 
   if (!open) return null
 
@@ -90,7 +116,7 @@ export function ConfirmDialog({
       aria-describedby={message ? 'confirm-dialog-desc' : undefined}
       onClick={(e) => { if (e.target === e.currentTarget && !loading) onCancel() }}
     >
-      <div className="panel p-5 w-full max-w-md animate-rise" style={{ background: 'rgba(15,15,20,0.95)' }}>
+      <div ref={dialogRef} className="panel p-5 w-full max-w-md animate-rise" style={{ background: 'rgba(15,15,20,0.95)' }}>
         <div className="flex items-start gap-3">
           <div className={`h-10 w-10 rounded-lg border flex items-center justify-center flex-shrink-0 ${variantStyles.iconBg}`}>
             <AlertTriangle className={`h-5 w-5 ${variantStyles.iconColor}`} />
