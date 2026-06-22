@@ -75,6 +75,8 @@ export default function LoginPage() {
                 autoComplete="username"
                 required
                 disabled={submitting}
+                aria-invalid={!!error}
+                aria-describedby={error ? 'login-error' : undefined}
               />
             </div>
             <div className="space-y-1.5">
@@ -90,12 +92,15 @@ export default function LoginPage() {
                   required
                   disabled={submitting}
                   className="pr-10"
+                  aria-invalid={!!error}
+                  aria-describedby={error ? 'login-error' : undefined}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
                   tabIndex={-1}
+                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -103,13 +108,13 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 text-sm text-red-300 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg">
+              <div id="login-error" role="alert" className="flex items-start gap-2 text-sm text-red-300 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg">
                 <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
-            <Button type="submit" className="w-full" size="lg" loading={submitting}>
+            <Button type="submit" className="w-full" size="lg" loading={submitting} aria-describedby={error ? 'login-error' : undefined}>
               登录 <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           </form>

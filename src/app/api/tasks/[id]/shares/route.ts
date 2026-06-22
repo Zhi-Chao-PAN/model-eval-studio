@@ -52,25 +52,26 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireAuth()
-  if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
-  const { id } = await params
-
-  const { access } = await getTaskAccess(id, session)
-  if (!access) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
-  if (access !== 'OWNER') {
-    return NextResponse.json({ error: '只有任务创建者可以创建共享链接' }, { status: 403 })
-  }
-
-  const rl = await consumeRateLimit({
-    scope: 'share-create',
-    identifier: session.userId,
-    limit: 30,
-    windowMs: 60 * 60_000,
-  })
-  if (!rl.allowed) return rateLimitResponse(rl)
-
   try {
+    const session = await requireAuth()
+    if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    const { id } = await params
+    if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
+
+    const { access } = await getTaskAccess(id, session)
+    if (!access) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+    if (access !== 'OWNER') {
+      return NextResponse.json({ error: '只有任务创建者可以创建共享链接' }, { status: 403 })
+    }
+
+    const rl = await consumeRateLimit({
+      scope: 'share-create',
+      identifier: session.userId,
+      limit: 30,
+      windowMs: 60 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return NextResponse.json({ error: '请求内容格式无效' }, { status: 400 })

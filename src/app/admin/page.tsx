@@ -518,7 +518,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <p className="text-[13px] text-gray-400 mb-1">还没有邀请码</p>
-                <p className="text-[11px] text-gray-600 mb-4">在上方生成新的邀请码</p>
+                <p className="text-[11px] text-gray-400 mb-4">在上方生成新的邀请码</p>
                 <Button size="sm" onClick={generate}>
                   <Plus className="h-3.5 w-3.5" /> 生成第一个邀请码
                 </Button>
@@ -545,7 +545,7 @@ export default function AdminPage() {
                           <code className="mono text-sm bg-white/[0.06] border border-white/10 px-2 py-0.5 rounded text-white tabular tracking-wide">
                             {inv.code}
                           </code>
-                          <div className="text-[10px] text-gray-600 mt-0.5">由 {inv.createdBy.username} 创建</div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">由 {inv.createdBy.username} 创建</div>
                         </div>
                         <button onClick={() => copy(inv.code, inv.id)} className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-white flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity" title="复制邀请码">
                           {copiedId === inv.id ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
@@ -558,7 +558,7 @@ export default function AdminPage() {
                       </div>
                       <div className="col-span-2 space-y-1">
                         <div className="flex items-center justify-between text-[11px] tabular">
-                          <span className="text-gray-300">{inv.usedCount}<span className="text-gray-600"> / {inv.maxUses}</span></span>
+                          <span className="text-gray-300">{inv.usedCount}<span className="text-gray-400"> / {inv.maxUses}</span></span>
                           <span className="text-gray-500 mono">{progress}%</span>
                         </div>
                         <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden">
@@ -673,7 +673,7 @@ export default function AdminPage() {
               <div className="p-16 text-center text-sm text-gray-500 space-y-1">
                 <Users className="h-10 w-10 mx-auto mb-3 text-gray-700" />
                 <p>还没有注册用户</p>
-                <p className="text-xs text-gray-600">在「邀请码」标签页生成邀请码，发给团队成员注册。</p>
+                <p className="text-xs text-gray-400">在「邀请码」标签页生成邀请码，发给团队成员注册。</p>
               </div>
             ) : (
               <div>
@@ -703,7 +703,7 @@ export default function AdminPage() {
                             {u.username}
                             {u.id === myId && <span className="ml-1.5 text-[10px] text-indigo-400">(你)</span>}
                           </div>
-                          <div className="text-[10px] text-gray-600 truncate">
+                          <div className="text-[10px] text-gray-400 truncate">
                             {u.background ? (u.background.length > 30 ? u.background.slice(0, 28) + '…' : u.background) : '未设置背景'}
                           </div>
                         </div>
@@ -715,11 +715,11 @@ export default function AdminPage() {
                       </div>
                       <div className="col-span-1">
                         <div className="text-[15px] tabular font-semibold text-white">{u._count.tasks}</div>
-                        <div className="text-[10px] text-gray-600">个任务</div>
+                        <div className="text-[10px] text-gray-400">个任务</div>
                       </div>
                       <div className="col-span-2">
                         <div className="text-[12px] text-gray-300 mono">{new Date(u.createdAt).toLocaleDateString('zh-CN')}</div>
-                        <div className="text-[10px] text-gray-600">{formatRelativeTime(u.createdAt)}</div>
+                        <div className="text-[10px] text-gray-400">{formatRelativeTime(u.createdAt)}</div>
                       </div>
                       <div className="col-span-2">
                         <div className="text-[12px] text-gray-300 mono">{new Date(u.lastActiveAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
@@ -736,7 +736,7 @@ export default function AdminPage() {
                           className={cn(
                             'inline-flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[11px] font-medium transition-all',
                             u.id === myId
-                              ? 'text-gray-600 cursor-not-allowed'
+                              ? 'text-gray-400 cursor-not-allowed'
                               : u.role === 'ADMIN'
                                 ? 'text-amber-300 hover:text-white hover:bg-amber-500/20 border border-amber-500/20'
                                 : 'text-indigo-300 hover:text-white hover:bg-indigo-500/20 border border-indigo-500/20',
@@ -914,7 +914,7 @@ export default function AdminPage() {
               <div className="p-16 text-center text-sm text-gray-500 space-y-1">
                 <Activity className="h-10 w-10 mx-auto mb-3 text-gray-700" />
                 <p>暂无审计日志</p>
-                <p className="text-xs text-gray-600">当前时间范围内没有操作记录。尝试切换时间范围或清除筛选条件。</p>
+                <p className="text-xs text-gray-400">当前时间范围内没有操作记录。尝试切换时间范围或清除筛选条件。</p>
               </div>
             ) : (
               <div>
@@ -939,7 +939,7 @@ export default function AdminPage() {
                           <div className="text-[12px] text-gray-300 mono">
                             {new Date(log.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                           </div>
-                          <div className="text-[10px] text-gray-600 mono">
+                          <div className="text-[10px] text-gray-400 mono">
                             {new Date(log.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
                           </div>
                         </div>
@@ -949,7 +949,7 @@ export default function AdminPage() {
                           </div>
                           <div className="min-w-0">
                             <div className="text-[12px] text-white truncate">{log.user?.username || '（已删除）'}</div>
-                            <div className="text-[10px] text-gray-600 truncate">{log.taskId ? '任务: ' + log.taskId.slice(-8) : '—'}</div>
+                            <div className="text-[10px] text-gray-400 truncate">{log.taskId ? '任务: ' + log.taskId.slice(-8) : '—'}</div>
                           </div>
                         </div>
                         <div className="col-span-2">
@@ -959,12 +959,12 @@ export default function AdminPage() {
                           {log.tokenInput || log.tokenOutput ? (
                             <>
                               <div className="text-[12px] tabular text-white">
-                                {formatNumber(log.tokenInput || 0)}<span className="text-gray-600"> / {formatNumber(log.tokenOutput || 0)}</span>
+                                {formatNumber(log.tokenInput || 0)}<span className="text-gray-400"> / {formatNumber(log.tokenOutput || 0)}</span>
                               </div>
-                              <div className="text-[10px] text-gray-600">入 / 出</div>
+                              <div className="text-[10px] text-gray-400">入 / 出</div>
                             </>
                           ) : (
-                            <span className="text-[11px] text-gray-600">—</span>
+                            <span className="text-[11px] text-gray-400">—</span>
                           )}
                         </div>
                         <div className="col-span-1 text-right">
@@ -974,7 +974,7 @@ export default function AdminPage() {
                         </div>
                         <div className="col-span-2 min-w-0">
                           <div className="text-[11px] text-gray-400 mono truncate">{log.ipAddress || '—'}</div>
-                          <div className="text-[10px] text-gray-600 truncate">{log.path || ''}</div>
+                          <div className="text-[10px] text-gray-400 truncate">{log.path || ''}</div>
                         </div>
                         <div className="col-span-1 flex items-center justify-center gap-1">
                           {log.status === 'error'

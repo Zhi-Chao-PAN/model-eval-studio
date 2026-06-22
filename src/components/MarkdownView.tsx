@@ -25,6 +25,8 @@ export function ThinkBlock({ content, streaming }: { content: string; streaming?
       <button
         type="button"
         onClick={() => setExpanded(v => !v)}
+        aria-expanded={expanded}
+        aria-label={expanded ? '收起思考过程' : '展开思考过程'}
         className="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-400 hover:text-gray-200 hover:bg-white/[0.04] transition-colors"
       >
         <span className="flex items-center gap-1.5">
@@ -91,10 +93,14 @@ function MarkdownPart({ text, compact }: { text: string; compact?: boolean }) {
           tr: ({ children }) => <tr className="hover:bg-white/[0.02] transition-colors">{children}</tr>,
           a: ({ children, href }) => {
             // Only allow known-safe URL schemes to prevent javascript:/data: link injection
-            // from AI-generated markdown content.
-            const safeHref = typeof href === 'string' && /^(https?:|mailto:|#|\/)/i.test(href)
-              ? href
-              : '#'
+            // from AI-generated markdown content. Explicitly block protocol-relative URLs (//evil.com).
+            let safeHref = '#'
+            if (typeof href === 'string') {
+              const trimmed = href.trim()
+              if (/^https?:\/\//i.test(trimmed) || /^mailto:/i.test(trimmed) || trimmed === '#' || /^\/(?!\/)/.test(trimmed)) {
+                safeHref = trimmed
+              }
+            }
             return (
               <a href={safeHref} target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
                 {children}

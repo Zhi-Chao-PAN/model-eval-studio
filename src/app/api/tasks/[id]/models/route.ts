@@ -78,6 +78,7 @@ export async function POST(
   if (!rl.allowed) return rateLimitResponse(rl)
 
   const { id } = await params
+  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
@@ -190,6 +191,7 @@ export async function PUT(
   if (!rl.allowed) return rateLimitResponse(rl)
 
   const { id } = await params
+  if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
