@@ -3,6 +3,14 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
+import { clampDbText } from '@/lib/utils'
+
+// 允许的分类 / 任务类型枚举（与前端枚举保持一致）
+const ALLOWED_CATEGORIES = new Set(['PRODUCT', 'CODING', 'DESIGN', 'RESEARCH', 'OTHER'])
+const ALLOWED_REQUIREMENT_TYPES = new Set(['CODING', 'AGENT'])
+const TITLE_MAX = 100
+const DESCRIPTION_MAX = 5_000
+const REQUIREMENT_NAME_MAX = 200
 
 // 惰性清理：已完成超过 30 天的任务自动硬删除（含关联 blob）
 // 每次列表请求最多清理 5 个，失败不影响主流程
@@ -124,13 +132,29 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    title = body.title || ''
-    const { category, requirementType, requirementName, description } = body
+    const rawTitle = (body.title ?? '').toString().trim()
+    const { category, requirementType, requirementName } = body
+    let { description } = body
 
-    if (!title) {
+    if (!rawTitle) {
       errorMsg = '任务名称必填'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
+    const title = clampDbText(rawTitle, TITLE_MAX)!
+    if (category != null && !ALLOWED_CATEGORIES.has(String(category))) {
+      errorMsg = 'category 非法，允许值：' + [...ALLOWED_CATEGORIES].join('/')
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (requirementType != null && !ALLOWED_REQUIREMENT_TYPES.has(String(requirementType))) {
+      errorMsg = 'requirementType 非法，允许值：CODING/AGENT'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (description != null) {
+      description = clampDbText(description == null ? null : String(description), DESCRIPTION_MAX)
+    }
+    const safeRequirementName = requirementName == null
+      ? undefined
+      : clampDbText(String(requirementName), REQUIREMENT_NAME_MAX) ?? undefined
 
     // 获取用户背景作为默认
     const user = await prisma.user.findUnique({
@@ -142,10 +166,10 @@ export async function POST(request: Request) {
       data: {
         userId: session.userId,
         title,
-        category,
-        requirementType,
-        requirementName,
-        description,
+        category: category ?? undefined,
+        requirementType: requirementType ?? undefined,
+        requirementName: safeRequirementName,
+        description: description ?? undefined,
         backgroundUsed: user?.background || '',
         status: 'DRAFT',
         currentStep: 'DESIGN',
