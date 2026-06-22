@@ -149,11 +149,11 @@ export function ChatPanel({
           />
           <div className="absolute right-1.5 bottom-1.5">
             {streaming ? (
-              <Button size="icon-sm" variant="danger" onClick={onAbort} type="button">
+              <Button size="icon-sm" variant="danger" onClick={onAbort} type="button" aria-label="停止生成">
                 <Square className="h-3 w-3 fill-current" />
               </Button>
             ) : (
-              <Button size="icon-sm" type="submit" disabled={!input.trim()}>
+              <Button size="icon-sm" type="submit" disabled={!input.trim()} aria-label="发送消息">
                 <Send className="h-3 w-3" />
               </Button>
             )}
