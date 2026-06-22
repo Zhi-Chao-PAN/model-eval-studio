@@ -107,7 +107,7 @@ model Task {
   description     String?
   backgroundUsed  String?
   status          TaskStatus @default(DRAFT)
-  currentStep     TaskStep @default(INFO)
+  currentStep     TaskStep @default(DESIGN)
   deletedAt       DateTime?
   deletedBy       String?
   createdAt       DateTime @default(now())

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Wand2, Sparkles, Square, AlertCircle, Check, ArrowRight,
   Code2, Bot, ChevronDown, ChevronUp, FileDown, RefreshCw,
-  Copy, CheckCheck,
+  Copy, CheckCheck, Lightbulb,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -312,6 +312,15 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
         >
           我已有题目，直接填写 →
         </button>
+      </div>
+
+      {/* Tip */}
+      <div className="flex items-start gap-2 panel-inset p-3">
+        <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="text-[12px] text-gray-400 leading-relaxed">
+          <span className="text-gray-300 font-medium">操作指引：</span>
+          选择任务类型（Coding 或 Agent）→ 在输入框简单描述你想评估的能力 → 点击「AI 生成评测题」。生成后可以调整满意后确认进入下一步。
+        </div>
       </div>
 
       {/* Task type selector */}
