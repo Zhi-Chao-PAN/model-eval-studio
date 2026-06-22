@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, FlaskConical, FileText, Image as ImageIcon, Wand2,
-  Package, FileCheck2, Loader2, ArrowRight, Trash2, Circle,
-  AlertTriangle, RefreshCw, Lightbulb, Code2, Bot,
+  Package, FileCheck2, Loader2, ArrowRight, Trash2,
+  AlertTriangle, RefreshCw, Lightbulb, Code2, Bot, Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -286,7 +286,7 @@ export default function DashboardPage() {
                       <span>更新 {formatTime(task.updatedAt)}</span>
                     </div>
                   </div>
-                  <div className="hidden md:flex items-center gap-1">
+                  <div className="flex items-center gap-1">
                     {STEPS.map((s, i) => {
                       const Icon = s.icon
                       const done = i < stepIdx
@@ -298,7 +298,7 @@ export default function DashboardPage() {
                             current ? 'bg-indigo-500/20 text-indigo-300' :
                             'bg-white/[0.03] text-gray-600'
                           }`}>
-                            {done ? <Circle className="h-2.5 w-2.5 fill-current" /> : <Icon className="h-3 w-3" />}
+                            {done ? <Check className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
                           </div>
                           {i < STEPS.length - 1 && (
                             <div className={`w-2 h-px mx-0.5 ${i < stepIdx ? 'bg-emerald-500/40' : 'bg-white/10'}`} />
