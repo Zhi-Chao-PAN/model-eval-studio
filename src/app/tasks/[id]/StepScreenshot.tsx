@@ -14,6 +14,7 @@ interface Props {
   task: any
   onRefresh: () => void
   onNext?: () => void
+  onPrev?: () => void
 }
 
 type Tab = 'process' | 'dashboard'
@@ -147,7 +148,7 @@ function validateAnalysisPayload(images: string[]): string[] {
   return images
 }
 
-export default function StepScreenshot({ task, onRefresh, onNext }: Props) {
+export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [processImages, setProcessImages] = useState<UploadedImage[]>([])
   const [dashboardImages, setDashboardImages] = useState<UploadedImage[]>([])
@@ -510,26 +511,34 @@ export default function StepScreenshot({ task, onRefresh, onNext }: Props) {
       )}
 
       {/* Next step button */}
-      {onNext && task.models && task.models.length > 0 && !analyzing && (
+      {(onPrev || onNext) && !analyzing && (
         <div className="flex items-center gap-3 pt-1">
+          {onPrev && (
+            <Button onClick={onPrev} variant="ghost">
+              ← 返回任务信息
+            </Button>
+          )}
           <div className="flex-1" />
-          <Button onClick={onNext}>
-            下一步：上传产物 <ArrowRight className="h-3.5 w-3.5 ml-1" />
-          </Button>
+          {onNext && task.models && task.models.length > 0 && (
+            <Button onClick={onNext}>
+              下一步：上传产物 <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          )}
+          {onNext && task.models && task.models.length === 0 && ((result !== null && dashboardImages.length > 0) || dashboardImages.length === 0) && (
+            <Button onClick={onNext} variant="secondary">
+              继续：上传产物 <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          )}
         </div>
       )}
       {onNext && task.models && task.models.length === 0 && !analyzing && ((result !== null && dashboardImages.length > 0) || dashboardImages.length === 0) && (
-        <div className="flex items-center gap-3 pt-1">
-          <span className="text-xs text-amber-400/80">
+        <div className="flex items-start gap-2 mt-2">
+          <span className="text-xs text-amber-400/80 leading-relaxed">
             {dashboardImages.length === 0
               ? '提示：未上传截图，将在下一步手动添加模型代号'
               : '提示：AI 未识别到模型，可在下一步手动添加模型代号'
             }
           </span>
-          <div className="flex-1" />
-          <Button onClick={onNext} variant="secondary">
-            继续：上传产物 <ArrowRight className="h-3.5 w-3.5 ml-1" />
-          </Button>
         </div>
       )}
     </div>

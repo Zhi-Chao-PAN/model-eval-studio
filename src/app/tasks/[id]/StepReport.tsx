@@ -45,6 +45,7 @@ interface ReportDetail extends ReportVersion {
 interface Props {
   task: any
   onRefresh: () => void
+  onPrev?: () => void
 }
 
 type ReportSection = {
@@ -137,7 +138,7 @@ function buildSectionCopyText(section: ReportSection): string {
   return [section.title, section.content].join('\n')
 }
 
-export default function StepReport({ task, onRefresh }: Props) {
+export default function StepReport({ task, onRefresh, onPrev }: Props) {
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [activeJobs, setActiveJobs] = useState<Record<string, ActiveJob>>({})
   const [adjustText, setAdjustText] = useState('')
