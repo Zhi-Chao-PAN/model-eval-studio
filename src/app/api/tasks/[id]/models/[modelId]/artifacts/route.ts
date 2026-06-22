@@ -6,6 +6,7 @@ import { deleteArtifactFile, storeArtifactFile } from '@/lib/artifact-storage'
 import { logAudit } from '@/lib/audit'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { safeServerError } from '@/lib/api-error'
 import { sanitizeFileName, validateFileName, validateMimeType } from '@/lib/file-validation'
 
 export const runtime = 'nodejs'
@@ -265,10 +266,10 @@ export async function POST(
     status = 'success'
     return NextResponse.json({ artifacts: created })
   } catch (error: unknown) {
-    errorMsg = errorMessage(error)
+    const { message } = safeServerError(error, 'ARTIFACT_UPLOAD')
+    errorMsg = message
     await Promise.all(storedUrls.map(url => deleteArtifactFile(url).catch(() => undefined)))
-    console.error('Artifact save failed:', error)
-    return NextResponse.json({ error: '产物保存失败：' + errorMsg }, { status: 500 })
+    return NextResponse.json({ error: '产物保存失败：' + message }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'ARTIFACT_UPLOAD',
