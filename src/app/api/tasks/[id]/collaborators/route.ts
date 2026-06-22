@@ -5,6 +5,7 @@ import { safeServerError } from '@/lib/api-error'
 import { getTaskAccess, hasAccessLevel } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { isValidCuid } from '@/lib/utils'
+import { logAudit } from '@/lib/audit'
 
 const MAX_USERNAME_LENGTH = 64
 const MAX_COLLABORATORS_PER_TASK = 50
@@ -134,6 +135,14 @@ export async function POST(
       include: {
         user: { select: { id: true, username: true } },
       },
+    })
+
+    logAudit(request, {
+      action: 'COLLABORATOR_ADD',
+      userId: session.userId,
+      taskId: id,
+      status: 'success',
+      detail: { addedUserId: user.id, addedUsername: user.username, role },
     })
 
     return NextResponse.json({ collaborator })
