@@ -17,6 +17,7 @@ import {
 } from '@/lib/model-artifact-analysis'
 import { clampAnalysisError } from '@/lib/analysis-error'
 import { ArtifactAnalysisTrace } from '@/components/tasks/ArtifactAnalysisTrace'
+import { ArtifactEvidenceChainPanel } from '@/components/tasks/ArtifactEvidenceChainPanel'
 
 interface Props {
   task: any
@@ -520,6 +521,12 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
                   </div>
                 )}
                 <ArtifactAnalysisTrace run={latestAnalysisRun} modelCode={model.modelCode} />
+                <ArtifactEvidenceChainPanel
+                  evidenceChainRaw={
+                    artifactAnalysis?.evidenceChain ?? null
+                  }
+                  modelCode={model.modelCode}
+                />
                 {latestAnalysisRun?.status === 'COMPLETED' && model.artifacts && model.artifacts.length > FILE_ANALYSIS_LIMIT && (
                   <div className="mt-2 text-[11px] text-gray-500 leading-relaxed px-1">
                     深度分析覆盖前 {FILE_ANALYSIS_LIMIT} 个主要文件，每文件约 {(FILE_ANALYSIS_CHAR_LIMIT / 1000).toFixed(0)}k 字符。其余文件已列入清单但未做逐文件深度分析。
