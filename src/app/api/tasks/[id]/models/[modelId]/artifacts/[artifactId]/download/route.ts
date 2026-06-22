@@ -5,6 +5,18 @@ import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
 
+// MIME types that can carry active content (HTML, SVG with <script>, etc.)
+// When serving these as downloads, force application/octet-stream to prevent
+// any browser from rendering them inline, even if Content-Disposition is
+// mishandled by a proxy or older browser.
+const DANGEROUS_INLINE_MIME_PREFIXES = [
+  'text/html',
+  'application/xhtml+xml',
+  'image/svg+xml',
+  'application/xml',
+  'text/xml',
+]
+
 function safeAsciiFilename(name: string): string {
   return name
     .replace(/[^\x20-\x7E]+/g, '_')
@@ -14,6 +26,24 @@ function safeAsciiFilename(name: string): string {
 
 function contentDisposition(name: string): string {
   return `attachment; filename="${safeAsciiFilename(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`
+}
+
+/**
+ * Harden declared MIME type for download responses.
+ *  - forces octet-stream for active-content types that could execute scripts
+ *  - defaults to octet-stream on empty / malformed values
+ *  - never returns text/html or image/svg+xml
+ */
+function safeDownloadContentType(rawMime: string | null | undefined): string {
+  if (!rawMime || typeof rawMime !== 'string') return 'application/octet-stream'
+  const lower = rawMime.trim().toLowerCase()
+  if (!lower || /[\x00-\x1f]/.test(lower)) return 'application/octet-stream'
+  for (const prefix of DANGEROUS_INLINE_MIME_PREFIXES) {
+    if (lower === prefix || lower.startsWith(prefix + ';')) {
+      return 'application/octet-stream'
+    }
+  }
+  return lower
 }
 
 function dataUrlToBody(dataUrl: string): { body: BodyInit; contentType: string; size: number } | null {
@@ -50,34 +80,40 @@ export async function GET(
   if (!artifact) return Response.json({ error: '文件不存在' }, { status: 404 })
 
   let body: BodyInit
-  let contentType = artifact.mimeType || 'application/octet-stream'
-  let size = artifact.size || null
+  let declaredContentType: string | null = artifact.mimeType
+  let size: number | null = artifact.size
 
   if (hasStoredArtifactFile(artifact.url)) {
     const stored = await readArtifactFile(artifact.url)
     body = stored.body
-    contentType = artifact.mimeType || stored.contentType
+    declaredContentType = artifact.mimeType || stored.contentType
     size = stored.size
   } else if (artifact.url?.startsWith('data:')) {
     const parsed = dataUrlToBody(artifact.url)
     if (!parsed) return Response.json({ error: '历史产物数据已损坏' }, { status: 410 })
     body = parsed.body
-    contentType = artifact.mimeType || parsed.contentType
+    declaredContentType = artifact.mimeType || parsed.contentType
     size = parsed.size
   } else {
     const text = artifact.textContent || artifact.parsedText || ''
     if (!text.trim()) return Response.json({ error: '该产物没有可下载的原文件' }, { status: 404 })
     body = text
-    contentType = artifact.mimeType || 'text/plain; charset=utf-8'
+    declaredContentType = artifact.mimeType || 'text/plain; charset=utf-8'
     size = Buffer.byteLength(text, 'utf8')
   }
+
+  const contentType = safeDownloadContentType(declaredContentType)
 
   return new Response(body, {
     headers: {
       'Content-Type': contentType,
       'Content-Disposition': contentDisposition(artifact.name),
-      'Content-Length': size ? String(size) : '',
+      'Content-Length': size != null ? String(size) : '',
       'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; script-src 'none'; style-src 'none'; sandbox",
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
     },
   })
 }
