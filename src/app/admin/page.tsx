@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
+import { cn, formatRelativeTime } from '@/lib/utils'
 
 interface Invite {
   id: string
@@ -719,13 +719,13 @@ export default function AdminPage() {
                       </div>
                       <div className="col-span-2">
                         <div className="text-[12px] text-gray-300 mono">{new Date(u.createdAt).toLocaleDateString('zh-CN')}</div>
-                        <div className="text-[10px] text-gray-600">{formatAgo(u.createdAt)}</div>
+                        <div className="text-[10px] text-gray-600">{formatRelativeTime(u.createdAt)}</div>
                       </div>
                       <div className="col-span-2">
                         <div className="text-[12px] text-gray-300 mono">{new Date(u.lastActiveAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                         <div className={cn('text-[10px] flex items-center gap-1', isActive ? 'text-emerald-400' : 'text-gray-500')}>
                           <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: isActive ? '#34d399' : '#6b7280' }} />
-                          {formatAgo(u.lastActiveAt)}
+                          {formatRelativeTime(u.lastActiveAt)}
                         </div>
                       </div>
                       <div className="col-span-2 flex justify-end">
@@ -1060,19 +1060,6 @@ export default function AdminPage() {
       )}
     </div>
   )
-}
-
-function formatAgo(ts: string): string {
-  const ms = Date.now() - new Date(ts).getTime()
-  const s = Math.floor(ms / 1000)
-  if (s < 60) return s <= 0 ? '刚刚' : s + ' 秒前'
-  const m = Math.floor(s / 60)
-  if (m < 60) return m + ' 分钟前'
-  const h = Math.floor(m / 60)
-  if (h < 24) return h + ' 小时前'
-  const d = Math.floor(h / 24)
-  if (d < 30) return d + ' 天前'
-  return Math.floor(d / 30) + ' 个月前'
 }
 
 function formatNumber(n: number): string {
