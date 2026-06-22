@@ -161,24 +161,71 @@ export function getDefaultRubric(taskType: string | null | undefined): RubricDat
 
 /** 校验 rubric 数据合法性 */
 export function validateRubric(data: unknown): { valid: boolean; error?: string } {
-  if (typeof data !== 'object' || data === null) {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     return { valid: false, error: 'rubric 必须是对象' }
   }
-  const d = data as Partial<RubricData>
-  if (!d.templateType || !['CODING', 'AGENT', 'CUSTOM'].includes(d.templateType)) {
+  const d = data as Record<string, unknown>
+  if (typeof d.templateType !== 'string' || !['CODING', 'AGENT', 'CUSTOM'].includes(d.templateType)) {
     return { valid: false, error: 'templateType 必须是 CODING / AGENT / CUSTOM' }
   }
-  if (!Array.isArray(d.dimensions) || d.dimensions.length === 0) {
-    return { valid: false, error: 'dimensions 不能为空数组' }
+  if (!Array.isArray(d.dimensions) || d.dimensions.length === 0 || d.dimensions.length > 20) {
+    return { valid: false, error: 'dimensions 必须为 1-20 项的非空数组' }
   }
-  const totalWeight = d.dimensions.reduce((sum, dim) => sum + (dim.weight || 0), 0)
-  if (Math.abs(totalWeight - 10) > 0.01) {
-    return { valid: false, error: `所有维度权重之和必须等于 10，当前为 ${totalWeight}` }
+  if (typeof d.overallFormula !== 'string' || d.overallFormula.trim().length === 0) {
+    return { valid: false, error: 'overallFormula 必填' }
   }
+  if (d.overallFormula.length > 2000) {
+    return { valid: false, error: 'overallFormula 过长（最多 2000 字符）' }
+  }
+
+  let totalWeight = 0
+  const keys = new Set<string>()
   for (const dim of d.dimensions) {
-    if (!dim.key || !dim.label) {
-      return { valid: false, error: '每个维度必须有 key 和 label' }
+    if (typeof dim !== 'object' || dim === null || Array.isArray(dim)) {
+      return { valid: false, error: '每个维度必须是对象' }
     }
+    const d2 = dim as Record<string, unknown>
+    if (typeof d2.key !== 'string' || !d2.key.trim()) {
+      return { valid: false, error: '每个维度必须有 key' }
+    }
+    if (!/^[a-z][a-z0-9_]{0,31}$/i.test(d2.key)) {
+      return { valid: false, error: '维度 key 必须是 1-32 位字母/数字/下划线' }
+    }
+    if (keys.has(d2.key)) {
+      return { valid: false, error: `维度 key 重复：${d2.key}` }
+    }
+    keys.add(d2.key)
+    if (typeof d2.label !== 'string' || !d2.label.trim()) {
+      return { valid: false, error: `维度 ${d2.key} 必须有 label` }
+    }
+    if (d2.label.length > 60) {
+      return { valid: false, error: `维度 ${d2.key} label 过长（最多 60 字符）` }
+    }
+    if (typeof d2.description !== 'string' || d2.description.length > 1000) {
+      return { valid: false, error: `维度 ${d2.key} 描述必须是字符串且不超过 1000 字符` }
+    }
+    const w = d2.weight
+    if (typeof w !== 'number' || !Number.isFinite(w) || w < 0.5 || w > 9) {
+      return { valid: false, error: `维度 ${d2.key} 权重必须为 0.5-9 之间的数字` }
+    }
+    // Weights snap to 0.5 increments, consistent with score-validation
+    if (Math.abs(w - Math.round(w * 2) / 2) > 1e-6) {
+      return { valid: false, error: `维度 ${d2.key} 权重必须以 0.5 为步长（如 1、1.5、2）` }
+    }
+    totalWeight += w
+    if (!Array.isArray(d2.scoreRange) || d2.scoreRange.length !== 2) {
+      return { valid: false, error: `维度 ${d2.key} scoreRange 必须是 [min, max]` }
+    }
+    const [lo, hi] = d2.scoreRange as unknown[]
+    if (typeof lo !== 'number' || typeof hi !== 'number' || !Number.isFinite(lo) || !Number.isFinite(hi) || lo >= hi) {
+      return { valid: false, error: `维度 ${d2.key} scoreRange 必须是有效数字区间 [min, max]` }
+    }
+    if (d2.scoreGuide !== undefined && d2.scoreGuide !== null && (typeof d2.scoreGuide !== 'object' || Array.isArray(d2.scoreGuide))) {
+      return { valid: false, error: `维度 ${d2.key} scoreGuide 必须是对象` }
+    }
+  }
+  if (Math.abs(totalWeight - 10) > 0.01) {
+    return { valid: false, error: `所有维度权重之和必须等于 10，当前为 ${+totalWeight.toFixed(2)}` }
   }
   return { valid: true }
 }
