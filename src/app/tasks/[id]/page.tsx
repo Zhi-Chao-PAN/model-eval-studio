@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -350,6 +350,36 @@ export default function TaskPage() {
     window.open('/api/tasks/' + taskId + '/export?format=' + format, '_blank', 'noopener,noreferrer')
   }
 
+  // Compute which steps are actually completed based on task data
+  const completedSteps = useMemo(() => {
+    const set = new Set<string>()
+    if (!task) return set
+
+    // DESIGN: completed if user has a description (either AI-generated or custom) or has explicitly progressed past it
+    if (currentStep !== 'DESIGN') set.add('DESIGN')
+
+    // INFO: completed if title and description exist
+    if (task.title && task.description) set.add('INFO')
+
+    // SCREENSHOT: completed if models exist (either from screenshot analysis or manually added)
+    const models = Array.isArray(task.models) ? task.models : []
+    if (models.length > 0) set.add('SCREENSHOT')
+
+    // ARTIFACT: completed if at least one model has artifacts uploaded AND analyzed
+    const hasArtifacts = models.some((m: any) =>
+      Array.isArray(m.artifacts) && m.artifacts.length > 0
+    )
+    if (hasArtifacts) set.add('ARTIFACT')
+
+    // REPORT: completed if any model has a report
+    const hasReport = models.some((m: any) =>
+      Array.isArray(m.reports) && m.reports.length > 0
+    )
+    if (hasReport) set.add('REPORT')
+
+    return set
+  }, [task, currentStep])
+
   function renderStepContent() {
     if (!task) return null
     switch (currentStep) {
@@ -514,13 +544,13 @@ export default function TaskPage() {
 
       {/* Mobile step bar */}
       <div className="lg:hidden mb-4">
-        <MobileStepBar steps={STEPS} currentStep={currentStep} onChange={goToStep} />
+        <MobileStepBar steps={STEPS} currentStep={currentStep} onChange={goToStep} completedSteps={completedSteps} />
       </div>
 
       {/* Main grid: sidebar + content */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
         <aside className="hidden lg:block lg:col-span-3 xl:col-span-2">
-          <DesktopStepSidebar steps={STEPS} currentStep={currentStep} onChange={goToStep} />
+          <DesktopStepSidebar steps={STEPS} currentStep={currentStep} onChange={goToStep} completedSteps={completedSteps} />
         </aside>
 
         <main className="lg:col-span-9 xl:col-span-10 min-w-0">

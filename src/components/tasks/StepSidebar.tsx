@@ -26,9 +26,10 @@ interface Props {
   steps: readonly { key: string; label: string; desc: string }[]
   currentStep: string
   onChange: (key: string) => void
+  completedSteps?: Set<string>
 }
 
-export function DesktopStepSidebar({ steps, currentStep, onChange }: Props) {
+export function DesktopStepSidebar({ steps, currentStep, onChange, completedSteps }: Props) {
   const currentIdx = steps.findIndex(s => s.key === currentStep)
 
   return (
@@ -36,8 +37,8 @@ export function DesktopStepSidebar({ steps, currentStep, onChange }: Props) {
       {steps.map((step, i) => {
         const Icon = ICONS[step.key] || FileText
         const isCurrent = step.key === currentStep
-        const isDone = i < currentIdx
-        const isFuture = i > currentIdx
+        const isDone = completedSteps ? completedSteps.has(step.key) : i < currentIdx
+        const isFuture = !isCurrent && !isDone
         const accent = ACCENTS[step.key] || 'from-indigo-500 to-violet-500'
         return (
           <button
@@ -84,12 +85,14 @@ export function DesktopStepSidebar({ steps, currentStep, onChange }: Props) {
   )
 }
 
-export function MobileStepBar({ steps, currentStep, onChange }: Props) {
+export function MobileStepBar({ steps, currentStep, onChange, completedSteps }: Props) {
+  const currentIdx = steps.findIndex(s => s.key === currentStep)
   return (
     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-      {steps.map(step => {
+      {steps.map((step, i) => {
         const Icon = ICONS[step.key] || FileText
         const isCurrent = step.key === currentStep
+        const isDone = completedSteps ? completedSteps.has(step.key) : i < currentIdx
         return (
           <button
             key={step.key}
@@ -98,10 +101,12 @@ export function MobileStepBar({ steps, currentStep, onChange }: Props) {
               'flex items-center gap-1.5 flex-shrink-0 px-3 h-9 rounded-lg text-xs font-medium transition-colors border',
               isCurrent
                 ? 'bg-gradient-to-br from-indigo-500 to-violet-500 text-white border-transparent shadow-lg shadow-indigo-500/25'
+                : isDone
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
                 : 'bg-white/[0.04] border-white/[0.08] text-gray-400 hover:border-white/[0.14]',
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
+            {isDone ? <Check className="h-3 w-3" /> : <Icon className="h-3.5 w-3.5" />}
             {step.label}
           </button>
         )
