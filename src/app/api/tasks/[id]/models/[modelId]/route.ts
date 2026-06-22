@@ -6,6 +6,7 @@ import { deleteArtifactFile } from '@/lib/artifact-storage'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { isValidCuid } from '@/lib/utils'
 
 export async function DELETE(
   request: Request,
@@ -25,6 +26,9 @@ export async function DELETE(
   if (!rl.allowed) return rateLimitResponse(rl)
 
   const { id, modelId } = await params
+  if (!isValidCuid(id) || !isValidCuid(modelId)) {
+    return NextResponse.json({ error: '参数格式无效' }, { status: 400 })
+  }
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
   let modelCode = ''

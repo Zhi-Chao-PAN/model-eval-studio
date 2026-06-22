@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { isValidCuid } from '@/lib/utils'
 
 // 获取某个模型的所有报告版本列表
 export async function GET(
@@ -13,6 +14,9 @@ export async function GET(
     const session = await requireAuth()
     if (!session) return apiError('未登录', 401)
     const { id, modelId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId)) {
+      return apiError('参数格式无效', 400)
+    }
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'VIEWER')

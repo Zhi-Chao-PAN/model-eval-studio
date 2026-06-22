@@ -6,7 +6,7 @@ import { createReportRevision } from '@/lib/report-versioning'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { validateScores } from '@/lib/score-validation'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
-import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
+import { clampDbText, clampRequiredText, DB_TEXT_LIMITS, isValidCuid } from '@/lib/utils'
 
 // 获取单条报告详情（含生成依据快照）
 export async function GET(
@@ -17,6 +17,9 @@ export async function GET(
     const session = await requireAuth()
     if (!session) return apiError('未登录', 401)
     const { id, modelId, reportId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId) || !isValidCuid(reportId)) {
+      return apiError('参数格式无效', 400)
+    }
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'VIEWER')
@@ -70,6 +73,9 @@ export async function POST(
     if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id, modelId, reportId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId) || !isValidCuid(reportId)) {
+      return apiError('参数格式无效', 400)
+    }
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'EDITOR')

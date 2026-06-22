@@ -52,3 +52,13 @@ export function clampRequiredText(text: string | null | undefined, maxLen: numbe
   const clamped = clampDbText(text, maxLen)
   return clamped ?? ''
 }
+
+/**
+ * Validate a CUID/CUID2-style identifier. Accepts lowercase alphanumeric IDs
+ * of length 20–32 (covers Prisma cuid() and cuid2() defaults). Used to reject
+ * malformed path parameters early before hitting the database.
+ */
+const CUID_PATTERN = /^[a-z0-9]{20,32}$/
+export function isValidCuid(value: unknown): value is string {
+  return typeof value === 'string' && CUID_PATTERN.test(value)
+}

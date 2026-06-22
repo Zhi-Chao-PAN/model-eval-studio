@@ -8,6 +8,7 @@ import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { safeServerError } from '@/lib/api-error'
 import { sanitizeFileName, validateFileName, validateMimeType } from '@/lib/file-validation'
+import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -61,6 +62,10 @@ export async function POST(
     if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
     const { id, modelId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId)) {
+      errorMsg = '参数格式无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
     taskId = id
 
     const { access } = await getTaskAccess(id, session)
@@ -313,6 +318,10 @@ export async function DELETE(
     if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id, modelId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId)) {
+      errorMsg = '参数格式无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
     taskId = id
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
