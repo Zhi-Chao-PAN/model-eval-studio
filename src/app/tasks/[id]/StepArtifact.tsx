@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle2, FileText, Package,
-  Plus, Sparkles, Trash2, UploadCloud, Loader2, X, Lightbulb,
+  Plus, Sparkles, Trash2, UploadCloud, Loader2, X, Lightbulb, ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
@@ -19,9 +19,10 @@ import { ArtifactAnalysisTrace } from '@/components/tasks/ArtifactAnalysisTrace'
 interface Props {
   task: any
   onRefresh: () => void
+  onNext?: () => void
 }
 
-export default function StepArtifact({ task, onRefresh }: Props) {
+export default function StepArtifact({ task, onRefresh, onNext }: Props) {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [textContent, setTextContent] = useState('')
   const [uploadingModelId, setUploadingModelId] = useState<string | null>(null)
@@ -415,6 +416,17 @@ export default function StepArtifact({ task, onRefresh }: Props) {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Next step button */}
+      {onNext && models.length > 0 && (
+        <div className="flex items-center gap-3 pt-1">
+          <span className="text-xs text-gray-500">提示：为所有模型上传产物后，点击「AI 分析产物」等待分析完成</span>
+          <div className="flex-1" />
+          <Button onClick={onNext}>
+            下一步：生成报告 <ArrowRight className="h-3.5 w-3.5 ml-1" />
+          </Button>
         </div>
       )}
 

@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   Image as ImageIcon, Camera, BarChart3, UploadCloud, X as XIcon,
-  Sparkles, AlertTriangle, SkipForward, CheckCircle2, Lightbulb,
+  Sparkles, AlertTriangle, SkipForward, CheckCircle2, Lightbulb, ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 interface Props {
   task: any
   onRefresh: () => void
+  onNext?: () => void
 }
 
 type Tab = 'process' | 'dashboard'
@@ -146,7 +147,7 @@ function validateAnalysisPayload(images: string[]): string[] {
   return images
 }
 
-export default function StepScreenshot({ task, onRefresh }: Props) {
+export default function StepScreenshot({ task, onRefresh, onNext }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [processImages, setProcessImages] = useState<UploadedImage[]>([])
   const [dashboardImages, setDashboardImages] = useState<UploadedImage[]>([])
@@ -506,6 +507,25 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
 
       {result && activeTab === 'process' && result.parsed?.models?.length > 0 && (
         <div className="panel p-4"><JsonTable text={result.raw || JSON.stringify(result.parsed)} onSave={saveRecognizedRows} /></div>
+      )}
+
+      {/* Next step button */}
+      {onNext && task.models && task.models.length > 0 && !analyzing && (
+        <div className="flex items-center gap-3 pt-1">
+          <div className="flex-1" />
+          <Button onClick={onNext}>
+            下一步：上传产物 <ArrowRight className="h-3.5 w-3.5 ml-1" />
+          </Button>
+        </div>
+      )}
+      {onNext && task.models && task.models.length === 0 && !analyzing && (dashboardImages.length > 0 || skippedProcess) && (
+        <div className="flex items-center gap-3 pt-1">
+          <span className="text-xs text-gray-500">提示：上传截图后点击「开始 AI 分析」识别模型，或手动添加模型代号</span>
+          <div className="flex-1" />
+          <Button onClick={onNext} variant="secondary">
+            跳过，直接上传产物 <ArrowRight className="h-3.5 w-3.5 ml-1" />
+          </Button>
+        </div>
       )}
     </div>
   )
