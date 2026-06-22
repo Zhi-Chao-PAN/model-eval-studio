@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Download, Trash2, Loader2, Check, CheckCircle, Share2,
-  AlertTriangle, Sparkles, X, FileJson, FileSpreadsheet, ChevronDown,
+  AlertTriangle, Sparkles, X, FileJson, FileSpreadsheet, FileText, ChevronDown,
 } from 'lucide-react'
 import StepInfo from './StepInfo'
 import StepScreenshot from './StepScreenshot'
@@ -354,7 +354,7 @@ export default function TaskPage() {
     }
   }
 
-  function handleExport(format: 'zip' | 'json' | 'csv') {
+  function handleExport(format: 'zip' | 'json' | 'csv' | 'md') {
     setExportMenuOpen(false)
     window.open('/api/tasks/' + taskId + '/export?format=' + format, '_blank', 'noopener,noreferrer')
   }
@@ -539,6 +539,16 @@ export default function TaskPage() {
                   <div>
                     <div className="font-medium">CSV 横向对比表</div>
                     <div className="text-[11px] text-gray-500">各模型评分一键对比</div>
+                  </div>
+                </button>
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-200 hover:bg-white/[0.06] text-left border-t border-white/5"
+                  onClick={() => handleExport('md')}
+                >
+                  <FileText className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <div className="font-medium">Markdown 报告</div>
+                    <div className="text-[11px] text-gray-500">含概览表格 + 各模型详细分析</div>
                   </div>
                 </button>
               </div>

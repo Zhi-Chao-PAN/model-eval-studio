@@ -10,7 +10,7 @@ import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
-type ExportFormat = 'zip' | 'json' | 'csv'
+type ExportFormat = 'zip' | 'json' | 'csv' | 'md'
 
 function formatIntegerScore(score: number): string {
   const value = Number(score)
@@ -29,6 +29,7 @@ function resolveFormat(searchParams: URLSearchParams): ExportFormat {
   const raw = (searchParams.get('format') || 'zip').toLowerCase()
   if (raw === 'json') return 'json'
   if (raw === 'csv') return 'csv'
+  if (raw === 'md' || raw === 'markdown') return 'md'
   return 'zip'
 }
 
@@ -156,6 +157,85 @@ function csvEscape(value: string): string {
   return str
 }
 
+/**
+ * Build a markdown report document: title, summary table, per-model detailed analysis.
+ */
+function buildMarkdownPayload(task: any): string {
+  const lines: string[] = []
+  lines.push(`# ${task.title}`)
+  lines.push('')
+  if (task.description) {
+    lines.push(task.description)
+    lines.push('')
+  }
+  lines.push(`> 导出时间：${new Date().toLocaleString('zh-CN')}`)
+  lines.push('')
+  lines.push('## 评分概览')
+  lines.push('')
+  lines.push('| 模型 | 综合 | 效率 | 质量 |')
+  lines.push('| --- | --- | --- | --- |')
+  for (const model of task.models) {
+    const report = model.reports?.[0]
+    if (!report) {
+      lines.push(`| ${model.modelCode || model.displayName || '-'} | - | - | - |`)
+      continue
+    }
+    lines.push(`| ${model.modelCode || model.displayName} | ${formatIntegerScore(report.overallScore)} | ${formatHalfScore(report.efficiencyScore)} | ${formatHalfScore(report.qualityScore)} |`)
+  }
+  lines.push('')
+  lines.push('---')
+  lines.push('')
+
+  for (const model of task.models) {
+    const report = model.reports?.[0]
+    const name = model.displayName || model.modelCode
+    lines.push(`## ${name}`)
+    lines.push('')
+    if (!report) {
+      lines.push('*暂无评估报告*')
+      lines.push('')
+      continue
+    }
+    lines.push(`**综合评分：${formatIntegerScore(report.overallScore)} / 10**`)
+    lines.push('')
+    if (report.productFeedback) {
+      lines.push('### 产物效果反馈')
+      lines.push('')
+      lines.push(report.productFeedback)
+      lines.push('')
+    }
+    lines.push(`### 交付效率（${formatHalfScore(report.efficiencyScore)} / 10）`)
+    lines.push('')
+    lines.push(report.efficiencyComment || '（暂无）')
+    lines.push('')
+    lines.push(`### 产物质量（${formatHalfScore(report.qualityScore)} / 10）`)
+    lines.push('')
+    lines.push(report.qualityComment || '（暂无）')
+    lines.push('')
+    if (report.overallComment) {
+      lines.push('### 综合评价')
+      lines.push('')
+      lines.push(report.overallComment)
+      lines.push('')
+    }
+    if (report.trajectoryAnalysis) {
+      lines.push('### 轨迹分析')
+      lines.push('')
+      lines.push(report.trajectoryAnalysis)
+      lines.push('')
+    }
+    if (report.verificationSummary) {
+      lines.push('### 验证说明')
+      lines.push('')
+      lines.push(report.verificationSummary)
+      lines.push('')
+    }
+    lines.push('---')
+    lines.push('')
+  }
+  return lines.join('\n')
+}
+
 function sanitizeFilename(name: string): string {
   // 去除文件名中的非法字符，保留中文、字母、数字、下划线、短横线
   return name.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 80) || 'task-export'
@@ -271,6 +351,16 @@ export async function GET(
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="${baseFilename}.csv"`,
+      },
+    })
+  }
+
+  if (format === 'md') {
+    const markdown = buildMarkdownPayload(task)
+    return new NextResponse(markdown, {
+      headers: {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${baseFilename}.md"`,
       },
     })
   }
