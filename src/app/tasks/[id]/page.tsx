@@ -380,7 +380,11 @@ export default function TaskPage() {
 
   async function copyMarkdownReport() {
     try {
-      const res = await fetch('/api/tasks/' + taskId + '/export?format=md')
+      // Use the submission-scoped export so the clipboard only contains
+      // each model's five submission modules — no task title, overview
+      // table, export timestamp, or system notes. The full `format=md`
+      // export remains available via the "导出" menu.
+      const res = await fetch('/api/tasks/' + taskId + '/export?format=md&scope=submission')
       if (!res.ok) throw new Error('导出失败')
       const text = await res.text()
       await navigator.clipboard.writeText(text)
@@ -391,7 +395,7 @@ export default function TaskPage() {
         btn.innerHTML = '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> 已复制'
         setTimeout(() => { btn.innerHTML = orig }, 2000)
       }
-      toast.success('Markdown 报告已复制到剪贴板')
+      toast.success('提交版报告已复制到剪贴板（仅含 5 模块正文）')
     } catch (e: any) {
       toast.error('复制失败：' + (e?.message || '请检查浏览器剪贴板权限'))
     }
