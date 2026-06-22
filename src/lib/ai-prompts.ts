@@ -248,6 +248,12 @@ export function buildReportPrompt(opts: {
   analysisContext?: string
   taskType?: TaskType | string
   rubricGuidance?: string
+  /**
+   * 后台候选证据摘要（来自 artifact auto runner V1 + 解析器 + 综合分析）。
+   * 仅用于交付效率 / 产物质量 / 综合评价；不会影响"产物效果反馈"——
+   * 产物效果反馈仍然只信 tester_upload 的本地验收截图。
+   */
+  evidenceChainSummary?: string
 }): string {
   const isCoding = opts.taskType === 'CODING'
   const isAgent = opts.taskType === 'AGENT'
@@ -397,6 +403,9 @@ ${opts.artifactsText || '未提供'}
 ${opts.verificationSummary || '未提供产物效果截图。产物效果反馈暂不能生成，其余模块可基于产物内容、任务要求、硬指标和轨迹进行评估。'}
 
 ${opts.analysisContext ? `【之前的整体分析结论，供参考】\n${opts.analysisContext}\n` : ''}
+${opts.evidenceChainSummary ? `【后台候选证据摘要（来自自动验收运行器 V1 + 解析器；不是测试者本地验收截图，不能据此生成产物效果反馈）】
+${opts.evidenceChainSummary}
+` : ''}
 ${typeSpecificScoring}
 
 请严格按以下格式输出，纯文本，不要 Markdown，不要代码块：

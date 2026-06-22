@@ -25,6 +25,10 @@ import {
   type ArtifactAnalysisArtifact,
 } from '@/lib/model-artifact-analysis'
 import {
+  buildEvidenceChainSummaryForReport,
+  loadEvidenceChainFromAnalysis,
+} from '@/lib/artifact-evidence-chain'
+import {
   ReportParseError,
   formatReportText,
   parseReportStrict,
@@ -481,6 +485,12 @@ export async function POST(
           // Phase 2: report generation (streaming)
           phase('generating_report', { modelCode: model.modelCode })
 
+          const evidenceChainSummary = buildEvidenceChainSummaryForReport(
+            loadEvidenceChainFromAnalysis(
+              parseStoredModelArtifactAnalysis(model.artifactAnalysisJson),
+            ),
+          )
+
           const prompt = buildReportPrompt({
             task,
             modelCode: model.modelCode,
@@ -492,6 +502,7 @@ export async function POST(
             verificationSummary,
             hasTrajectory: Boolean(processText?.trim()),
             taskType: task.requirementType || undefined,
+            evidenceChainSummary,
           })
 
           let reportText = ''

@@ -341,16 +341,6 @@ export function attachEvidenceChainToAnalysisJson(
   return JSON.stringify(base)
 }
 
-/**
- * 从 `StoredModelArtifactAnalysis.evidenceChain` 解析出可用的 SerializedEvidenceChain。
- */
-export function loadEvidenceChainFromAnalysis(
-  analysis: { evidenceChain?: string | null } | null | undefined,
-): ReturnType<typeof parseStoredEvidenceChain> {
-  if (!analysis || !analysis.evidenceChain) return null
-  return parseStoredEvidenceChain(analysis.evidenceChain)
-}
-
 export async function captureArtifactEvidence(input: ArtifactAnalysisRunInput): Promise<void> {
   await appendArtifactAnalysisEvent({
     runId: input.runId,
