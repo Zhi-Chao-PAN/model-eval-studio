@@ -52,3 +52,6 @@ public/mockup-layouts.html
 
 # Local development artifact storage
 .local-artifacts/
+
+# Next.js hot-reload temp files
+*.tmp
