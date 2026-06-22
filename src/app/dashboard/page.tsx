@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, FlaskConical, FileText, Image as ImageIcon, Wand2,
   Package, FileCheck2, Loader2, ArrowRight, Trash2, Circle,
-  AlertTriangle, RefreshCw,
+  AlertTriangle, RefreshCw, Lightbulb,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -296,25 +296,66 @@ export default function DashboardPage() {
 }
 
 function EmptyState({ onNew, hasSearch }: { onNew: () => void; hasSearch: boolean }) {
-  return (
-    <div className="panel p-12 text-center">
-      <div className="inline-flex h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 border border-white/10 items-center justify-center mb-4">
-        <FlaskConical className="h-6 w-6 text-indigo-300" />
+  if (hasSearch) {
+    return (
+      <div className="panel p-12 text-center">
+        <div className="inline-flex h-14 w-14 rounded-2xl bg-white/[0.03] border border-white/10 items-center justify-center mb-4">
+          <Search className="h-6 w-6 text-gray-500" />
+        </div>
+        <h3 className="text-base font-medium text-white mb-1.5">没有找到匹配的任务</h3>
+        <p className="text-sm text-gray-400">试试其他关键词</p>
       </div>
-      {hasSearch ? (
-        <>
-          <h3 className="text-base font-medium text-white mb-1.5">没有找到匹配的任务</h3>
-          <p className="text-sm text-gray-400">试试其他关键词</p>
-        </>
-      ) : (
-        <>
-          <h3 className="text-base font-medium text-white mb-1.5">还没有任务</h3>
-          <p className="text-sm text-gray-400 mb-6 max-w-sm mx-auto">
-            创建你的第一个评估任务，上传看板与产物，AI 会帮你生成专业评估报告。
-          </p>
-          <Button onClick={onNew}><Plus className="h-3.5 w-3.5" /> 创建第一个任务</Button>
-        </>
-      )}
+    )
+  }
+
+  const quickSteps = [
+    { icon: Wand2, label: '设计评测题', desc: 'AI 辅助生成评分维度' },
+    { icon: ImageIcon, label: '上传截图', desc: '自动提取硬指标' },
+    { icon: Package, label: '添加产物', desc: '各模型输出文件' },
+    { icon: FileCheck2, label: '生成报告', desc: '结构化对比评估' },
+  ]
+
+  return (
+    <div className="panel p-8 sm:p-12">
+      <div className="max-w-2xl mx-auto text-center">
+        <div className="inline-flex h-16 w-16 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 border border-white/10 items-center justify-center mb-5">
+          <FlaskConical className="h-7 w-7 text-indigo-300" />
+        </div>
+        <h3 className="text-xl font-medium text-white mb-2">开始你的第一次模型评估</h3>
+        <p className="text-sm text-gray-400 mb-8 max-w-md mx-auto leading-relaxed">
+          创建评估任务，上传看板截图与模型产物，AI 将自动完成指标提取、横向对比、评分和报告生成。
+        </p>
+
+        {/* Quick workflow preview */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+          {quickSteps.map((s, i) => {
+            const Icon = s.icon
+            return (
+              <div key={i} className="panel-inset p-3 text-center">
+                <div className="inline-flex h-8 w-8 rounded-lg bg-white/[0.04] items-center justify-center mb-2">
+                  <Icon className="h-4 w-4 text-indigo-300" />
+                </div>
+                <div className="text-[12px] font-medium text-white mb-0.5">{s.label}</div>
+                <div className="text-[11px] text-gray-500">{s.desc}</div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Tips */}
+        <div className="flex items-start gap-2 panel-inset p-3 mb-8 text-left">
+          <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="text-[12px] text-gray-400 leading-relaxed">
+            <span className="text-gray-300 font-medium">小提示：</span>
+            创建任务后，你可以随时通过右下角的 AI 助手获取帮助。每个步骤都有详细引导，无需担心不知道如何操作。
+          </div>
+        </div>
+
+        <Button onClick={onNew} size="lg">
+          <Plus className="h-4 w-4 mr-1" /> 创建第一个任务
+          <ArrowRight className="h-4 w-4 ml-1" />
+        </Button>
+      </div>
     </div>
   )
 }

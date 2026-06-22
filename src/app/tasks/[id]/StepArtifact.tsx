@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle2, FileText, Package,
-  Plus, Sparkles, Trash2, UploadCloud, Loader2, X,
+  Plus, Sparkles, Trash2, UploadCloud, Loader2, X, Lightbulb,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
@@ -250,6 +250,15 @@ export default function StepArtifact({ task, onRefresh }: Props) {
             为每个待测模型上传最终产物（ZIP 源码包、输出文档、截图等），或直接粘贴文本输出。
             上传后系统会自动解析文件内容（约 1–3 分钟），作为 AI 撰写评估报告的依据。
           </p>
+        </div>
+      </div>
+
+      {/* Tip */}
+      <div className="flex items-start gap-2 panel-inset p-3">
+        <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="text-[12px] text-gray-400 leading-relaxed">
+          <span className="text-gray-300 font-medium">操作指引：</span>
+          为每个模型上传产物文件（支持 ZIP、代码文件、文本、Markdown 等），或直接粘贴模型的文本输出。所有模型产物添加完成后，点击「AI 分析产物」等待分析完成。分析完成后即可生成最终评估报告。
         </div>
       </div>
 

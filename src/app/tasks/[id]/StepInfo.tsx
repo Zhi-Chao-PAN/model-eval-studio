@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { FileText, Save, Sparkles, Check, Scale, ChevronDown, ChevronUp, Settings2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { FileText, Save, Sparkles, Check, Scale, ChevronDown, ChevronUp, Settings2, AlertTriangle, RefreshCw, Lightbulb } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -147,6 +147,15 @@ export default function StepInfo({ task, onUpdate }: Props) {
           <p className="text-sm text-gray-400 mt-1 max-w-2xl">
             只需要填两块内容：交给待测模型的「任务 prompt」，以及这道题的「来源 / 背景说明」。
           </p>
+        </div>
+      </div>
+
+      {/* Tip */}
+      <div className="flex items-start gap-2 panel-inset p-3">
+        <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="text-[12px] text-gray-400 leading-relaxed">
+          <span className="text-gray-300 font-medium">操作指引：</span>
+          在「任务要求」中填写你给模型的具体 prompt（越具体越好）；「背景说明」用于帮助 AI 理解评估场景，可以填写用户画像、业务上下文等。填写完成后点击「下一步」。
         </div>
       </div>
 

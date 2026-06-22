@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   Image as ImageIcon, Camera, BarChart3, UploadCloud, X as XIcon,
-  Sparkles, AlertTriangle, SkipForward, CheckCircle2,
+  Sparkles, AlertTriangle, SkipForward, CheckCircle2, Lightbulb,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -382,6 +382,15 @@ export default function StepScreenshot({ task, onRefresh }: Props) {
             <CheckCircle2 className="h-3 w-3" /> 已识别 {models.length} 个模型
           </Badge>
         )}
+      </div>
+
+      {/* Tip */}
+      <div className="flex items-start gap-2 panel-inset p-3">
+        <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="text-[12px] text-gray-400 leading-relaxed">
+          <span className="text-gray-300 font-medium">操作指引：</span>
+          切换到「数据看板」标签上传包含成功率、延迟等指标的看板截图 → 点击「AI 识别截图」等待分析完成。如果截图中没有自动识别到所有模型，可以手动添加。识别完成后进入下一步上传产物。
+        </div>
       </div>
 
       <div className="inline-flex p-1 rounded-xl bg-white/[0.04] border border-white/5">

@@ -5,7 +5,7 @@ import {
   AlertTriangle, Activity, Award, Check, ChevronDown, ChevronUp, Copy,
   FileCheck2, ListChecks, Pencil, History,
   RefreshCw, Send, ShieldCheck, Sparkles, Star, Zap,
-  Clock, Edit3, X,
+  Clock, Edit3, X, Lightbulb,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea, Label } from '@/components/ui/input'
@@ -562,6 +562,15 @@ export default function StepReport({ task, onRefresh }: Props) {
             <p className="text-sm text-gray-400 mt-1 max-w-2xl">
               基于本地验收截图与上传产物，输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
             </p>
+          </div>
+        </div>
+
+        {/* Tip */}
+        <div className="flex items-start gap-2 panel-inset p-3 w-full">
+          <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="text-[12px] text-gray-400 leading-relaxed">
+            <span className="text-gray-300 font-medium">操作指引：</span>
+            点击「生成评估报告」让 AI 基于已上传的截图和产物撰写完整评估报告。生成后你可以查看各模型排名、评分矩阵、优劣势分析。报告支持导出 ZIP 和 Markdown 格式，也可以通过分享链接共享给团队成员。
           </div>
         </div>
 
