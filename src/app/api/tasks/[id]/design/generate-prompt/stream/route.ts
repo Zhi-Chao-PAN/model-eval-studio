@@ -16,8 +16,17 @@ import { getTaskAccess, requireAccess } from '@/lib/task-access'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const MAX_IDEA_CHARS = 10_000
+const MAX_ADJUST_CHARS = 10_000
+const MAX_CURRENT_PROMPT_CHARS = 50_000
+const MAX_CURRENT_BG_CHARS = 50_000
+
 function isValidTaskType(v: unknown): v is TaskType {
   return v === 'CODING' || v === 'AGENT'
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
 export async function POST(
@@ -59,11 +68,28 @@ export async function POST(
   }
   taskTitle = task.title
 
-  const body = await request.json().catch(() => ({}))
+  const rawBody = await request.json().catch(() => null)
+  if (!isObject(rawBody)) {
+    return new Response(JSON.stringify({ error: '请求内容格式无效' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  const body = rawBody
   const userIdea = typeof body.userIdea === 'string' ? body.userIdea.trim() : ''
   const adjustInstruction = typeof body.adjustInstruction === 'string' ? body.adjustInstruction.trim() : ''
   const currentPrompt = typeof body.currentPrompt === 'string' ? body.currentPrompt : ''
   const currentBackground = typeof body.currentBackground === 'string' ? body.currentBackground : ''
+
+  if (userIdea.length > MAX_IDEA_CHARS) {
+    return new Response(JSON.stringify({ error: `想法描述过长（最多 ${MAX_IDEA_CHARS} 字）` }), { status: 413, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (adjustInstruction.length > MAX_ADJUST_CHARS) {
+    return new Response(JSON.stringify({ error: `调整说明过长（最多 ${MAX_ADJUST_CHARS} 字）` }), { status: 413, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (currentPrompt.length > MAX_CURRENT_PROMPT_CHARS) {
+    return new Response(JSON.stringify({ error: `当前 Prompt 过长（最多 ${MAX_CURRENT_PROMPT_CHARS} 字）` }), { status: 413, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (currentBackground.length > MAX_CURRENT_BG_CHARS) {
+    return new Response(JSON.stringify({ error: `背景文本过长（最多 ${MAX_CURRENT_BG_CHARS} 字）` }), { status: 413, headers: { 'Content-Type': 'application/json' } })
+  }
 
   // 优先用 body 里的，其次用任务里的
   if (isValidTaskType(body.taskType)) {

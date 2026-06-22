@@ -15,8 +15,17 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
+// These are fed into the AI prompt as user-controlled content. Cap them to
+// prevent runaway token cost and downstream DB bloat.
+const MAX_PROMPT_CHARS = 50_000
+const MAX_BACKGROUND_CHARS = 50_000
+
 function isValidTaskType(v: unknown): v is TaskType {
   return v === 'CODING' || v === 'AGENT'
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
 export async function POST(
@@ -58,10 +67,21 @@ export async function POST(
   }
   taskTitle = task.title
 
-  const body = await request.json().catch(() => ({}))
+  const rawBody = await request.json().catch(() => null)
+  if (!isObject(rawBody)) {
+    return new Response(JSON.stringify({ error: '请求内容格式无效' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+  }
+  const body = rawBody
   const taskPrompt = typeof body.taskPrompt === 'string' ? body.taskPrompt : task.description || ''
   const taskBackground = typeof body.taskBackground === 'string' ? body.taskBackground : task.backgroundUsed || ''
   const complexity = body.complexity === 'low' || body.complexity === 'high' ? body.complexity : 'medium'
+
+  if (taskPrompt.length > MAX_PROMPT_CHARS) {
+    return new Response(JSON.stringify({ error: `任务描述过长（最多 ${MAX_PROMPT_CHARS} 字）` }), { status: 413, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (taskBackground.length > MAX_BACKGROUND_CHARS) {
+    return new Response(JSON.stringify({ error: `背景文本过长（最多 ${MAX_BACKGROUND_CHARS} 字）` }), { status: 413, headers: { 'Content-Type': 'application/json' } })
+  }
 
   if (isValidTaskType(body.taskType)) {
     taskType = body.taskType

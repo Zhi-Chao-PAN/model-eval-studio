@@ -68,7 +68,7 @@ test('validateRubric: 权重和不为 10 拒绝', () => {
       { key: 'a', label: 'A', weight: 5, description: '', scoreRange: [0, 5] },
       { key: 'b', label: 'B', weight: 3, description: '', scoreRange: [0, 3] },
     ],
-    overallFormula: '',
+    overallFormula: 'avg',
   }
   const res = validateRubric(r)
   assert.equal(res.valid, false)
@@ -85,6 +85,60 @@ test('validateRubric: 维度缺 key/label 拒绝', () => {
 test('validateRubric: CODING_RUBRIC 和 AGENT_RUBRIC 均通过校验', () => {
   assert.equal(validateRubric(CODING_RUBRIC).valid, true)
   assert.equal(validateRubric(AGENT_RUBRIC).valid, true)
+})
+
+test('validateRubric: rejects non-numeric / string / NaN weights (the ||0 bug)', () => {
+  // Previously `dim.weight || 0` would coerce strings/objects to 0 and
+  // `Math.abs(NaN - 10) > 0.01` is false, letting invalid rubrics through.
+  const bad = {
+    templateType: 'CUSTOM',
+    dimensions: [
+      { key: 'a', label: 'A', weight: 'hello', description: '', scoreRange: [0, 10] },
+    ],
+    overallFormula: 'a',
+  } as any
+  const res = validateRubric(bad)
+  assert.equal(res.valid, false)
+  assert.ok(/权重/.test(res.error || ''), 'should reject string weight: ' + res.error)
+})
+
+test('validateRubric: rejects duplicate dimension keys', () => {
+  const r = {
+    templateType: 'CUSTOM',
+    dimensions: [
+      { key: 'q', label: 'Q1', weight: 5, description: '', scoreRange: [0, 10] },
+      { key: 'q', label: 'Q2', weight: 5, description: '', scoreRange: [0, 10] },
+    ],
+    overallFormula: 'sum',
+  }
+  const res = validateRubric(r)
+  assert.equal(res.valid, false)
+  assert.ok(/重复/.test(res.error || ''))
+})
+
+test('validateRubric: rejects invalid key pattern', () => {
+  const r = {
+    templateType: 'CUSTOM',
+    dimensions: [
+      { key: 'bad key!', label: 'Bad', weight: 10, description: '', scoreRange: [0, 10] },
+    ],
+    overallFormula: 'x',
+  }
+  assert.equal(validateRubric(r).valid, false)
+})
+
+test('validateRubric: rejects non-0.5-step weights', () => {
+  const r = {
+    templateType: 'CUSTOM',
+    dimensions: [
+      { key: 'a', label: 'A', weight: 3.7, description: '', scoreRange: [0, 10] },
+      { key: 'b', label: 'B', weight: 6.3, description: '', scoreRange: [0, 10] },
+    ],
+    overallFormula: 'sum',
+  }
+  const res = validateRubric(r)
+  assert.equal(res.valid, false)
+  assert.ok(/步长/.test(res.error || ''))
 })
 
 test('serializeDimensions / parseDimensions 往返稳定', () => {
