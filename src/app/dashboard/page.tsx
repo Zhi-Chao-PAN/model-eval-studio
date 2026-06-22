@@ -191,7 +191,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
-            <Input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索任务... （按 / 聚焦）" className="pl-8 w-56" />
+            <Input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索任务... （按 / 聚焦）" aria-label="搜索任务" className="pl-8 w-56" />
           </div>
           <Button onClick={() => setShowNew(v => !v)}>
             <Plus className="h-3.5 w-3.5" /> 新建任务
