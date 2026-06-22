@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   FILE_ANALYSIS_LIMIT,
   FILE_ANALYSIS_CHAR_LIMIT,
@@ -32,6 +33,11 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
   const [newModelCode, setNewModelCode] = useState('')
   const [addingModel, setAddingModel] = useState(false)
   const [note, setNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string
+    message: string
+    onConfirm: () => void
+  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const noteTimerRef = useRef<number | null>(null)
   const models = task.models || []
@@ -57,10 +63,6 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
     const timer = window.setInterval(onRefresh, 1_500)
     return () => window.clearInterval(timer)
   }, [hasRunningAnalysis, onRefresh])
-
-  function askConfirm(title: string, message: string): boolean {
-    return window.confirm(title + '\n\n' + message)
-  }
 
   function showNote(type: 'ok' | 'err', text: string, timeout = type === 'err' ? 15000 : 4000) {
     if (noteTimerRef.current) {
@@ -138,8 +140,16 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
     }
   }
 
-  async function deleteArtifact(modelId: string, artifactId: string) {
-    if (!askConfirm('删除文件', '确定删除此文件？')) return
+  function promptDeleteArtifact(modelId: string, artifactId: string) {
+    setConfirmAction({
+      title: '删除文件',
+      message: '确定删除此文件？此操作不可恢复。',
+      onConfirm: () => confirmDeleteArtifact(modelId, artifactId),
+    })
+  }
+
+  async function confirmDeleteArtifact(modelId: string, artifactId: string) {
+    setConfirmAction(null)
     try {
       const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/artifacts', {
         method: 'DELETE',
@@ -232,8 +242,16 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
     }
   }
 
-  async function deleteModel(modelId: string) {
-    if (!askConfirm('删除模型', '删除此模型及其所有产物、报告？')) return
+  function promptDeleteModel(modelId: string) {
+    setConfirmAction({
+      title: '删除模型',
+      message: '确定删除此模型及其所有产物、分析报告？此操作不可恢复。',
+      onConfirm: () => confirmDeleteModel(modelId),
+    })
+  }
+
+  async function confirmDeleteModel(modelId: string) {
+    setConfirmAction(null)
     try {
       const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId, { method: 'DELETE' })
       const data = await readJsonResponse(res)
@@ -337,7 +355,7 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
                       {model.modelCode}
                     </span>
                     <button
-                      onClick={() => deleteModel(model.id)}
+                      onClick={() => promptDeleteModel(model.id)}
                       className="text-gray-500 hover:text-red-400 p-1 rounded transition-colors"
                       title="删除此模型"
                     >
@@ -398,7 +416,7 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
                           <span className="text-gray-300 truncate">{artifact.name}</span>
                         </div>
                         <button
-                          onClick={() => deleteArtifact(model.id, artifact.id)}
+                          onClick={() => promptDeleteArtifact(model.id, artifact.id)}
                           className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition flex-shrink-0 p-1"
                           title="删除文件"
                         >
@@ -484,6 +502,18 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
           </div>
         </div>
       )}
+
+      {/* Generic Confirm Dialog */}
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || ''}
+        message={confirmAction?.message || ''}
+        confirmText="确认"
+        cancelText="取消"
+        variant="danger"
+        onConfirm={() => confirmAction?.onConfirm()}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   )
 }

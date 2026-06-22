@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { cn } from '@/lib/utils'
 
 interface Task {
@@ -58,6 +59,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'mine' | 'shared'>('mine')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
 
   async function loadTasks() {
     setLoadError(null)
@@ -101,10 +103,16 @@ export default function DashboardPage() {
     } finally { setCreating(false) }
   }
 
-  async function handleDelete(id: string, title: string) {
-    if (!window.confirm('确认删除任务「' + title + '」？\n\n删除后无法恢复，确定继续？')) return
+  async function handleDeleteClick(id: string, title: string) {
+    setConfirmDelete({ id, title })
+  }
+
+  async function confirmDeleteTask() {
+    if (!confirmDelete) return
+    const { id } = confirmDelete
     setDeletingId(id)
     setActionError(null)
+    setConfirmDelete(null)
     try {
       const res = await fetch('/api/tasks/' + id, { method: 'DELETE' })
       if (!res.ok) {
@@ -308,7 +316,7 @@ export default function DashboardPage() {
                     })}
                   </div>
                   <button
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(task.id, task.title) }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteClick(task.id, task.title) }}
                     disabled={deletingId === task.id}
                     className="pointer-events-auto p-1.5 rounded-md text-gray-500 opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition-all"
                   >
@@ -321,6 +329,18 @@ export default function DashboardPage() {
           })}
         </div>
       )}
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="删除任务"
+        message={confirmDelete ? `确定要删除任务「${confirmDelete.title}」吗？\n此操作不可恢复，所有关联的评估数据将一并删除。` : ''}
+        confirmText="确认删除"
+        cancelText="取消"
+        variant="danger"
+        loading={!!deletingId}
+        onConfirm={confirmDeleteTask}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   )
 }
