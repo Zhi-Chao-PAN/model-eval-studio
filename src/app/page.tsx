@@ -135,12 +135,12 @@ export default function Home() {
                 <div className="flex-1 text-center text-[11px] text-gray-500 mono">model-eval.studio/report</div>
               </div>
               <div className="p-6 sm:p-8 font-mono text-[13px] leading-relaxed">
-                <div className="text-gray-500">// AI 正在汇总 4 个模型的评估结果...</div>
+                <div className="text-gray-500">{'// AI 正在汇总 4 个模型的评估结果...'}</div>
                 <div className="mt-3"><span className="text-indigo-400">const</span> <span className="text-cyan-300">report</span> = {'{'}</div>
-                <div className="pl-4"><span className="text-pink-300">ranking</span>: [<span className="text-emerald-300">"sigma"</span>, <span className="text-emerald-300">"prism"</span>, <span className="text-emerald-300">"raven"</span>, <span className="text-emerald-300">"quartz"</span>],</div>
+                <div className="pl-4"><span className="text-pink-300">ranking</span>: [<span className="text-emerald-300">&quot;sigma&quot;</span>, <span className="text-emerald-300">&quot;prism&quot;</span>, <span className="text-emerald-300">&quot;raven&quot;</span>, <span className="text-emerald-300">&quot;quartz&quot;</span>],</div>
                 <div className="pl-4"><span className="text-pink-300">hardMetrics</span>: {'{'} tools: <span className="text-amber-200">92%</span>, latency: <span className="text-amber-200">2.4s</span>, success: <span className="text-amber-200">98%</span> {'}'},</div>
                 <div className="pl-4"><span className="text-pink-300">softMetrics</span>: {'{'} logic: <span className="text-emerald-300">A+</span>, creativity: <span className="text-emerald-300">A</span>, style: <span className="text-emerald-300">A-</span> {'}'},</div>
-                <div className="pl-4"><span className="text-pink-300">recommendation</span>: <span className="text-amber-200">"推荐主力模型：sigma"</span></div>
+                <div className="pl-4"><span className="text-pink-300">recommendation</span>: <span className="text-amber-200">&quot;推荐主力模型：sigma&quot;</span></div>
                 <div>{'}'}</div>
                 <div className="mt-4 flex items-center gap-1.5 text-emerald-400">
                   <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-glow" />

@@ -125,7 +125,7 @@ export async function generateReportForModel(
   // Only tester-uploaded local acceptance screenshots are eligible.
   const testerEvidence = parseVerificationEvidence(model.verificationScreenshotUrls)
     .filter(isAuthenticVerificationEvidence)
-  let verificationScreenshotUrls: string | null = testerEvidence.length
+  const verificationScreenshotUrls: string | null = testerEvidence.length
     ? serializeVerificationEvidence(testerEvidence)
     : null
   let verificationSummary = ''
