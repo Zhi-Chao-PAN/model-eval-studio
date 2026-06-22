@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   Settings as SettingsIcon, Key, Save, Check, User as UserIcon, FlaskConical,
   CheckCircle2, XCircle, Loader2, Sparkles, ShieldCheck, Wand2, AlertTriangle, RefreshCw,
+  Eye, EyeOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label, Textarea, Select } from '@/components/ui/input'
@@ -62,14 +63,6 @@ const AI_PRESETS: AiPreset[] = [
     modelName: 'doubao-seed-2.0-pro',
     hint: '标准 ARK 接入点',
   },
-  {
-    id: 'arktest',
-    name: 'ARK Test',
-    provider: 'OPENAI_COMPAT',
-    baseUrl: 'https://sd7k0j05hv504o9evirf0.apigateway-cn-beijing.volcesapi.com/v1',
-    modelName: 'anonymous/',
-    hint: '请替换 baseUrl 前缀为你的专属域名，模型名补全账号名/模型名',
-  },
 ]
 
 export default function SettingsPage() {
@@ -82,6 +75,7 @@ export default function SettingsPage() {
   const [modelName, setModelName] = useState('')
   const [maxTokens, setMaxTokens] = useState('')
   const [hasApiKey, setHasApiKey] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
   const [savingAi, setSavingAi] = useState(false)
   const [aiSaved, setAiSaved] = useState(false)
   const [validating, setValidating] = useState(false)
@@ -242,6 +236,22 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* First-time setup banner */}
+      {loaded && !baseUrl && !modelName && (
+        <div className="panel p-4 mb-6 border-amber-500/30 bg-amber-500/[0.06]">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-amber-200 mb-1">首次使用：请先配置 AI 模型</div>
+              <div className="text-xs text-amber-200/70 leading-relaxed">
+                在使用 AI 出题、截图分析、产物分析、生成报告等功能前，你需要先配置 AI 服务端点和 API Key。
+                点击下方任意「快速选择」按钮自动填充常用服务商配置，然后填入你的 API Key 即可。
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column: AI Config (2/3 width) */}
         <div className="lg:col-span-2 space-y-6">
@@ -300,8 +310,18 @@ export default function SettingsPage() {
                 API Key
                 {hasApiKey && <Badge variant="success" className="ml-1"><Check className="h-2.5 w-2.5" /> 已存储</Badge>}
               </Label>
-              <Input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
-                placeholder={hasApiKey ? '留空则保留原 Key' : 'sk-...'} className="mono" autoComplete="off" />
+              <div className="relative">
+                <Input type={showApiKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)}
+                  placeholder={hasApiKey ? '留空则保留原 Key' : 'sk-...'} className="mono pr-10" autoComplete="off" />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>模型名称</Label>
@@ -318,8 +338,12 @@ export default function SettingsPage() {
                 最大输出 Token
                 <span className="text-[10px] text-gray-500 font-normal">控制单次 AI 回复的长度上限</span>
               </Label>
-              <Input type="number" value={maxTokens} onChange={e => setMaxTokens(e.target.value)}
-                placeholder="4000" className="mono" min={1} />
+              <Input type="number" value={maxTokens} onChange={e => {
+                const v = Number(e.target.value)
+                if (v > 200000) e.target.value = '200000'
+                setMaxTokens(e.target.value)
+              }}
+                placeholder="4000" className="mono" min={1} max={200000} />
               <p className="text-[11px] text-gray-500 mt-1">
                 留空则使用默认值 4000；长上下文模型可适当调大（如 16000 / 32000 / 200000）
               </p>

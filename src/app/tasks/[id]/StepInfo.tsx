@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { FileText, Save, Sparkles, Check, Scale, ChevronDown, ChevronUp, Settings2, AlertTriangle, RefreshCw, Lightbulb } from 'lucide-react'
+import { FileText, Save, Sparkles, Check, Scale, ChevronDown, ChevronUp, Settings2, AlertTriangle, RefreshCw, Lightbulb, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,7 @@ import type { RubricData, RubricDimension } from '@/lib/rubric-templates'
 interface Props {
   task: any
   onUpdate: (data: any) => void
+  onNext?: () => void
 }
 
 const TEMPLATE_OPTIONS = [
@@ -16,7 +17,7 @@ const TEMPLATE_OPTIONS = [
   { key: 'AGENT', label: 'Agent 智能体评测（6 维度加权）', desc: '指令遵循+规划+工具+推理+幻觉+交付' },
 ]
 
-export default function StepInfo({ task, onUpdate }: Props) {
+export default function StepInfo({ task, onUpdate, onNext }: Props) {
   const [form, setForm] = useState({
     title: task.title || '',
     description: task.description || '',
@@ -324,10 +325,15 @@ export default function StepInfo({ task, onUpdate }: Props) {
       </div>
 
       <div className="flex items-center gap-3 pt-1">
-        <Button onClick={save} loading={saving}>
+        <Button onClick={save} loading={saving} variant="secondary">
           <Save className="h-3.5 w-3.5" /> 保存信息
         </Button>
-        {saved && (
+        {onNext && (
+          <Button onClick={() => { save().then(() => onNext()) }} disabled={saving}>
+            下一步：截图分析 <ArrowRight className="h-3.5 w-3.5 ml-1" />
+          </Button>
+        )}
+        {saved && !saving && (
           <span className="text-emerald-400 text-xs flex items-center gap-1">
             <Check className="h-3 w-3" /> 已保存
           </span>

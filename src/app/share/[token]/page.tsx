@@ -103,10 +103,12 @@ export default function SharePage() {
       {/* Top bar */}
       <div className="border-b border-white/[0.06] bg-black/20 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500/30 to-violet-500/30 flex items-center justify-center">
-            <Sparkles className="h-4 w-4 text-indigo-300" />
-          </div>
-          <span className="font-medium text-sm">ModelEval Studio</span>
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500/30 to-violet-500/30 flex items-center justify-center">
+              <Sparkles className="h-4 w-4 text-indigo-300" />
+            </div>
+            <span className="font-medium text-sm">ModelEval Studio</span>
+          </Link>
           <Badge variant="outline" className="ml-auto text-[10px]">
             只读共享
           </Badge>
@@ -171,7 +173,7 @@ export default function SharePage() {
                     </div>
                     <div className="flex items-baseline gap-1 mt-2">
                       <span className={cn('display text-4xl tabular leading-none', tierText(score))}>
-                        {formatScore(score, 'integer')}
+                        {formatScore(score, 'half')}
                       </span>
                       {score > 0 && <span className="text-[10px] text-gray-600 mono mb-1">/10</span>}
                     </div>

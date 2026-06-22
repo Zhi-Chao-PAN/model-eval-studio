@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { FlaskConical, ArrowRight, AlertCircle, KeyRound } from 'lucide-react'
+import { FlaskConical, ArrowRight, AlertCircle, KeyRound, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 
@@ -12,8 +12,12 @@ export default function RegisterPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword
+  const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -71,10 +75,11 @@ export default function RegisterPage() {
                 id="invite"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                placeholder="向管理员索取邀请码"
+                placeholder="向管理员索取邀请码（8-32 位十六进制字符）"
                 className="font-mono"
                 autoFocus
                 required
+                disabled={submitting}
               />
             </div>
             <div className="space-y-1.5">
@@ -83,34 +88,63 @@ export default function RegisterPage() {
                 id="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="3-32 个字符"
+                placeholder="3-32 个字符，支持中英文、数字、下划线、连字符"
                 autoComplete="username"
                 required
+                disabled={submitting}
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">密码</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="至少 8 位"
-                autoComplete="new-password"
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="至少 8 位"
+                  autoComplete="new-password"
+                  required
+                  disabled={submitting}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="confirm">确认密码</Label>
-              <Input
-                id="confirm"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="再次输入密码"
-                autoComplete="new-password"
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="confirm"
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="再次输入密码"
+                  autoComplete="new-password"
+                  required
+                  disabled={submitting}
+                  className={`pr-10 ${passwordsMismatch ? 'border-red-500/50' : passwordsMatch ? 'border-emerald-500/30' : ''}`}
+                />
+                {confirmPassword.length > 0 && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    {passwordsMatch ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    ) : passwordsMismatch ? (
+                      <XCircle className="h-4 w-4 text-red-400" />
+                    ) : null}
+                  </div>
+                )}
+              </div>
+              {passwordsMismatch && (
+                <p className="text-[11px] text-red-400">两次输入的密码不一致</p>
+              )}
             </div>
 
             {error && (
