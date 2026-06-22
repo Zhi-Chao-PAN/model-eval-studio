@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, getRequestIp, rateLimitResponse } from '@/lib/rate-limit'
+import { safeServerError } from '@/lib/api-error'
 
 class RegistrationError extends Error {}
 
@@ -73,53 +74,41 @@ export async function POST(request: Request) {
     }
 
     const hashed = await bcrypt.hash(password, 10)
-    let user
-    try {
-      user = await prisma.$transaction(async (tx) => {
-        const existing = await tx.user.findUnique({
-          where: { username },
-          select: { id: true },
-        })
-        if (existing) throw new RegistrationError('用户名已被占用')
 
-        const invite = await tx.inviteCode.findUnique({ where: { code: inviteCode } })
-        if (!invite || !invite.active) throw new RegistrationError('邀请码无效')
-        if (invite.expiresAt && invite.expiresAt < new Date()) {
-          throw new RegistrationError('邀请码已过期')
-        }
-
-        const claimed = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-          UPDATE "InviteCode"
-          SET "usedCount" = "usedCount" + 1
-          WHERE "id" = ${invite.id}
-            AND "active" = TRUE
-            AND ("expiresAt" IS NULL OR "expiresAt" >= NOW())
-            AND "usedCount" < "maxUses"
-          RETURNING "id"
-        `)
-        if (claimed.length === 0) {
-          throw new RegistrationError('邀请码使用次数已达上限')
-        }
-
-        return tx.user.create({
-          data: {
-            username,
-            passwordHash: hashed,
-            role: 'USER',
-          },
-        })
+    const user = await prisma.$transaction(async (tx) => {
+      const existing = await tx.user.findUnique({
+        where: { username },
+        select: { id: true },
       })
-    } catch (error) {
-      if (error instanceof RegistrationError) {
-        errorMsg = error.message
-        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      if (existing) throw new RegistrationError('用户名已被占用')
+
+      const invite = await tx.inviteCode.findUnique({ where: { code: inviteCode } })
+      if (!invite || !invite.active) throw new RegistrationError('邀请码无效')
+      if (invite.expiresAt && invite.expiresAt < new Date()) {
+        throw new RegistrationError('邀请码已过期')
       }
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        errorMsg = '用户名已被占用'
-        return NextResponse.json({ error: errorMsg }, { status: 400 })
+
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        UPDATE "InviteCode"
+        SET "usedCount" = "usedCount" + 1
+        WHERE "id" = ${invite.id}
+          AND "active" = TRUE
+          AND ("expiresAt" IS NULL OR "expiresAt" >= NOW())
+          AND "usedCount" < "maxUses"
+        RETURNING "id"
+      `)
+      if (claimed.length === 0) {
+        throw new RegistrationError('邀请码使用次数已达上限')
       }
-      throw error
-    }
+
+      return tx.user.create({
+        data: {
+          username,
+          passwordHash: hashed,
+          role: 'USER',
+        },
+      })
+    })
 
     // Regenerate session on privilege change (login after registration) to
     // prevent session fixation. iron-session save() rotates the cookie.
@@ -142,6 +131,18 @@ export async function POST(request: Request) {
         hasAiConfig: !!user.aiApiKey,
       },
     })
+  } catch (err) {
+    if (err instanceof RegistrationError) {
+      errorMsg = err.message
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      errorMsg = '用户名已被占用'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    const { message } = safeServerError(err, 'auth-register')
+    errorMsg = message
+    return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'REGISTER',
