@@ -91,18 +91,21 @@ const ACTION_LABELS: Record<string, { label: string; color: string; icon: any }>
   SHARE_CREATE: { label: '创建分享', color: 'success', icon: FileText },
   SHARE_REVOKE: { label: '撤销分享', color: 'danger', icon: FileText },
   PASSWORD_CHANGE: { label: '修改密码', color: 'muted', icon: ShieldCheck },
+  ADMIN_USER_ROLE_UPDATE: { label: '用户角色变更', color: 'warn', icon: ShieldCheck },
 }
 
 export default function AdminPage() {
   const [tab, setTab] = useState<TabKey>('invites')
   const [invites, setInvites] = useState<Invite[]>([])
   const [users, setUsers] = useState<User[]>([])
+  const [myId, setMyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [count, setCount] = useState(1)
   const [maxUses, setMaxUses] = useState(1)
   const [expiresInDays, setExpiresInDays] = useState(7)
   const [generating, setGenerating] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [roleUpdatingId, setRoleUpdatingId] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
@@ -140,6 +143,32 @@ export default function AdminPage() {
       const data = await res.json().catch(() => ({}))
       if (data.users) setUsers(data.users)
     } catch (e: any) { setLoadError(e?.message || '用户列表加载失败，请检查网络连接') }
+  }
+  // Load current user ID for self-demotion guard
+  useEffect(() => {
+    fetch('/api/user/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.id) setMyId(d.id) })
+      .catch(() => {})
+  }, [])
+  async function toggleUserRole(userId: string, currentRole: string) {
+    const newRole = currentRole === 'ADMIN' ? 'USER' : 'ADMIN'
+    setRoleUpdatingId(userId)
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, role: newRole }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '操作失败，请稍后重试')
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
+      flash('ok', newRole === 'ADMIN' ? '已提升为管理员' : '已降为普通用户')
+    } catch (e: any) {
+      flash('err', e?.message || '操作失败，请检查网络连接')
+    } finally {
+      setRoleUpdatingId(null)
+    }
   }
   async function loadAuditLogs() {
     setAuditLoading(true)
@@ -670,7 +699,10 @@ export default function AdminPage() {
                           )} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[13px] font-medium text-white truncate">{u.username}</div>
+                          <div className="text-[13px] font-medium text-white truncate">
+                            {u.username}
+                            {u.id === myId && <span className="ml-1.5 text-[10px] text-indigo-400">(你)</span>}
+                          </div>
                           <div className="text-[10px] text-gray-600 truncate">
                             {u.background ? (u.background.length > 30 ? u.background.slice(0, 28) + '…' : u.background) : '未设置背景'}
                           </div>
@@ -681,20 +713,39 @@ export default function AdminPage() {
                           ? <Badge variant="primary"><ShieldCheck className="h-3 w-3" /> 管理员</Badge>
                           : <Badge variant="muted">普通用户</Badge>}
                       </div>
-                      <div className="col-span-2">
+                      <div className="col-span-1">
                         <div className="text-[15px] tabular font-semibold text-white">{u._count.tasks}</div>
-                        <div className="text-[10px] text-gray-600">个评估任务</div>
+                        <div className="text-[10px] text-gray-600">个任务</div>
                       </div>
                       <div className="col-span-2">
                         <div className="text-[12px] text-gray-300 mono">{new Date(u.createdAt).toLocaleDateString('zh-CN')}</div>
                         <div className="text-[10px] text-gray-600">{formatAgo(u.createdAt)}</div>
                       </div>
-                      <div className="col-span-3">
+                      <div className="col-span-2">
                         <div className="text-[12px] text-gray-300 mono">{new Date(u.lastActiveAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                         <div className={cn('text-[10px] flex items-center gap-1', isActive ? 'text-emerald-400' : 'text-gray-500')}>
                           <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: isActive ? '#34d399' : '#6b7280' }} />
                           {formatAgo(u.lastActiveAt)}
                         </div>
+                      </div>
+                      <div className="col-span-2 flex justify-end">
+                        <button
+                          onClick={() => toggleUserRole(u.id, u.role)}
+                          disabled={roleUpdatingId === u.id || u.id === myId}
+                          title={u.id === myId ? '不能修改自己的角色' : (u.role === 'ADMIN' ? '降为普通用户' : '提升为管理员')}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[11px] font-medium transition-all',
+                            u.id === myId
+                              ? 'text-gray-600 cursor-not-allowed'
+                              : u.role === 'ADMIN'
+                                ? 'text-amber-300 hover:text-white hover:bg-amber-500/20 border border-amber-500/20'
+                                : 'text-indigo-300 hover:text-white hover:bg-indigo-500/20 border border-indigo-500/20',
+                            roleUpdatingId === u.id && 'opacity-50 cursor-wait',
+                          )}
+                        >
+                          {roleUpdatingId === u.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                          {u.role === 'ADMIN' ? '降级' : '提升为管理员'}
+                        </button>
                       </div>
                     </div>
                   )
