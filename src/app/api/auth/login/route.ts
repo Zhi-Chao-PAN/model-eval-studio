@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, getRequestIp, rateLimitResponse } from '@/lib/rate-limit'
+import { safeServerError } from '@/lib/api-error'
 
 // bcrypt silently truncates at 72 bytes; cap inputs well below that to avoid
 // silently accepting passwords where only the first 72 bytes matter, and to
@@ -12,10 +13,11 @@ const MAX_USERNAME_LENGTH = 64
 const MAX_PASSWORD_LENGTH = 200
 
 // Pre-computed dummy bcrypt hash used when a username is not found, to
-// equalize response time vs. the bcrypt.compare() path. Generated from a
-// fixed random password; never used for authentication.
+// equalize response time vs. the bcrypt.compare() path.
+// Generated from a fixed random password via bcrypt.hash("dummy-password-for-timing", 10);
+// never used for authentication, only for timing attack mitigation.
 const DUMMY_BCRYPT_HASH =
-  '$2a$10$CwTycUXWue0Thq9StjUM0uJ8Xb6w5j4lf8NpFpXw3rX7X7X7X7X7X'
+  '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
 
 export async function POST(request: Request) {
   const startedAt = Date.now()
@@ -82,9 +84,12 @@ export async function POST(request: Request) {
     session.role = user.role as 'ADMIN' | 'USER'
     await session.save()
 
-    await prisma.user.update({
+    // Fire-and-forget: don't crash login if lastActiveAt update fails
+    prisma.user.update({
       where: { id: user.id },
       data: { lastActiveAt: new Date() },
+    }).catch((err) => {
+      console.warn('[auth:login] failed to update lastActiveAt:', err instanceof Error ? err.message : String(err))
     })
 
     userId = user.id
@@ -100,6 +105,10 @@ export async function POST(request: Request) {
         hasAiConfig: !!user.aiApiKey,
       },
     })
+  } catch (err) {
+    const { message } = safeServerError(err, 'auth-login')
+    errorMsg = message
+    return NextResponse.json({ error: '登录失败，请稍后重试' }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'LOGIN',

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { apiError } from '@/lib/api-error'
+import { apiError, safeServerError } from '@/lib/api-error'
 import { consumeRateLimit, getRequestIp, rateLimitResponse } from '@/lib/rate-limit'
 
 // 公开只读页允许返回的报告字段（白名单，禁止泄露 generationSnapshot / generationConfig 等内部字段）
@@ -33,6 +33,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  try {
   const ip = getRequestIp(request)
   const rateLimit = await consumeRateLimit({
     scope: 'public-share',
@@ -107,4 +108,8 @@ export async function GET(
       expiresAt: share.expiresAt,
     },
   })
+  } catch (err) {
+    const { message } = safeServerError(err, 'public-share')
+    return apiError(message, 500)
+  }
 }
