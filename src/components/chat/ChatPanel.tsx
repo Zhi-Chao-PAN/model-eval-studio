@@ -52,7 +52,13 @@ export function ChatPanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin min-h-0">
+      <div
+        className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin min-h-0"
+        role="log"
+        aria-live="polite"
+        aria-label="对话消息"
+        aria-relevant="additions"
+      >
         {messages.length === 0 && !streamingContent && (
           <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 gap-2 px-4 py-8">
             <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-fuchsia-500/15 border border-white/10 flex items-center justify-center mb-2">
@@ -136,7 +142,8 @@ export function ChatPanel({
                 onSend()
               }
             }}
-                  placeholder="例如：帮我分析各模型在这个任务上的差异... (Enter 发送)"
+            placeholder="例如：帮我分析各模型在这个任务上的差异... (Enter 发送)"
+            aria-label="AI 助手消息输入框"
             className="w-full resize-none rounded-xl border border-white/[0.08] px-3 py-2.5 pr-12 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400/50 bg-white/[0.03] focus:bg-white/[0.05] max-h-[100px] scrollbar-thin transition-colors"
             rows={1}
           />
