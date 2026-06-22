@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { AlertTriangle, RefreshCw, Home } from 'lucide-react'
 
 /**
  * Global error boundary for the App Router.
@@ -34,6 +35,9 @@ export default function Error({
     <html lang="zh-CN" className="h-full">
       <body className="min-h-full flex flex-col items-center justify-center bg-[#07070b] text-white antialiased px-6">
         <div className="max-w-md text-center space-y-6">
+          <div className="inline-flex h-14 w-14 rounded-2xl bg-red-500/10 border border-red-500/20 items-center justify-center">
+            <AlertTriangle className="h-6 w-6 text-red-400" />
+          </div>
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold tracking-tight">页面出错了</h1>
             <p className="text-sm text-white/60 leading-relaxed">
@@ -44,19 +48,19 @@ export default function Error({
             <button
               type="button"
               onClick={reset}
-              className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
             >
-              重试
+              <RefreshCw className="h-3.5 w-3.5" /> 重试
             </button>
             <a
               href="/dashboard"
-              className="inline-flex items-center justify-center rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-white/70 transition hover:bg-white/5"
             >
-              返回首页
+              <Home className="h-3.5 w-3.5" /> 返回工作台
             </a>
           </div>
           {process.env.NODE_ENV !== 'production' && error.message && (
-            <pre className="mt-6 max-h-48 overflow-auto rounded-lg bg-white/5 p-3 text-left text-xs text-white/50 font-mono">
+            <pre className="mt-6 max-h-48 overflow-auto rounded-lg bg-white/5 p-3 text-left text-xs text-white/50 font-mono border border-white/5">
               {error.message}
             </pre>
           )}

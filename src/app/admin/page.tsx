@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import {
   ShieldCheck, Users, Copy, Check, Loader2, KeyRound, Plus, Power,
-  TrendingUp, Clock, UserCheck, UserPlus, Settings2, MoreHorizontal,
+  TrendingUp, Clock, UserCheck, UserPlus, Settings2, RefreshCw,
   Activity, Zap, AlertTriangle, ChevronDown, ChevronUp, Search,
   Terminal, FileText, Bot, Eye,
 } from 'lucide-react'
@@ -626,8 +626,8 @@ export default function AdminPage() {
                 <Badge variant="muted" className="text-[10px]">{users.length} 人</Badge>
               </div>
               <div className="flex items-center gap-1.5">
-                <Button variant="ghost" size="sm">
-                  <MoreHorizontal className="h-3.5 w-3.5" />
+                <Button variant="ghost" size="sm" onClick={loadUsers} title="刷新用户列表">
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </div>
