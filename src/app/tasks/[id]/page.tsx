@@ -111,6 +111,8 @@ export default function TaskPage() {
         setCurrentStep(options.forceStep || data.task.currentStep || 'DESIGN')
       } else if (res.status === 404) {
         router.push('/dashboard')
+      } else if (res.status === 401) {
+        router.push('/login?next=' + encodeURIComponent('/tasks/' + taskId))
       } else if (!res.ok) {
         setLoadError(data.error || '任务加载失败，请稍后重试')
       }

@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { FlaskConical, ArrowRight, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,8 @@ import { Input, Label } from '@/components/ui/input'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const nextPath = searchParams.get('next') || '/dashboard'
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -29,7 +31,9 @@ export default function LoginPage() {
       let data: any = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
       if (!res.ok) throw new Error(data.error || '登录失败，请稍后重试')
-      router.push('/dashboard')
+      // Validate nextPath to prevent open-redirect attacks (must start with / and not be //)
+      const safeRedirect = nextPath.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/dashboard'
+      router.push(safeRedirect)
       router.refresh()
     } catch (e: any) {
       setError(e.message || '登录失败，请稍后重试')
