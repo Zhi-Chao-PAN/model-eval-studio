@@ -209,6 +209,6 @@ test('buildEvidenceChainSummaryForReport: 超长会提前截断，不再追加�
     }),
   )
   const chain = serializeEvidenceChain(items, 'm')
-  const summary = buildEvidenceChainSummaryForReport(chain, 400)
+  const summary = buildEvidenceChainSummaryForReport(chain, { maxChars: 400 })
   assert.ok(summary.length <= 800, `expected truncated, got ${summary.length}`)
 })
