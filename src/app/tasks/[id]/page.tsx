@@ -108,7 +108,7 @@ export default function TaskPage() {
       if (seq !== loadTaskSeqRef.current) return
       if (data.task) {
         setTask(data.task)
-        setCurrentStep(options.forceStep || data.task.currentStep || 'INFO')
+        setCurrentStep(options.forceStep || data.task.currentStep || 'DESIGN')
       } else if (res.status === 404) {
         router.push('/dashboard')
       } else if (!res.ok) {
@@ -240,6 +240,7 @@ export default function TaskPage() {
   function goToStep(stepKey: string) {
     if (stepKey === currentStep) return
     loadTaskSeqRef.current += 1
+    const previousStep = currentStep
     setCurrentStep(stepKey)
     setStepError(null)
     fetch('/api/tasks/' + taskId, {
@@ -248,9 +249,13 @@ export default function TaskPage() {
       body: JSON.stringify({ currentStep: stepKey }),
     }).then(readJsonResponse).then(data => {
       if (data.task) setTask((previous: unknown) => mergeTaskUpdate(previous, data.task))
-      else setStepError(data.error || '步骤切换失败，请稍后重试')
+      else {
+        setStepError(data.error || '步骤切换失败，请稍后重试')
+        setCurrentStep(previousStep)
+      }
     }).catch((err: Error) => {
       setStepError('步骤切换失败，请检查网络连接后重试')
+      setCurrentStep(previousStep)
     })
   }
 

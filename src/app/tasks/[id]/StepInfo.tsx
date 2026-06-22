@@ -58,7 +58,7 @@ export default function StepInfo({ task, onUpdate, onNext }: Props) {
     }
   }
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setSaving(true); setError('')
     try {
       const res = await fetch('/api/tasks/' + task.id, {
@@ -73,7 +73,8 @@ export default function StepInfo({ task, onUpdate, onNext }: Props) {
         setSaved(true)
         setTimeout(() => setSaved(false), 1500)
       }
-    } catch (e: any) { setError(e.message || String(e)) }
+      return true
+    } catch (e: any) { setError(e.message || String(e)); return false }
     finally { setSaving(false) }
   }
 
