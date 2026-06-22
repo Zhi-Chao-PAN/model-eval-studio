@@ -3,6 +3,14 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { safeServerError } from '@/lib/api-error'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { isValidCuid } from '@/lib/utils'
+import { AuditAction } from '@prisma/client'
+
+const VALID_ACTIONS = new Set<string>(Object.values(AuditAction))
+
+// Audit status is free-form string ('success', 'error', 'queued', etc.) so we
+// only validate length to prevent absurdly long inputs from hitting the DB.
+const MAX_STATUS_LENGTH = 32
 
 export async function GET(request: Request) {
   try {
@@ -24,12 +32,27 @@ export async function GET(request: Request) {
     const pageSizeRaw = parseInt(searchParams.get('pageSize') || '50', 10)
     const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1
     const pageSize = Number.isFinite(pageSizeRaw) && pageSizeRaw >= 1 && pageSizeRaw <= 200 ? Math.floor(pageSizeRaw) : 50
+
     const userId = searchParams.get('userId')
     const action = searchParams.get('action')
     const taskId = searchParams.get('taskId')
     const status = searchParams.get('status')
     const fromStr = searchParams.get('from')
     const toStr = searchParams.get('to')
+
+    // Validate CUID-format params to prevent DB errors from malformed inputs
+    if (userId && !isValidCuid(userId)) {
+      return NextResponse.json({ error: 'userId 参数格式无效' }, { status: 400 })
+    }
+    if (taskId && !isValidCuid(taskId)) {
+      return NextResponse.json({ error: 'taskId 参数格式无效' }, { status: 400 })
+    }
+    if (action && !VALID_ACTIONS.has(action)) {
+      return NextResponse.json({ error: 'action 参数无效' }, { status: 400 })
+    }
+    if (status && (status.length > MAX_STATUS_LENGTH || /[^\w-]/.test(status))) {
+      return NextResponse.json({ error: 'status 参数无效' }, { status: 400 })
+    }
 
     const where: Record<string, unknown> = {}
     if (userId) where.userId = userId
