@@ -1,9 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import {
   Settings as SettingsIcon, Key, Save, Check, User as UserIcon, FlaskConical,
   CheckCircle2, XCircle, Loader2, Sparkles, ShieldCheck, Wand2, AlertTriangle, RefreshCw,
-  Eye, EyeOff,
+  Eye, EyeOff, ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label, Textarea, Select } from '@/components/ui/input'
@@ -85,6 +87,8 @@ export default function SettingsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [bgError, setBgError] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const isWelcome = searchParams.get('welcome') === '1'
 
   async function load() {
     setLoadError(null)
@@ -236,8 +240,23 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Welcome banner for new users */}
+      {isWelcome && (
+        <div className="panel p-4 mb-6 border-emerald-500/30 bg-emerald-500/[0.06]">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-emerald-200 mb-1">注册成功！欢迎使用 ModelEval Studio</div>
+              <div className="text-xs text-emerald-200/70 leading-relaxed">
+                开始使用前，请先配置你的 AI 模型接入信息。配置完成后即可创建任务、使用 AI 辅助评测。你也可以先填写个人背景，帮助 AI 更好地理解你的评估场景。
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* First-time setup banner */}
-      {loaded && !baseUrl && !modelName && (
+      {loaded && !baseUrl && !modelName && !isWelcome && (
         <div className="panel p-4 mb-6 border-amber-500/30 bg-amber-500/[0.06]">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
@@ -356,7 +375,14 @@ export default function SettingsPage() {
               <Button variant="secondary" onClick={validateKey} loading={validating} disabled={!baseUrl || !modelName}>
                 <Sparkles className="h-3.5 w-3.5" /> 测试连接
               </Button>
-              {aiSaved && <span className="text-emerald-400 text-xs flex items-center gap-1"><Check className="h-3 w-3" /> 已保存</span>}
+              {aiSaved && isWelcome && (
+                <Link href="/dashboard" className="ml-2">
+                  <Button variant="ghost">
+                    前往工作台 <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
+                </Link>
+              )}
+              {aiSaved && !isWelcome && <span className="text-emerald-400 text-xs flex items-center gap-1"><Check className="h-3 w-3" /> 已保存</span>}
             </div>
 
             {aiError && (

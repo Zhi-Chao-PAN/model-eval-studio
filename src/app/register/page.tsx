@@ -19,6 +19,22 @@ export default function RegisterPage() {
   const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword
   const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword
 
+  // Password strength calculation
+  const passwordStrength = (() => {
+    if (!password) return { score: 0, label: '', color: '' }
+    let score = 0
+    if (password.length >= 8) score++
+    if (password.length >= 12) score++
+    if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score++
+    if (/\d/.test(password)) score++
+    if (/[^A-Za-z0-9]/.test(password)) score++
+    if (score <= 1) return { score: 1, label: '弱', color: 'bg-red-500' }
+    if (score <= 2) return { score: 2, label: '一般', color: 'bg-amber-500' }
+    if (score <= 3) return { score: 3, label: '中等', color: 'bg-yellow-500' }
+    if (score <= 4) return { score: 4, label: '强', color: 'bg-emerald-500' }
+    return { score: 5, label: '很强', color: 'bg-emerald-400' }
+  })()
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (password !== confirmPassword) { setError('两次输入的密码不一致'); return }
@@ -37,7 +53,7 @@ export default function RegisterPage() {
       let data: any = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
       if (!res.ok) throw new Error(data.error || '注册失败，请稍后重试')
-      router.push('/dashboard')
+      router.push('/settings?welcome=1')
       router.refresh()
     } catch (e: any) {
       setError(e.message || '注册失败，请稍后重试')
@@ -117,6 +133,24 @@ export default function RegisterPage() {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              {password.length > 0 && (
+                <div className="mt-1.5">
+                  <div className="flex gap-1 mb-1">
+                    {[1, 2, 3, 4, 5].map(i => (
+                      <div key={i} className={`h-1 flex-1 rounded-full transition-colors ${
+                        i <= passwordStrength.score ? passwordStrength.color : 'bg-white/10'
+                      }`} />
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    密码强度：<span className={
+                      passwordStrength.score <= 2 ? 'text-red-400' :
+                      passwordStrength.score <= 3 ? 'text-amber-400' : 'text-emerald-400'
+                    }>{passwordStrength.label}</span>
+                    <span className="text-gray-600 ml-2">建议使用大小写字母+数字+符号</span>
+                  </p>
+                </div>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="confirm">确认密码</Label>
