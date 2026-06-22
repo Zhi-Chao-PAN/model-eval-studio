@@ -43,11 +43,20 @@ export function inferArtifactPreviewKind(name: string): ArtifactPreviewKind {
 }
 
 export function shouldIgnoreArchiveEntry(name: string): boolean {
-  const normalized = name.replace(/\\/g, '/').toLowerCase()
-  const segments = normalized.split('/').filter(Boolean)
-  const basename = segments.at(-1) || ''
+  if (!name || typeof name !== 'string') return true
+  // Reject NUL bytes (tar/zip path tricks)
+  if (name.includes('\0')) return true
+  const normalized = name.replace(/\\/g, '/')
+  // Block absolute paths (Unix + Windows drive letters)
+  if (normalized.startsWith('/') || /^[a-zA-Z]:/.test(normalized)) return true
+  const segments = normalized.split('/')
+  // Block any path-traversal segment (zip-slip attack)
+  if (segments.some(segment => segment === '..')) return true
+  const lower = normalized.toLowerCase()
+  const basename = segments.filter(Boolean).at(-1) || ''
   if (!basename || basename.startsWith('.') || basename.startsWith('~$')) return true
-  if (segments.some(segment => ARCHIVE_JUNK_SEGMENTS.has(segment))) return true
+  const segsLower = segments.filter(Boolean).map(s => s.toLowerCase())
+  if (segsLower.some(segment => ARCHIVE_JUNK_SEGMENTS.has(segment))) return true
   return ARCHIVE_JUNK_EXTENSIONS.has(fileExtension(basename))
 }
 
