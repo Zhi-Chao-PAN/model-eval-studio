@@ -114,12 +114,20 @@ export interface BuildEvidenceInput {
   artifactName?: string | null
   runId?: string | null
   metadata?: Record<string, unknown> | null
+  /**
+   * 可选：覆盖默认 createdAt（默认是当前时间）。生产代码不传，仅测试需要
+   * 稳定时间戳来验证排序。
+   */
+  createdAt?: string
 }
 
 export function buildEvidence(input: BuildEvidenceInput): ArtifactEvidence {
   const title = clampText(input.title, EVIDENCE_TITLE_MAX, 'title') || '未命名证据'
   const summary = clampText(input.summary, EVIDENCE_SUMMARY_MAX, 'summary') || '无摘要'
   const detail = input.detail ? clampText(input.detail, EVIDENCE_DETAIL_MAX, 'detail') : null
+  const createdAt = input.createdAt && typeof input.createdAt === 'string'
+    ? input.createdAt
+    : new Date().toISOString()
 
   // 防御性 metadata 清洗：不允许任何字段携带原始 think / 思维链
   const sanitizedMetadata = sanitizeMetadata(input.metadata)
@@ -136,7 +144,7 @@ export function buildEvidence(input: BuildEvidenceInput): ArtifactEvidence {
     summary,
     detail,
     metadata: sanitizedMetadata,
-    createdAt: new Date().toISOString(),
+    createdAt,
   }
 }
 
