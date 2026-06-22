@@ -1,6 +1,7 @@
 import {
   analyzeArtifactEvidence,
   analyzeArtifactFiles,
+  buildArtifactEvidenceChain,
   captureArtifactEvidence,
   failArtifactAnalysisRun,
   finalizeArtifactAnalysis,
@@ -23,6 +24,7 @@ export async function artifactAnalysisWorkflow(input: ArtifactAnalysisRunInput):
       console.log(`[artifact-analysis] pass ${attempt}/${MAX_ANALYSIS_PASSES} run=${input.runId}`)
       await inspectArtifacts(input, attempt)
       await captureEvidence(input, attempt)
+      await buildEvidence(input, attempt)
       await reviewEvidence(input, attempt)
       const fileAnalysis = await reviewFiles(input, attempt)
       const mergedAnalysis = await synthesizeFiles(input, fileAnalysis, attempt)
@@ -50,6 +52,12 @@ async function inspectArtifacts(input: ArtifactAnalysisRunInput, attempt: number
   'use step'
   console.log(`[artifact-analysis] inspect run=${input.runId} pass=${attempt}`)
   await inspectArtifactInputs(input)
+}
+
+async function buildEvidence(input: ArtifactAnalysisRunInput, attempt: number): Promise<void> {
+  'use step'
+  console.log(`[artifact-analysis] build evidence chain run=${input.runId} pass=${attempt}`)
+  await buildArtifactEvidenceChain(input)
 }
 
 async function captureEvidence(input: ArtifactAnalysisRunInput, attempt: number): Promise<void> {

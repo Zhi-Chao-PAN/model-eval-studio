@@ -23,6 +23,12 @@ export type StoredModelArtifactAnalysis = {
   verificationScreenshotUrls?: string | null
   verificationSummary: string
   filesAnalysis: string
+  /**
+   * v2.1+ 可选字段：序列化进 artifactAnalysisJson 的证据链 JSON 字符串。
+   * 解析时如果存在，会随 StoredModelArtifactAnalysis 一起返回，供 UI 展示
+   * 和报告生成 prompt 使用；缺失时不破坏现有数据。
+   */
+  evidenceChain?: string | null
 }
 
 function createdAtValue(value: ArtifactAnalysisArtifact['createdAt']): string {
@@ -58,7 +64,23 @@ export function parseStoredModelArtifactAnalysis(raw?: string | null): StoredMod
     ) {
       return null
     }
-    return value as StoredModelArtifactAnalysis
+    const result: StoredModelArtifactAnalysis = {
+      version: 2,
+      modelCode: value.modelCode,
+      analyzedAt: value.analyzedAt,
+      artifactSignature: value.artifactSignature,
+      artifactCount: value.artifactCount,
+      verificationEvidenceSignature:
+        typeof value.verificationEvidenceSignature === 'string' ? value.verificationEvidenceSignature : null,
+      verificationScreenshotUrls:
+        typeof value.verificationScreenshotUrls === 'string' ? value.verificationScreenshotUrls : null,
+      verificationSummary: value.verificationSummary,
+      filesAnalysis: value.filesAnalysis,
+    }
+    if (typeof value.evidenceChain === 'string') {
+      result.evidenceChain = value.evidenceChain
+    }
+    return result
   } catch {
     return null
   }

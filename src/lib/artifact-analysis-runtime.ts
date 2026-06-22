@@ -23,6 +23,12 @@ import {
   MODEL_ARTIFACT_ANALYSIS_VERSION,
   type StoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
+import {
+  parseStoredEvidenceChain,
+  serializeEvidenceChain,
+  type ArtifactEvidence,
+} from '@/lib/artifact-evidence-chain'
+import { runSafeArtifactAutoRunner } from '@/lib/artifact-auto-runner'
 import { generateReportForModel } from '@/lib/report-generation'
 
 export const ARTIFACT_ANALYSIS_RUN_STATUS = {
@@ -208,6 +214,141 @@ export async function inspectArtifactInputs(input: ArtifactAnalysisRunInput): Pr
     detail: `识别到 ${context.artifacts.length} 个产物，将继续进行解压、解析和内容分析。`,
     metadata: { artifactCount: context.artifacts.length, artifactNames: names },
   })
+}
+
+/**
+ * Build the artifact evidence chain for the current run.
+ *
+ * Combines:
+ *   - V1 auto-runner output (file_manifest / primary_artifact / parsed_content /
+ *     structure_check / quality_signal / auto_candidate / limitation)
+ *
+ * The chain is serialized and persisted on `TaskModel.artifactAnalysisJson`
+ * (alongside filesAnalysis/verificationSummary), and a compact summary is
+ * appended as an event so the UI trace can show evidence even before the
+ * full chain is parsed.
+ *
+ * NOTE: tester_upload screenshots are NOT included here — that role belongs
+ * to `verificationScreenshotUrls` / `verificationSummary`. The chain only
+ * describes what the backend statically observed.
+ */
+export async function buildArtifactEvidenceChain(input: ArtifactAnalysisRunInput): Promise<string> {
+  const context = await getRunContext(input)
+
+  await appendArtifactAnalysisEvent({
+    runId: input.runId,
+    phase: 'evidence_chain',
+    status: ARTIFACT_ANALYSIS_EVENT_STATUS.STARTED,
+    label: '正在构建后台候选证据链',
+    detail: 'V1 自动验收运行器只做静态分析；产物效果反馈仍以测试者上传的本地验收截图为准。',
+  })
+
+  let items: ArtifactEvidence[] = []
+  try {
+    const result = runSafeArtifactAutoRunner({
+      modelId: context.id,
+      artifacts: context.artifacts.map(a => ({
+        id: a.id,
+        name: a.name,
+        size: a.size ?? null,
+        mimeType: a.mimeType ?? null,
+        parsedText: a.parsedText ?? null,
+        textContent: a.textContent ?? null,
+      })),
+    })
+    items = result.items
+  } catch (err) {
+    const message = artifactAnalysisErrorMessage(err)
+    await appendArtifactAnalysisEvent({
+      runId: input.runId,
+      phase: 'evidence_chain',
+      status: ARTIFACT_ANALYSIS_EVENT_STATUS.WARNING,
+      label: '后台候选证据链生成失败',
+      detail: message,
+    })
+    // 不让单个失败把整个分析流炸掉；返回一个空 chain，让后续步骤继续跑
+    items = []
+  }
+
+  // 让 evidenceId 的 runId 字段带上真实 runId，方便 UI 反查
+  for (const item of items) {
+    item.runId = input.runId
+  }
+
+  const chain = serializeEvidenceChain(items, context.id)
+  const serialized = JSON.stringify(chain)
+
+  // 把 chain 立即合并进 TaskModel.artifactAnalysisJson，避免跨 workflow step 传值。
+  // 此时 artifactAnalysisJson 可能是旧 v2 JSON（仅含 filesAnalysis / verificationSummary），
+  // 或是前一次 run 留下的。我们用 attachEvidenceChainToAnalysisJson 兼容两种情况。
+  const existingModel = await prisma.taskModel.findUnique({
+    where: { id: context.id },
+    select: { artifactAnalysisJson: true },
+  })
+  const nextJson = attachEvidenceChainToAnalysisJson(
+    existingModel?.artifactAnalysisJson,
+    serialized,
+  )
+  await prisma.taskModel.update({
+    where: { id: context.id },
+    data: { artifactAnalysisJson: nextJson },
+  })
+
+  // 摘要追加到 events metadata 里供 UI 即时显示
+  const summaryHead = items
+    .filter(i => i.evidenceType === 'auto_candidate' || i.evidenceType === 'primary_artifact')
+    .slice(0, 3)
+    .map(i => `${i.evidenceType}: ${i.title}`)
+  const summaryTail = items
+    .filter(i => i.evidenceType === 'limitation')
+    .slice(0, 2)
+    .map(i => `${i.evidenceType}: ${i.title}`)
+
+  await appendArtifactAnalysisEvent({
+    runId: input.runId,
+    phase: 'evidence_chain',
+    status: ARTIFACT_ANALYSIS_EVENT_STATUS.COMPLETED,
+    label: `后台候选证据链已生成（${items.length} 条）`,
+    detail: [...summaryHead, ...summaryTail].join('\n') || '（无有效证据）',
+    metadata: {
+      itemCount: items.length,
+      types: Array.from(new Set(items.map(i => i.evidenceType))),
+      primaryName: items.find(i => i.evidenceType === 'primary_artifact')?.artifactName || null,
+      hasUsablePrimary: items.some(i => i.evidenceType === 'primary_artifact'),
+    },
+  })
+
+  return serialized
+}
+
+/**
+ * 把证据链序列化 JSON 字符串合并到现有的 `StoredModelArtifactAnalysis` JSON 中。
+ * 不改变 version；通过可选字段 `evidenceChain` 兼容 v2 数据。
+ */
+export function attachEvidenceChainToAnalysisJson(
+  existingJson: string | null | undefined,
+  evidenceChain: string | null,
+): string {
+  const empty = '{}'
+  if (!evidenceChain) return existingJson || empty
+  let base: Record<string, unknown>
+  try {
+    base = existingJson ? JSON.parse(existingJson) : {}
+  } catch {
+    base = {}
+  }
+  base.evidenceChain = evidenceChain
+  return JSON.stringify(base)
+}
+
+/**
+ * 从 `StoredModelArtifactAnalysis.evidenceChain` 解析出可用的 SerializedEvidenceChain。
+ */
+export function loadEvidenceChainFromAnalysis(
+  analysis: { evidenceChain?: string | null } | null | undefined,
+): ReturnType<typeof parseStoredEvidenceChain> {
+  if (!analysis || !analysis.evidenceChain) return null
+  return parseStoredEvidenceChain(analysis.evidenceChain)
 }
 
 export async function captureArtifactEvidence(input: ArtifactAnalysisRunInput): Promise<void> {
@@ -489,7 +630,10 @@ export async function summarizeArtifactFiles(input: ArtifactAnalysisRunInput, fi
   }
 }
 
-export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, filesAnalysis: string): Promise<FinalizeArtifactAnalysisResult> {
+export async function finalizeArtifactAnalysis(
+  input: ArtifactAnalysisRunInput,
+  filesAnalysis: string,
+): Promise<FinalizeArtifactAnalysisResult> {
   await appendArtifactAnalysisEvent({
     runId: input.runId,
     phase: 'finalize',
@@ -497,9 +641,15 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     label: '正在保存预分析结果',
   })
 
-  const [context, run] = await Promise.all([
+  const [context, run, modelWithChain] = await Promise.all([
     getRunContext(input),
     prisma.artifactAnalysisRun.findUnique({ where: { id: input.runId } }),
+    // evidenceChain 已由 buildArtifactEvidenceChain 提前写到 artifactAnalysisJson；
+    // finalize 时直接从 taskModel 读出并复用，避免跨 workflow step 传复杂对象。
+    prisma.taskModel.findUnique({
+      where: { id: input.modelId },
+      select: { artifactAnalysisJson: true },
+    }),
   ])
   if (!run) throw new Error('分析任务不存在')
 
@@ -533,12 +683,25 @@ export async function finalizeArtifactAnalysis(input: ArtifactAnalysisRunInput, 
     filesAnalysis,
   }
 
+  // 把已有的 evidenceChain 重新挂回 v2 JSON，保留 buildArtifactEvidenceChain 写下的内容
+  const existingChain = (() => {
+    const raw = modelWithChain?.artifactAnalysisJson
+    if (!raw) return null
+    try {
+      const v = JSON.parse(raw)
+      return typeof v?.evidenceChain === 'string' ? v.evidenceChain as string : null
+    } catch {
+      return null
+    }
+  })()
+  const analysisJson = attachEvidenceChainToAnalysisJson(JSON.stringify(analysis), existingChain)
+
   await prisma.$transaction([
     prisma.taskModel.update({
       where: { id: context.id },
       data: {
         verificationScreenshotUrls: run.verificationScreenshotUrls,
-        artifactAnalysisJson: JSON.stringify(analysis),
+        artifactAnalysisJson: analysisJson,
       },
     }),
     prisma.artifactAnalysisRun.update({
