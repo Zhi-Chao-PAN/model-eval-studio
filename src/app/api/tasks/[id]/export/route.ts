@@ -3,7 +3,7 @@ import JSZip from 'jszip'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
-import { apiError } from '@/lib/api-error'
+import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
@@ -165,9 +165,20 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const startedAt = Date.now()
+  let auditStatus: 'success' | 'error' = 'error'
+  let auditError: string | null = null
+  let modelCount = 0
+  let taskTitle = ''
+  let taskId: string | null = null
+  let userId: string | null = null
+  let format: ExportFormat = 'zip'
+
+  try {
   const session = await requireAuth()
   if (!session) return apiError('未登录', 401)
+  userId = session.userId
   const { id } = await params
+  taskId = id
 
   // Export builds a ZIP in memory and serializes all task data; moderate
   // rate limit to prevent CPU/memory abuse.
@@ -180,19 +191,12 @@ export async function GET(
   if (!rl.allowed) return rateLimitResponse(rl)
 
   const url = new URL(request.url)
-  const format = resolveFormat(url.searchParams)
+  format = resolveFormat(url.searchParams)
 
   const { access } = await getTaskAccess(id, session)
   const denied = requireAccess(access, 'VIEWER')
   if (denied) {
-    logAudit(request, {
-      action: 'EXPORT',
-      userId: session.userId,
-      taskId: id,
-      status: 'error',
-      error: denied.error,
-      durationMs: Date.now() - startedAt,
-    })
+    auditError = denied.error
     return apiError(denied.error, denied.status)
   }
 
@@ -239,28 +243,13 @@ export async function GET(
     },
   })
   if (!task) {
-    logAudit(request, {
-      action: 'EXPORT',
-      userId: session.userId,
-      taskId: id,
-      status: 'error',
-      error: '任务不存在',
-      durationMs: Date.now() - startedAt,
-    })
+    auditError = '任务不存在'
     return apiError('任务不存在', 404)
   }
 
+  taskTitle = task.title
+  modelCount = task.models.length
   const baseFilename = sanitizeFilename(task.title)
-
-  // fire-and-forget audit
-  logAudit(request, {
-    action: 'EXPORT',
-    userId: session.userId,
-    taskId: id,
-    status: 'success',
-    durationMs: Date.now() - startedAt,
-    detail: { modelCount: task.models.length, title: task.title, format },
-  })
 
   if (format === 'json') {
     const payload = buildJsonPayload(task)
@@ -298,10 +287,26 @@ export async function GET(
 
   const buffer = await zip.generateAsync({ type: 'uint8array' })
 
+  auditStatus = 'success'
   return new NextResponse(buffer as any, {
     headers: {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${baseFilename}.zip"`,
     },
   })
+  } catch (err) {
+    const { message } = safeServerError(err, 'task-export')
+    auditError = message
+    return apiError('导出任务失败：' + message, 500)
+  } finally {
+    logAudit(request, {
+      action: 'EXPORT',
+      userId,
+      taskId,
+      status: auditStatus,
+      error: auditError,
+      durationMs: Date.now() - startedAt,
+      detail: { modelCount, title: taskTitle, format },
+    })
+  }
 }

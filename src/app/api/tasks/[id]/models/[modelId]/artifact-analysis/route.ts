@@ -12,7 +12,7 @@ import {
 } from '@/lib/artifact-analysis-runtime'
 import { artifactAnalysisWorkflow } from '@/workflows/artifact-analysis'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
-import { apiError } from '@/lib/api-error'
+import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
@@ -23,36 +23,41 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string; modelId: string }> },
 ) {
-  const session = await requireAuth()
-  if (!session) return apiError('未登录', 401)
+  try {
+    const session = await requireAuth()
+    if (!session) return apiError('未登录', 401)
 
-  const { id, modelId } = await params
+    const { id, modelId } = await params
 
-  const { access } = await getTaskAccess(id, session)
-  const denied = requireAccess(access, 'VIEWER')
-  if (denied) return apiError(denied.error, denied.status)
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'VIEWER')
+    if (denied) return apiError(denied.error, denied.status)
 
-  const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, taskId: id },
-    include: {
-      artifacts: { orderBy: { createdAt: 'asc' } },
-      artifactAnalysisRuns: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        include: { events: { orderBy: { sequence: 'asc' } } },
+    const model = await prisma.taskModel.findFirst({
+      where: { id: modelId, taskId: id },
+      include: {
+        artifacts: { orderBy: { createdAt: 'asc' } },
+        artifactAnalysisRuns: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { events: { orderBy: { sequence: 'asc' } } },
+        },
       },
-    },
-  })
-  if (!model) return apiError('模型不存在', 404)
+    })
+    if (!model) return apiError('模型不存在', 404)
 
-  return NextResponse.json({
-    run: model.artifactAnalysisRuns[0] || null,
-    model: {
-      id: model.id,
-      artifactAnalysisJson: model.artifactAnalysisJson,
-      verificationScreenshotUrls: model.verificationScreenshotUrls,
-    },
-  })
+    return NextResponse.json({
+      run: model.artifactAnalysisRuns[0] || null,
+      model: {
+        id: model.id,
+        artifactAnalysisJson: model.artifactAnalysisJson,
+        verificationScreenshotUrls: model.verificationScreenshotUrls,
+      },
+    })
+  } catch (err) {
+    const { message } = safeServerError(err, 'artifact-analysis-get')
+    return apiError(message, 500)
+  }
 }
 
 export async function POST(
@@ -193,17 +198,20 @@ export async function POST(
     auditStatus = 'success'
     return NextResponse.json({ run }, { status: 202 })
   } catch (error) {
-    auditError = artifactAnalysisErrorMessage(error)
+    // Use safeServerError for the client response; keep full detail for audit log only
+    const { message: safeMsg } = safeServerError(error, 'artifact-analysis-start')
+    auditError = artifactAnalysisErrorMessage(error) // full detail for audit log (internal only)
+    const clientMsg = '产物预分析启动失败，请稍后重试'
     if (analysisRunId && taskId && analysisModelId && userId && !workflowStarted) {
       await failArtifactAnalysisRun({
         runId: analysisRunId,
         taskId,
         modelId: analysisModelId,
         userId,
-      }, auditError)
+      }, safeMsg)
     }
     console.error('Artifact analysis workflow could not start:', error)
-    return NextResponse.json({ error: `产物预分析启动失败：${auditError}` }, { status: 500 })
+    return NextResponse.json({ error: clientMsg }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'AI_ARTIFACT_ANALYZE',

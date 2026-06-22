@@ -14,29 +14,34 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireAuth()
-  if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
-  const { id } = await params
+  try {
+    const session = await requireAuth()
+    if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    const { id } = await params
 
-  const { access } = await getTaskAccess(id, session)
-  if (!access) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
-  if (access !== 'OWNER') {
-    return NextResponse.json({ error: '只有任务创建者可以管理共享链接' }, { status: 403 })
+    const { access } = await getTaskAccess(id, session)
+    if (!access) return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+    if (access !== 'OWNER') {
+      return NextResponse.json({ error: '只有任务创建者可以管理共享链接' }, { status: 403 })
+    }
+
+    const shares = await prisma.taskShare.findMany({
+      where: { taskId: id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        token: true,
+        accessType: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+    })
+
+    return NextResponse.json({ shares })
+  } catch (err) {
+    const { message } = safeServerError(err, 'shares-list')
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  const shares = await prisma.taskShare.findMany({
-    where: { taskId: id },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      token: true,
-      accessType: true,
-      expiresAt: true,
-      createdAt: true,
-    },
-  })
-
-  return NextResponse.json({ shares })
 }
 
 // 创建共享链接

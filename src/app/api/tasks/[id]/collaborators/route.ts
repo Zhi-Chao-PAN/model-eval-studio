@@ -18,26 +18,31 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireAuth()
-  if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
-  const { id } = await params
+  try {
+    const session = await requireAuth()
+    if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    const { id } = await params
 
-  const { access } = await getTaskAccess(id, session)
-  if (!access || !hasAccessLevel(access, 'VIEWER')) {
-    return NextResponse.json({ error: '任务不存在' }, { status: 404 })
-  }
+    const { access } = await getTaskAccess(id, session)
+    if (!access || !hasAccessLevel(access, 'VIEWER')) {
+      return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+    }
 
-  const collaborators = await prisma.taskCollaborator.findMany({
-    where: { taskId: id },
-    include: {
-      user: {
-        select: { id: true, username: true },
+    const collaborators = await prisma.taskCollaborator.findMany({
+      where: { taskId: id },
+      include: {
+        user: {
+          select: { id: true, username: true },
+        },
       },
-    },
-    orderBy: { createdAt: 'asc' },
-  })
+      orderBy: { createdAt: 'asc' },
+    })
 
-  return NextResponse.json({ collaborators, currentUserAccess: access })
+    return NextResponse.json({ collaborators, currentUserAccess: access })
+  } catch (err) {
+    const { message } = safeServerError(err, 'collaborators-list')
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }
 
 // 添加协作者（按用户名）
@@ -131,7 +136,7 @@ export async function POST(
 
     return NextResponse.json({ collaborator })
   } catch (err) {
-    const { status, message } = safeServerError(err, 'collaborator-add')
-    return NextResponse.json({ error: '添加协作者失败：' + message }, { status })
+    const { message } = safeServerError(err, 'collaborator-add')
+    return NextResponse.json({ error: '添加协作者失败：' + message }, { status: 500 })
   }
 }
