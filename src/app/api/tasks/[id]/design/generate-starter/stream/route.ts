@@ -10,6 +10,7 @@ import {
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { safeServerError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -154,9 +155,10 @@ export async function POST(
           full: fullText,
           starter: parsed,
         })
-      } catch (e: any) {
-        streamError = e?.message || String(e)
-        send('error', { message: streamError })
+      } catch (e: unknown) {
+        const { message } = safeServerError(e, 'ai-design-starter')
+        streamError = message
+        send('error', { message })
       } finally {
         controller.close()
         logAudit(request, {

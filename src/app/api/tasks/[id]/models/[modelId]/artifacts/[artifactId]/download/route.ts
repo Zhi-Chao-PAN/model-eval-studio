@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { hasStoredArtifactFile, readArtifactFile } from '@/lib/artifact-storage'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { safeServerError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
 
@@ -59,61 +60,66 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string; modelId: string; artifactId: string }> },
 ) {
-  const session = await requireAuth()
-  if (!session) return Response.json({ error: '未登录' }, { status: 401 })
+  try {
+    const session = await requireAuth()
+    if (!session) return Response.json({ error: '未登录' }, { status: 401 })
 
-  const { id, modelId, artifactId } = await params
+    const { id, modelId, artifactId } = await params
 
-  const { access } = await getTaskAccess(id, session)
-  const denied = requireAccess(access, 'VIEWER')
-  if (denied) return Response.json({ error: denied.error }, { status: denied.status })
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'VIEWER')
+    if (denied) return Response.json({ error: denied.error }, { status: denied.status })
 
-  const model = await prisma.taskModel.findFirst({
-    where: { id: modelId, taskId: id },
-    select: { id: true },
-  })
-  if (!model) return Response.json({ error: '模型不存在' }, { status: 404 })
+    const model = await prisma.taskModel.findFirst({
+      where: { id: modelId, taskId: id },
+      select: { id: true },
+    })
+    if (!model) return Response.json({ error: '模型不存在' }, { status: 404 })
 
-  const artifact = await prisma.modelArtifact.findFirst({
-    where: { id: artifactId, taskModelId: modelId },
-  })
-  if (!artifact) return Response.json({ error: '文件不存在' }, { status: 404 })
+    const artifact = await prisma.modelArtifact.findFirst({
+      where: { id: artifactId, taskModelId: modelId },
+    })
+    if (!artifact) return Response.json({ error: '文件不存在' }, { status: 404 })
 
-  let body: BodyInit
-  let declaredContentType: string | null = artifact.mimeType
-  let size: number | null = artifact.size
+    let body: BodyInit
+    let declaredContentType: string | null = artifact.mimeType
+    let size: number | null = artifact.size
 
-  if (hasStoredArtifactFile(artifact.url)) {
-    const stored = await readArtifactFile(artifact.url)
-    body = stored.body
-    declaredContentType = artifact.mimeType || stored.contentType
-    size = stored.size
-  } else if (artifact.url?.startsWith('data:')) {
-    const parsed = dataUrlToBody(artifact.url)
-    if (!parsed) return Response.json({ error: '历史产物数据已损坏' }, { status: 410 })
-    body = parsed.body
-    declaredContentType = artifact.mimeType || parsed.contentType
-    size = parsed.size
-  } else {
-    const text = artifact.textContent || artifact.parsedText || ''
-    if (!text.trim()) return Response.json({ error: '该产物没有可下载的原文件' }, { status: 404 })
-    body = text
-    declaredContentType = artifact.mimeType || 'text/plain; charset=utf-8'
-    size = Buffer.byteLength(text, 'utf8')
+    if (hasStoredArtifactFile(artifact.url)) {
+      const stored = await readArtifactFile(artifact.url)
+      body = stored.body
+      declaredContentType = artifact.mimeType || stored.contentType
+      size = stored.size
+    } else if (artifact.url?.startsWith('data:')) {
+      const parsed = dataUrlToBody(artifact.url)
+      if (!parsed) return Response.json({ error: '历史产物数据已损坏' }, { status: 410 })
+      body = parsed.body
+      declaredContentType = artifact.mimeType || parsed.contentType
+      size = parsed.size
+    } else {
+      const text = artifact.textContent || artifact.parsedText || ''
+      if (!text.trim()) return Response.json({ error: '该产物没有可下载的原文件' }, { status: 404 })
+      body = text
+      declaredContentType = artifact.mimeType || 'text/plain; charset=utf-8'
+      size = Buffer.byteLength(text, 'utf8')
+    }
+
+    const contentType = safeDownloadContentType(declaredContentType)
+
+    return new Response(body, {
+      headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': contentDisposition(artifact.name),
+        'Content-Length': size != null ? String(size) : '',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; script-src 'none'; style-src 'none'; sandbox",
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+      },
+    })
+  } catch (err) {
+    const { message } = safeServerError(err, 'artifact-download')
+    return Response.json({ error: message }, { status: 500 })
   }
-
-  const contentType = safeDownloadContentType(declaredContentType)
-
-  return new Response(body, {
-    headers: {
-      'Content-Type': contentType,
-      'Content-Disposition': contentDisposition(artifact.name),
-      'Content-Length': size != null ? String(size) : '',
-      'Cache-Control': 'private, no-store',
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'none'; script-src 'none'; style-src 'none'; sandbox",
-      'X-Frame-Options': 'DENY',
-      'Referrer-Policy': 'no-referrer',
-    },
-  })
 }

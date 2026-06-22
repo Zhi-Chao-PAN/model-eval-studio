@@ -8,7 +8,7 @@ import { getUserAiConfig } from '@/lib/user-ai'
 import { buildScreenshotAnalysisPrompt, buildDashboardAnalysisPrompt } from '@/lib/ai-prompts'
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
-import { apiError } from '@/lib/api-error'
+import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { storeArtifactFile, deleteArtifactFile } from '@/lib/artifact-storage'
 import {
@@ -372,18 +372,21 @@ export async function POST(
               inserted.push(modelCode)
             }
           }
-        } catch (dbErr: any) {
-          auditError = '数据库写入失败：' + (dbErr?.message || String(dbErr))
+        } catch (dbErr: unknown) {
+          const { message: dbMsg } = safeServerError(dbErr, 'screenshot-db-write')
+          auditError = '数据库写入失败'
           send('error', { message: auditError })
+          console.error('[screenshot-analyze] DB write error:', dbMsg)
           return
         }
 
         auditStatus = 'success'
         send('done', { inserted, updated, parsed, raw: clean })
-      } catch (e: any) {
-        auditError = e?.name === 'AbortError'
+      } catch (e: unknown) {
+        const { message: safeMsg } = safeServerError(e, 'screenshot-analyze')
+        auditError = (e instanceof Error && e.name === 'AbortError')
           ? '截图分析已取消'
-          : e?.message || String(e)
+          : '截图分析失败，请稍后重试'
         send('error', { message: auditError })
       } finally {
         try { controller.close() } catch {}
