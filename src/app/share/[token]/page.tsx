@@ -141,9 +141,9 @@ export default function SharePage() {
         {/* Empty: no models at all */}
         {!task.models?.length ? (
           <div className="panel p-10 flex flex-col items-center justify-center text-center">
-            <FileCheck2 className="h-10 w-10 text-gray-600 mb-3" />
+            <FileCheck2 className="h-10 w-10 text-gray-400 mb-3" />
             <p className="text-sm text-gray-400">该任务尚未添加任何模型</p>
-            <p className="text-xs text-gray-600 mt-1">请等待任务创建者上传模型后再查看报告。</p>
+            <p className="text-xs text-gray-400 mt-1">请等待任务创建者上传模型后再查看报告。</p>
           </div>
         ) : (
           <>
@@ -175,7 +175,7 @@ export default function SharePage() {
                       <span className={cn('display text-4xl tabular leading-none', tierText(score))}>
                         {formatScore(score, 'half')}
                       </span>
-                      {score > 0 && <span className="text-[10px] text-gray-600 mono mb-1">/10</span>}
+                      {score > 0 && <span className="text-[10px] text-gray-400 mono mb-1">/10</span>}
                     </div>
                     <div className="flex gap-3 mt-2.5 text-[11px] text-gray-500 mono">
                       <span>效率 <span className={tierText(report?.efficiencyScore || 0)}>{formatScore(report?.efficiencyScore || 0)}</span></span>
@@ -237,16 +237,16 @@ export default function SharePage() {
 
           {selectedModel && !latestReport && (
             <div className="panel p-10 flex flex-col items-center justify-center text-center">
-              <FileCheck2 className="h-10 w-10 text-gray-600 mb-3" />
+              <FileCheck2 className="h-10 w-10 text-gray-400 mb-3" />
               <p className="text-sm text-gray-500">该模型暂无评估报告</p>
-              <p className="text-xs text-gray-600 mt-1">报告生成后会自动显示在这里。</p>
+              <p className="text-xs text-gray-400 mt-1">报告生成后会自动显示在这里。</p>
             </div>
           )}
         </>
         )}
 
         {/* Footer */}
-        <div className="text-center text-[11px] text-gray-600 pt-4">
+        <div className="text-center text-[11px] text-gray-400 pt-4">
           本报告由 ModelEval Studio 生成 · 仅供评估参考
         </div>
       </div>
@@ -309,14 +309,14 @@ function ReportModule({
             {score !== undefined && (
               <span className={cn('display text-lg tabular leading-none', tierText(score))}>
                 {formatScore(score, scoreMode)}
-                <span className="text-[10px] text-gray-600 font-normal ml-0.5">/ 10</span>
+                <span className="text-[10px] text-gray-400 font-normal ml-0.5">/ 10</span>
               </span>
             )}
           </div>
         </div>
       </div>
       <p className="text-[13px] text-gray-300 whitespace-pre-wrap leading-relaxed pl-[44px]">
-        {content || <span className="text-gray-600 italic">（暂无内容）</span>}
+        {content || <span className="text-gray-400 italic">（暂无内容）</span>}
       </p>
     </div>
   )

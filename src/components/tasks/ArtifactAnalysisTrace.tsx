@@ -102,7 +102,7 @@ export function ArtifactAnalysisTrace({ run, modelCode }: ArtifactAnalysisTraceP
         <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
           <Clock3 className="h-3.5 w-3.5" />
           <span>{statusText}</span>
-          <span className="text-gray-600">·</span>
+          <span className="text-gray-400">·</span>
           <span>已用时 {formatElapsed(run.startedAt, run.completedAt)}</span>
         </div>
       </div>
@@ -117,7 +117,7 @@ export function ArtifactAnalysisTrace({ run, modelCode }: ArtifactAnalysisTraceP
             <div className="min-w-0">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[13px] text-gray-200">{event.label}</span>
-                <time className="mono shrink-0 text-[10px] text-gray-600" dateTime={event.createdAt}>
+                <time className="mono shrink-0 text-[10px] text-gray-400" dateTime={event.createdAt}>
                   {formatEventTime(event.createdAt)}
                 </time>
               </div>

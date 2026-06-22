@@ -280,7 +280,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
               >
                 <div className="min-w-0">
                   <div className="truncate text-gray-300">{artifact.name}</div>
-                  {formatSize(artifact.size) && <div className="mt-0.5 text-[10px] text-gray-600">{formatSize(artifact.size)}</div>}
+                  {formatSize(artifact.size) && <div className="mt-0.5 text-[10px] text-gray-400">{formatSize(artifact.size)}</div>}
                 </div>
                 <a
                   href={`/api/tasks/${taskId}/models/${model.id}/artifacts/${artifact.id}/download`}
@@ -343,7 +343,7 @@ export function VerificationEvidencePanel({ taskId, model, fallbackEvidenceRaw, 
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-white/[0.08] px-3 py-5 text-center">
-          <FileImage className="mx-auto mb-1.5 h-4 w-4 text-gray-600" />
+          <FileImage className="mx-auto mb-1.5 h-4 w-4 text-gray-400" />
           <p className="text-[11px] text-gray-500">尚未上传产物效果截图</p>
         </div>
       )}
