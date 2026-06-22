@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   AlertTriangle, Activity, Award, Check, ChevronDown, ChevronUp, Copy,
-  FileCheck2, ListChecks, Pencil, History,
+  FileCheck2, ListChecks, Pencil, History, Home,
   RefreshCw, Send, ShieldCheck, Sparkles, Star, Zap,
   Clock, Edit3, X, Lightbulb,
 } from 'lucide-react'
@@ -627,6 +628,26 @@ export default function StepReport({ task, onRefresh }: Props) {
             ? <Check className="h-4 w-4 flex-shrink-0 mt-0.5" />
             : <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
           <span>{note.text}</span>
+        </div>
+      )}
+
+      {/* === COMPLETION BANNER === */}
+      {models.length > 0 && models.every((m: any) => Array.isArray(m.reports) && m.reports.length > 0) && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 panel p-4 border-emerald-500/20 bg-emerald-500/[0.04]">
+          <div className="flex items-center gap-2 flex-1">
+            <Check className="h-5 w-5 text-emerald-400 flex-shrink-0" />
+            <div>
+              <div className="text-sm font-medium text-emerald-200">评估已完成！</div>
+              <div className="text-xs text-emerald-300/70 mt-0.5">所有 {models.length} 个模型的评估报告已生成完毕，你可以导出或分享结果。</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Link href="/dashboard" className="w-full sm:w-auto">
+              <Button variant="secondary" className="w-full sm:w-auto">
+                <Home className="h-3.5 w-3.5" /> 返回工作台
+              </Button>
+            </Link>
+          </div>
         </div>
       )}
 
