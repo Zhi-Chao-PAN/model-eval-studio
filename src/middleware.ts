@@ -60,7 +60,7 @@ export function middleware(request: NextRequest) {
 
     // In dev, allow requests without Origin/Referer (e.g., curl/Postman tests)
     if (isProd && host) {
-      const expectedOrigin = (request.headers.get('x-forwarded-proto')?.includes('https') ? 'https' : 'https') + '://' + host
+      const expectedOrigin = (request.headers.get('x-forwarded-proto')?.includes('https') ? 'https' : 'http') + '://' + host
       const originOk = origin === expectedOrigin
       let refererOk = false
       if (referer) {

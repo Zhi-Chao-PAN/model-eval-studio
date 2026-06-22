@@ -14,6 +14,7 @@ import StepDesign from './StepDesign'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { toast } from '@/components/ui/toast'
 import { DesktopStepSidebar, MobileStepBar } from '@/components/tasks/StepSidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { SharePanel } from '@/components/tasks/SharePanel'
@@ -371,7 +372,7 @@ export default function TaskPage() {
       router.push('/tasks/' + data.id)
       router.refresh()
     } catch (e: any) {
-      console.error('duplicate error', e)
+      toast.error(e?.message || '复制任务失败，请稍后重试')
     } finally {
       setDuplicating(false)
     }
@@ -390,8 +391,9 @@ export default function TaskPage() {
         btn.innerHTML = '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> 已复制'
         setTimeout(() => { btn.innerHTML = orig }, 2000)
       }
+      toast.success('Markdown 报告已复制到剪贴板')
     } catch (e: any) {
-      console.error('copy markdown error', e)
+      toast.error('复制失败：' + (e?.message || '请检查浏览器剪贴板权限'))
     }
   }
 

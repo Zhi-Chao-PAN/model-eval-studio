@@ -20,8 +20,14 @@ export default async function TaskLayout({
 
   return (
     <div className="min-h-screen flex flex-col">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-indigo-600 focus:text-white focus:rounded-lg focus:shadow-lg"
+      >
+        跳转到主要内容
+      </a>
       <Topbar user={{ username: session.username, role: session.role }} />
-      <main className="flex-1 container-page py-6">{children}</main>
+      <main id="main-content" className="flex-1 container-page py-6">{children}</main>
     </div>
   )
 }

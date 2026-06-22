@@ -41,7 +41,7 @@ export function Toaster() {
               {t.title && <div className="text-sm font-semibold text-white">{t.title}</div>}
               <div className="text-sm text-gray-300 leading-relaxed">{t.message}</div>
             </div>
-            <button onClick={() => remove(t.id)} className="text-gray-500 hover:text-white transition-colors">
+            <button onClick={() => remove(t.id)} aria-label="关闭提示" className="text-gray-500 hover:text-white transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>

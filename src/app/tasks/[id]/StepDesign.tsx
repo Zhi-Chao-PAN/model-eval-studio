@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea, Label } from '@/components/ui/input'
 import { ThinkBlock } from '@/components/MarkdownView'
+import { toast } from '@/components/ui/toast'
 import { parseDesignOutput } from '@/lib/design-output'
 
 type TaskType = 'CODING' | 'AGENT'
@@ -241,24 +242,28 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
 
   async function downloadStarterZip() {
     if (!starterData?.files?.length) return
-    const JSZip = (await import('jszip')).default
-    const zip = new JSZip()
-    const projectName = starterData.projectName || 'starter-project'
-    for (const file of starterData.files) {
-      if (file.path && typeof file.content === 'string') {
-        zip.file(file.path, file.content)
+    try {
+      const JSZip = (await import('jszip')).default
+      const zip = new JSZip()
+      const projectName = starterData.projectName || 'starter-project'
+      for (const file of starterData.files) {
+        if (file.path && typeof file.content === 'string') {
+          zip.file(file.path, file.content)
+        }
       }
+      if (starterData.readme) {
+        zip.file('README.md', starterData.readme)
+      }
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${projectName}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      toast.error('下载起始代码包失败：' + (e?.message || '请稍后重试'))
     }
-    if (starterData.readme) {
-      zip.file('README.md', starterData.readme)
-    }
-    const blob = await zip.generateAsync({ type: 'blob' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${projectName}.zip`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   async function confirmAndContinue() {

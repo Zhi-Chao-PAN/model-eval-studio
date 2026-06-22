@@ -106,6 +106,7 @@ export function WorkingStatus({
       {onCancel && (
         <button
           onClick={onCancel}
+          aria-label="停止生成"
           className="flex-shrink-0 inline-flex items-center gap-1 h-7 px-2.5 text-[11px] rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 transition-colors border border-red-500/20"
           title="停止生成"
         >
