@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { cn } from '@/lib/utils'
+import { cn, formatRelativeTime } from '@/lib/utils'
 
 interface Task {
   id: string
@@ -291,7 +291,7 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3 text-xs text-gray-500">
                       <span>{task._count?.models || 0} 个模型</span>
                       <span>·</span>
-                      <span>更新 {formatTime(task.updatedAt)}</span>
+                      <span>更新 {formatRelativeTime(task.updatedAt)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -408,14 +408,4 @@ function EmptyState({ onNew, hasSearch }: { onNew: () => void; hasSearch: boolea
       </div>
     </div>
   )
-}
-
-function formatTime(s: string) {
-  const d = new Date(s)
-  const diff = (Date.now() - d.getTime()) / 1000
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前'
-  if (diff < 86400) return Math.floor(diff/3600) + ' 小时前'
-  if (diff < 604800) return Math.floor(diff/86400) + ' 天前'
-  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
