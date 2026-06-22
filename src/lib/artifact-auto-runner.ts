@@ -237,9 +237,10 @@ export function runSafeArtifactAutoRunner(input: AutoRunnerInput): AutoRunnerRes
   else qualityParts.push('缺少典型工程结构')
   if (onlyImages) qualityParts.push('未提供可解析正文')
   if (emptyCount > 0) qualityParts.push(`含 ${emptyCount} 个无内容产物`)
-  const tooSmallForProject = artifacts.filter(a =>
-    (a.size ?? 0) > 0 && a.size < 256 && inferArtifactPreviewKind(a.name) !== 'image',
-  ).length
+  const tooSmallForProject = artifacts.filter(a => {
+    const size = typeof a.size === 'number' ? a.size : 0
+    return size > 0 && size < 256 && inferArtifactPreviewKind(a.name) !== 'image'
+  }).length
   if (tooSmallForProject > 0) qualityParts.push(`${tooSmallForProject} 个文本类产物体积过小`)
   if (ignoredCount > 0) qualityParts.push(`过滤 ${ignoredCount} 个明显无关文件`)
 
