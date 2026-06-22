@@ -5,6 +5,7 @@ import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { isValidCuid } from '@/lib/utils'
+import { logAudit } from '@/lib/audit'
 
 // 修改协作者角色
 export async function PUT(
@@ -64,6 +65,14 @@ export async function PUT(
       },
     })
 
+    logAudit(request, {
+      action: 'COLLABORATOR_UPDATE',
+      userId: session.userId,
+      taskId: id,
+      status: 'success',
+      detail: { targetUserId: userId, newRole: role },
+    })
+
     return NextResponse.json({ collaborator: updated })
   } catch (err) {
     const { message } = safeServerError(err, 'collaborator-update')
@@ -73,7 +82,7 @@ export async function PUT(
 
 // 移除协作者
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; userId: string }> },
 ) {
   try {
@@ -111,6 +120,14 @@ export async function DELETE(
 
     await prisma.taskCollaborator.delete({
       where: { id: collaborator.id },
+    })
+
+    logAudit(request, {
+      action: 'COLLABORATOR_REMOVE',
+      userId: session.userId,
+      taskId: id,
+      status: 'success',
+      detail: { removedUserId: userId, selfLeave: userId === session.userId },
     })
 
     return NextResponse.json({ success: true })

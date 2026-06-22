@@ -5,10 +5,11 @@ import { getTaskAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { isValidCuid } from '@/lib/utils'
+import { logAudit } from '@/lib/audit'
 
 // 撤销分享链接
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; shareId: string }> },
 ) {
   try {
@@ -38,6 +39,14 @@ export async function DELETE(
     if (!share) return NextResponse.json({ error: '分享链接不存在' }, { status: 404 })
 
     await prisma.taskShare.delete({ where: { id: shareId } })
+
+    logAudit(request, {
+      action: 'SHARE_REVOKE',
+      userId: session.userId,
+      taskId: id,
+      status: 'success',
+      detail: { shareId, shareToken: share.token },
+    })
 
     return NextResponse.json({ success: true })
   } catch (err) {

@@ -85,6 +85,12 @@ const ACTION_LABELS: Record<string, { label: string; color: string; icon: any }>
   ADMIN_USER_VIEW: { label: '查看用户', color: 'muted', icon: Users },
   ADMIN_AUDIT_VIEW: { label: '查看审计', color: 'muted', icon: Activity },
   EXPORT: { label: '导出报告', color: 'default', icon: FileText },
+  COLLABORATOR_ADD: { label: '添加协作者', color: 'primary', icon: Users },
+  COLLABORATOR_REMOVE: { label: '移除协作者', color: 'danger', icon: Users },
+  COLLABORATOR_UPDATE: { label: '更新协作者', color: 'warn', icon: Users },
+  SHARE_CREATE: { label: '创建分享', color: 'success', icon: FileText },
+  SHARE_REVOKE: { label: '撤销分享', color: 'danger', icon: FileText },
+  PASSWORD_CHANGE: { label: '修改密码', color: 'muted', icon: ShieldCheck },
 }
 
 export default function AdminPage() {

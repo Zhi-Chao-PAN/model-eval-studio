@@ -5,6 +5,7 @@ import { safeServerError } from '@/lib/api-error'
 import { getTaskAccess, generateShareToken } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { isValidCuid } from '@/lib/utils'
+import { logAudit } from '@/lib/audit'
 
 const MAX_SHARES_PER_TASK = 50
 const MAX_EXPIRES_DAYS = 365
@@ -125,6 +126,14 @@ export async function POST(
         expiresAt: true,
         createdAt: true,
       },
+    })
+
+    logAudit(request, {
+      action: 'SHARE_CREATE',
+      userId: session.userId,
+      taskId: id,
+      status: 'success',
+      detail: { shareId: share.id, accessType, expiresAt: expiresAt?.toISOString() || null },
     })
 
     return NextResponse.json({ share })

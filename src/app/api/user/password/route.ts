@@ -87,12 +87,11 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: '修改密码失败：' + message }, { status: 500 })
   } finally {
     logAudit(request, {
-      action: 'USER_SETTINGS_UPDATE',
+      action: 'PASSWORD_CHANGE',
       userId: session.userId,
       status,
       error: errorMsg,
       durationMs: Date.now() - startedAt,
-      detail: { field: 'password' },
     })
   }
 }
