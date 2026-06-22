@@ -67,6 +67,7 @@ enum AuditAction {
   SHARE_CREATE
   SHARE_REVOKE
   PASSWORD_CHANGE
+  ADMIN_USER_ROLE_UPDATE
 }
 
 model User {
