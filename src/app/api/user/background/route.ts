@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { clampDbText } from '@/lib/utils'
+import { safeServerError } from '@/lib/api-error'
 
 // User background is the organizational/evaluation context text fed into AI
 // prompts. It is plain text (not markdown/code) so 50k chars is a generous
@@ -11,16 +12,21 @@ const MAX_BACKGROUND_CHARS = 50_000
 
 // 获取背景
 export async function GET() {
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
-  }
+  try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { id: true, username: true, background: true },
-  })
-  return NextResponse.json({ user })
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, username: true, background: true },
+    })
+    return NextResponse.json({ user })
+  } catch (err) {
+    const { message } = safeServerError(err, 'user-background-get')
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }
 
 // 更新用户背景
@@ -62,6 +68,10 @@ export async function PUT(request: Request) {
 
     status = 'success'
     return NextResponse.json({ user })
+  } catch (err) {
+    const { message } = safeServerError(err, 'user-background-update')
+    errorMsg = message
+    return NextResponse.json({ error: '更新背景失败：' + message }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'USER_SETTINGS_UPDATE',

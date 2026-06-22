@@ -6,6 +6,8 @@ import { deleteArtifactFile } from '@/lib/artifact-storage'
 import { parseTrajectoryScreenshots } from '@/lib/trajectory-screenshots'
 import { getTaskAccess, hasAccessLevel, requireAccess } from '@/lib/task-access'
 import { clampDbText } from '@/lib/utils'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { safeServerError } from '@/lib/api-error'
 
 const ALLOWED_CATEGORIES = new Set(['PRODUCT', 'CODING', 'DESIGN', 'RESEARCH', 'OTHER'])
 const ALLOWED_REQUIREMENT_TYPES = new Set(['CODING', 'AGENT'])
@@ -19,109 +21,114 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireAuth()
-  if (!session) {
-    return NextResponse.json({ error: '未登录' }, { status: 401 })
-  }
+  try {
+    const session = await requireAuth()
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
 
-  const { id } = await params
+    const { id } = await params
 
-  const { access, task: accessTask } = await getTaskAccess(id, session)
-  const accessDenied = requireAccess(access, 'VIEWER')
-  if (accessDenied) {
-    return NextResponse.json({ error: accessDenied.error }, { status: accessDenied.status })
-  }
+    const { access, task: accessTask } = await getTaskAccess(id, session)
+    const accessDenied = requireAccess(access, 'VIEWER')
+    if (accessDenied) {
+      return NextResponse.json({ error: accessDenied.error }, { status: accessDenied.status })
+    }
 
-  const task = await prisma.task.findUnique({
-    where: { id },
-    include: {
-      attachments: { orderBy: { createdAt: 'asc' } },
-      models: {
-        orderBy: { createdAt: 'asc' },
-        include: {
-          artifacts: {
-            orderBy: { createdAt: 'asc' },
-            select: {
-              id: true,
-              name: true,
-              size: true,
-              createdAt: true,
+    const task = await prisma.task.findUnique({
+      where: { id },
+      include: {
+        attachments: { orderBy: { createdAt: 'asc' } },
+        models: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            artifacts: {
+              orderBy: { createdAt: 'asc' },
+              select: {
+                id: true,
+                name: true,
+                size: true,
+                createdAt: true,
+              },
             },
-          },
-          reports: {
-            orderBy: { version: 'desc' },
-            take: 1,
-            select: {
-              id: true,
-              version: true,
-              source: true,
-              productFeedback: true,
-              overallScore: true,
-              overallComment: true,
-              efficiencyScore: true,
-              efficiencyComment: true,
-              qualityScore: true,
-              qualityComment: true,
-              trajectoryAnalysis: true,
-              createdAt: true,
+            reports: {
+              orderBy: { version: 'desc' },
+              take: 1,
+              select: {
+                id: true,
+                version: true,
+                source: true,
+                productFeedback: true,
+                overallScore: true,
+                overallComment: true,
+                efficiencyScore: true,
+                efficiencyComment: true,
+                qualityScore: true,
+                qualityComment: true,
+                trajectoryAnalysis: true,
+                createdAt: true,
+              },
             },
-          },
-          artifactAnalysisRuns: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-            select: {
-              id: true,
-              status: true,
-              currentPhase: true,
-              error: true,
-              workflowRunId: true,
-              startedAt: true,
-              completedAt: true,
-              createdAt: true,
-              updatedAt: true,
-              nextEventSeq: true,
-              events: {
-                orderBy: { sequence: 'asc' },
-                select: {
-                  id: true,
-                  sequence: true,
-                  phase: true,
-                  status: true,
-                  label: true,
-                  detail: true,
-                  metadata: true,
-                  createdAt: true,
+            artifactAnalysisRuns: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: {
+                id: true,
+                status: true,
+                currentPhase: true,
+                error: true,
+                workflowRunId: true,
+                startedAt: true,
+                completedAt: true,
+                createdAt: true,
+                updatedAt: true,
+                nextEventSeq: true,
+                events: {
+                  orderBy: { sequence: 'asc' },
+                  select: {
+                    id: true,
+                    sequence: true,
+                    phase: true,
+                    status: true,
+                    label: true,
+                    detail: true,
+                    metadata: true,
+                    createdAt: true,
+                  },
                 },
               },
             },
           },
         },
+        messages: {
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 200,
+        },
       },
-      messages: {
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: 200,
+    })
+
+    if (!task) {
+      return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+    }
+
+    // 懒加载字段不在任务详情中返回，避免 payload 膨胀
+    // - screenshotUrls: 轨迹截图 Blob URL 列表，通过 /models/[modelId]/screenshots 按需加载
+    // - verificationScreenshotUrls: 验证截图 base64，通过 /models/[modelId]/verification 按需加载
+    for (const model of task.models) {
+      ;(model as any).screenshotUrls = undefined
+      ;(model as any).verificationScreenshotUrls = undefined
+    }
+
+    return NextResponse.json({
+      task: {
+        ...task,
+        messages: [...task.messages].reverse(),
       },
-    },
-  })
-
-  if (!task) {
-    return NextResponse.json({ error: '任务不存在' }, { status: 404 })
+    })
+  } catch (err) {
+    const { message } = safeServerError(err, 'task-detail')
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  // 懒加载字段不在任务详情中返回，避免 payload 膨胀
-  // - screenshotUrls: 轨迹截图 Blob URL 列表，通过 /models/[modelId]/screenshots 按需加载
-  // - verificationScreenshotUrls: 验证截图 base64，通过 /models/[modelId]/verification 按需加载
-  for (const model of task.models) {
-    ;(model as any).screenshotUrls = undefined
-    ;(model as any).verificationScreenshotUrls = undefined
-  }
-
-  return NextResponse.json({
-    task: {
-      ...task,
-      messages: [...task.messages].reverse(),
-    },
-  })
 }
 
 export async function PUT(
@@ -134,13 +141,26 @@ export async function PUT(
     return NextResponse.json({ error: '未登录' }, { status: 401 })
   }
 
+  // Rate limit task updates to prevent abuse
+  const rl = await consumeRateLimit({
+    scope: 'task-update',
+    identifier: session.userId,
+    limit: 60,
+    windowMs: 10 * 60_000,
+  })
+  if (!rl.allowed) return rateLimitResponse(rl)
+
   const { id } = await params
   let status: 'success' | 'error' = 'error'
   let errorMsg: string | null = null
-    const updatedFields: string[] = []
+  const updatedFields: string[] = []
 
   try {
-    const data = await request.json()
+    const data = await request.json().catch(() => null)
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      errorMsg = '请求内容格式无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
 
     const { access } = await getTaskAccess(id, session)
     const accessDenied = requireAccess(access, 'EDITOR')
@@ -163,10 +183,10 @@ export async function PUT(
       'analysisJson',
     ]
 
-    const updateData: any = {}
+    const updateData: Record<string, unknown> = {}
     for (const key of allowed) {
       if (key in data) {
-        updateData[key] = data[key]
+        updateData[key] = (data as Record<string, unknown>)[key]
         updatedFields.push(key)
       }
     }
@@ -225,6 +245,10 @@ export async function PUT(
 
     status = 'success'
     return NextResponse.json({ task: updated })
+  } catch (err) {
+    const { message } = safeServerError(err, 'task-update')
+    errorMsg = message
+    return NextResponse.json({ error: '更新任务失败：' + message }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'TASK_UPDATE',
@@ -247,6 +271,15 @@ export async function DELETE(
   if (!session) {
     return NextResponse.json({ error: '未登录' }, { status: 401 })
   }
+
+  // Rate limit task deletion
+  const rl = await consumeRateLimit({
+    scope: 'task-delete',
+    identifier: session.userId,
+    limit: 20,
+    windowMs: 10 * 60_000,
+  })
+  if (!rl.allowed) return rateLimitResponse(rl)
 
   const { id } = await params
   let status: 'success' | 'error' = 'error'
@@ -319,6 +352,10 @@ export async function DELETE(
 
     status = 'success'
     return NextResponse.json({ ok: true })
+  } catch (err) {
+    const { message } = safeServerError(err, 'task-delete')
+    errorMsg = message
+    return NextResponse.json({ error: '删除任务失败：' + message }, { status: 500 })
   } finally {
     logAudit(request, {
       action: 'TASK_DELETE',

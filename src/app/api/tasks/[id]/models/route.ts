@@ -10,6 +10,7 @@ import {
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
 import { clampDbText, clampRequiredText } from '@/lib/utils'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 const DB_TEXT_LIMITS = {
   DISPLAY_NAME: 80,
@@ -32,28 +33,33 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireAuth()
-  if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
-  const { id } = await params
+  try {
+    const session = await requireAuth()
+    if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    const { id } = await params
 
-  const { access } = await getTaskAccess(id, session)
-  const denied = requireAccess(access, 'VIEWER')
-  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status })
+    const { access } = await getTaskAccess(id, session)
+    const denied = requireAccess(access, 'VIEWER')
+    if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status })
 
-  const models = await prisma.taskModel.findMany({
-    where: { taskId: id },
-    orderBy: { createdAt: 'asc' },
-    select: {
-      id: true,
-      modelCode: true,
-      displayName: true,
-      hardMetricsJson: true,
-      processText: true,
-      createdAt: true,
-    },
-  })
+    const models = await prisma.taskModel.findMany({
+      where: { taskId: id },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        modelCode: true,
+        displayName: true,
+        hardMetricsJson: true,
+        processText: true,
+        createdAt: true,
+      },
+    })
 
-  return NextResponse.json({ models })
+    return NextResponse.json({ models })
+  } catch (err) {
+    const { message } = safeServerError(err, 'model-list')
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }
 
 // 创建/批量添加模型
@@ -64,6 +70,16 @@ export async function POST(
   const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+
+  // Rate limit model creation
+  const rl = await consumeRateLimit({
+    scope: 'model-create',
+    identifier: session.userId,
+    limit: 30,
+    windowMs: 10 * 60_000,
+  })
+  if (!rl.allowed) return rateLimitResponse(rl)
+
   const { id } = await params
 
   let status: 'success' | 'error' = 'error'
@@ -166,6 +182,16 @@ export async function PUT(
   const startedAt = Date.now()
   const session = await requireAuth()
   if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+
+  // Rate limit model updates
+  const rl = await consumeRateLimit({
+    scope: 'model-update',
+    identifier: session.userId,
+    limit: 60,
+    windowMs: 10 * 60_000,
+  })
+  if (!rl.allowed) return rateLimitResponse(rl)
+
   const { id } = await params
 
   let status: 'success' | 'error' = 'error'

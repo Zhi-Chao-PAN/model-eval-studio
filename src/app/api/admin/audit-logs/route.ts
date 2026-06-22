@@ -1,53 +1,77 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireAdmin } from '@/lib/session'
+import { requireAuth } from '@/lib/session'
+import { safeServerError } from '@/lib/api-error'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 export async function GET(request: Request) {
-  const session = await requireAdmin()
-  if (!session) {
-    return NextResponse.json({ error: '无权限' }, { status: 403 })
+  try {
+    const session = await requireAuth()
+    if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
+    if (session.role !== 'ADMIN') return NextResponse.json({ error: '权限不足' }, { status: 403 })
+
+    // Rate limit admin queries to prevent scraping
+    const rl = await consumeRateLimit({
+      scope: 'admin-audit-logs',
+      identifier: session.userId,
+      limit: 60,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
+    const { searchParams } = new URL(request.url)
+    const pageRaw = parseInt(searchParams.get('page') || '1', 10)
+    const pageSizeRaw = parseInt(searchParams.get('pageSize') || '50', 10)
+    const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1
+    const pageSize = Number.isFinite(pageSizeRaw) && pageSizeRaw >= 1 && pageSizeRaw <= 200 ? Math.floor(pageSizeRaw) : 50
+    const userId = searchParams.get('userId')
+    const action = searchParams.get('action')
+    const taskId = searchParams.get('taskId')
+    const status = searchParams.get('status')
+    const fromStr = searchParams.get('from')
+    const toStr = searchParams.get('to')
+
+    const where: Record<string, unknown> = {}
+    if (userId) where.userId = userId
+    if (action) where.action = action
+    if (taskId) where.taskId = taskId
+    if (status) where.status = status
+
+    if (fromStr) {
+      const from = new Date(fromStr)
+      if (!Number.isNaN(from.getTime())) {
+        where.createdAt = { ...(where.createdAt as object || {}), gte: from }
+      }
+    }
+    if (toStr) {
+      const to = new Date(toStr)
+      if (!Number.isNaN(to.getTime())) {
+        where.createdAt = { ...(where.createdAt as object || {}), lte: to }
+      }
+    }
+
+    const [total, logs] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          user: { select: { id: true, username: true } },
+        },
+      }),
+    ])
+
+    return NextResponse.json({
+      logs,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    })
+  } catch (err) {
+    const { message } = safeServerError(err, 'admin-audit-logs')
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  const { searchParams } = new URL(request.url)
-  const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
-  const pageSize = Math.min(100, Math.max(10, parseInt(searchParams.get('pageSize') || '20')))
-
-  const userId = searchParams.get('userId') || undefined
-  const action = searchParams.get('action') || undefined
-  const status = searchParams.get('status') || undefined
-  const fromStr = searchParams.get('from') || undefined
-  const toStr = searchParams.get('to') || undefined
-
-  const where: any = {}
-  if (userId) where.userId = userId
-  if (action) where.action = action
-  if (status) where.status = status
-  if (fromStr || toStr) {
-    where.createdAt = {}
-    if (fromStr) where.createdAt.gte = new Date(fromStr)
-    if (toStr) where.createdAt.lte = new Date(toStr)
-  }
-
-  const skip = (page - 1) * pageSize
-
-  const [total, logs] = await Promise.all([
-    prisma.auditLog.count({ where }),
-    prisma.auditLog.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: pageSize,
-      include: {
-        user: { select: { username: true, role: true } },
-      },
-    }),
-  ])
-
-  return NextResponse.json({
-    logs,
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  })
 }

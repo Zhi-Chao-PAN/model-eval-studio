@@ -31,7 +31,7 @@ import {
   type ReportParseOptions,
 } from '@/lib/report-parser'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
-import { apiError } from '@/lib/api-error'
+import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 
 export const runtime = 'nodejs'
@@ -62,9 +62,21 @@ export async function POST(
   })
   if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
-  const body = await request.json()
-  const modelId = body.modelId
-  const adjustInstruction = body.adjustInstruction
+  const body = await request.json().catch(() => null)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return apiError('请求内容格式无效', 400)
+  }
+  const modelId = typeof (body as Record<string, unknown>).modelId === 'string'
+    ? (body as Record<string, unknown>).modelId as string
+    : ''
+  const adjustInstructionRaw = (body as Record<string, unknown>).adjustInstruction
+  const adjustInstruction = typeof adjustInstructionRaw === 'string'
+    ? adjustInstructionRaw.slice(0, 2000)
+    : ''
+
+  if (!modelId) {
+    return apiError('modelId 必填', 400)
+  }
 
   const { access } = await getTaskAccess(id, session)
   const denied = requireAccess(access, 'EDITOR')
@@ -491,9 +503,10 @@ export async function POST(
 
           send('done', { report, rawText: reportText })
         }
-      } catch (err: any) {
-        streamError = err?.message || String(err)
-        send('error', { message: streamError })
+      } catch (err: unknown) {
+        const { message } = safeServerError(err, 'ai-report-stream')
+        streamError = message
+        send('error', { message })
       } finally {
         controller.close()
         logAudit(request, {

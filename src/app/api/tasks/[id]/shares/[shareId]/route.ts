@@ -1,34 +1,43 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
-import { apiError } from '@/lib/api-error'
 import { getTaskAccess } from '@/lib/task-access'
+import { safeServerError } from '@/lib/api-error'
+import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
-// 吊销共享链接
+// 撤销分享链接
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string; shareId: string }> },
 ) {
-  const session = await requireAuth()
-  if (!session) return apiError('未登录', 401)
-  const { id, shareId } = await params
+  try {
+    const session = await requireAuth()
+    if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
-  const { access } = await getTaskAccess(id, session)
-  if (!access) return apiError('任务不存在', 404)
-  if (access !== 'OWNER') {
-    return apiError('只有任务创建者可以吊销共享链接', 403)
+    // Rate limit share revocation
+    const rl = await consumeRateLimit({
+      scope: 'share-revoke',
+      identifier: session.userId,
+      limit: 30,
+      windowMs: 10 * 60_000,
+    })
+    if (!rl.allowed) return rateLimitResponse(rl)
+
+    const { id, shareId } = await params
+
+    const { access } = await getTaskAccess(id, session)
+    if (access !== 'OWNER') return NextResponse.json({ error: '只有任务创建者可以撤销分享' }, { status: 403 })
+
+    const share = await prisma.taskShare.findFirst({
+      where: { id: shareId, taskId: id },
+    })
+    if (!share) return NextResponse.json({ error: '分享链接不存在' }, { status: 404 })
+
+    await prisma.taskShare.delete({ where: { id: shareId } })
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    const { message } = safeServerError(err, 'share-revoke')
+    return NextResponse.json({ error: '撤销分享失败：' + message }, { status: 500 })
   }
-
-  const share = await prisma.taskShare.findFirst({
-    where: { id: shareId, taskId: id },
-  })
-  if (!share) {
-    return apiError('共享链接不存在', 404)
-  }
-
-  await prisma.taskShare.delete({
-    where: { id: shareId },
-  })
-
-  return NextResponse.json({ success: true })
 }
