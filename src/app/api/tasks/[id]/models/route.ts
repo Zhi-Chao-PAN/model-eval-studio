@@ -33,6 +33,7 @@ export async function GET(
     const session = await requireAuth()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
     const { id } = await params
+    if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'VIEWER')
