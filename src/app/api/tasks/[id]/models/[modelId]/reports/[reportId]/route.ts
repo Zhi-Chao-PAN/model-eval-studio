@@ -89,23 +89,31 @@ export async function POST(
       editNote,
     } = body
 
-    // 基本校验
-    if (overallScore !== undefined && (overallScore < 1 || overallScore > 10 || !Number.isInteger(overallScore))) {
-      return apiError('综合评分必须是 1-10 的整数', 400)
+    // 基本校验：综合分整数 1-10，效率/质量 0.5 步长
+    function validateScore(v: unknown, label: string, step: number): string | null {
+      if (v === undefined || v === null) return null
+      if (typeof v !== 'number' || Number.isNaN(v)) return label + '必须是数字'
+      if (v < 1 || v > 10) return label + '必须在 1-10 之间'
+      const multiples = 1 / step
+      if (Math.round(v * multiples) / multiples !== v) return label + '的步长必须为 ' + step
+      return null
     }
-    if (efficiencyScore !== undefined && (efficiencyScore < 1 || efficiencyScore > 10)) {
-      return apiError('交付效率评分必须在 1-10 之间', 400)
-    }
-    if (qualityScore !== undefined && (qualityScore < 1 || qualityScore > 10)) {
-      return apiError('产物质量评分必须在 1-10 之间', 400)
-    }
+    const errs = [
+      validateScore(overallScore, '综合评分', 1),
+      validateScore(efficiencyScore, '交付效率', 0.5),
+      validateScore(qualityScore, '产物质量', 0.5),
+    ].filter(Boolean) as string[]
+    if (errs.length > 0) return apiError(errs.join('；'), 400)
+
+    // editNote 长度限制（截断到 500 字符以内）
+    const safeEditNote = typeof editNote === 'string' && editNote.trim() ? editNote.trim().slice(0, 500) : null
 
     const report = await createReportRevision({
       taskModelId: modelId,
       parentReportId: reportId,
       source: 'MANUAL',
       editedById: session.userId,
-      editNote: editNote || null,
+      editNote: safeEditNote ?? undefined,
       productFeedback,
       overallScore,
       overallComment,
