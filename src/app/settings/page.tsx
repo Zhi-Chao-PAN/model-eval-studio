@@ -99,6 +99,22 @@ export default function SettingsPage() {
   const searchParams = useSearchParams()
   const isWelcome = searchParams.get('welcome') === '1'
 
+  // Password strength for new password field
+  const pwStrength = (() => {
+    if (!newPassword) return null
+    let score = 0
+    if (newPassword.length >= 8) score++
+    if (newPassword.length >= 12) score++
+    if (/[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword)) score++
+    if (/\d/.test(newPassword)) score++
+    if (/[^A-Za-z0-9]/.test(newPassword)) score++
+    if (score <= 1) return { score: 1, label: '弱', color: 'bg-red-500', textColor: 'text-red-400' }
+    if (score <= 2) return { score: 2, label: '一般', color: 'bg-amber-500', textColor: 'text-amber-400' }
+    if (score <= 3) return { score: 3, label: '中等', color: 'bg-yellow-500', textColor: 'text-yellow-400' }
+    if (score <= 4) return { score: 4, label: '较强', color: 'bg-emerald-500', textColor: 'text-emerald-400' }
+    return { score: 5, label: '强', color: 'bg-emerald-400', textColor: 'text-emerald-300' }
+  })()
+
   async function load() {
     setLoadError(null)
     try {
@@ -554,6 +570,20 @@ export default function SettingsPage() {
                     {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {pwStrength && newPassword.length > 0 && (
+                  <div className="pt-1">
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className={`h-1 flex-1 rounded-full transition-colors ${
+                          i <= pwStrength.score ? pwStrength.color : 'bg-white/10'
+                        }`} />
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      密码强度：<span className={pwStrength.textColor}>{pwStrength.label}</span>
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>确认新密码</Label>
