@@ -92,7 +92,8 @@ export default function TaskPage() {
     try {
       return JSON.parse(text)
     } catch {
-      return { error: text.slice(0, 300) || '接口返回了非预期内容' }
+      // Non-JSON response (likely HTML error page from Next.js) — return generic error
+      return { error: '服务器返回了非预期内容' }
     }
   }
 
@@ -111,10 +112,10 @@ export default function TaskPage() {
       } else if (res.status === 404) {
         router.push('/dashboard')
       } else if (!res.ok) {
-        setLoadError(data.error || '任务加载失败（HTTP ' + res.status + '）')
+        setLoadError(data.error || '任务加载失败，请稍后重试')
       }
     } catch (e: any) {
-      setLoadError(e?.message || String(e))
+      setLoadError(e?.message || '网络异常，任务加载失败，请稍后重试')
     } finally {
       if (seq === loadTaskSeqRef.current && showGlobalLoading) setLoading(false)
     }
@@ -163,7 +164,7 @@ export default function TaskPage() {
       }
       void loadTask()
     } catch (err) {
-      showAutoReportNote('err', `「${modelCode}」自动生成报告失败: ${err instanceof Error ? err.message : String(err)}`)
+      showAutoReportNote('err', `「${modelCode}」自动生成报告失败，请稍后在报告步骤手动重试`)
       autoReportedRef.current.delete(modelId)
     }
   }
@@ -241,9 +242,9 @@ export default function TaskPage() {
       body: JSON.stringify({ currentStep: stepKey }),
     }).then(readJsonResponse).then(data => {
       if (data.task) setTask((previous: unknown) => mergeTaskUpdate(previous, data.task))
-      else setStepError(data.error || '步骤切换失败')
+      else setStepError(data.error || '步骤切换失败，请稍后重试')
     }).catch((err: Error) => {
-      setStepError(err.message || '步骤切换失败')
+      setStepError('步骤切换失败，请检查网络连接后重试')
     })
   }
 
@@ -262,7 +263,7 @@ export default function TaskPage() {
       })
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'HTTP ' + res.status)
+        throw new Error(data.error || '对话服务暂不可用，请稍后重试')
       }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -299,7 +300,10 @@ export default function TaskPage() {
       if (!completed) setStreamingContent('')
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        setMessages(p => [...p, { id: 'err-' + Date.now(), role: 'system', content: '错误: ' + err.message, step: currentStep }])
+        const msg = err?.message || '对话失败，请稍后重试'
+        // Don't display raw technical errors from SSE stream in chat UI
+        const safeMsg = /^[A-Za-z\u4e00-\u9fa5]/.test(msg) && msg.length < 200 ? msg : '对话出现异常，请稍后重试'
+        setMessages(p => [...p, { id: 'err-' + Date.now(), role: 'system', content: safeMsg, step: currentStep }])
       }
       setStreamingContent('')
     } finally { setStreaming(false); abortRef.current = null }

@@ -63,7 +63,7 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/tasks')
       if (!res.ok) {
-        let msg = '加载任务失败（HTTP ' + res.status + '）'
+        let msg = '加载任务失败，请稍后重试'
         try { const d = await res.json(); if (d.error) msg = d.error } catch { /* ignore */ }
         throw new Error(msg)
       }
@@ -72,7 +72,7 @@ export default function DashboardPage() {
       if (data.tasks) setTasks(data.tasks)
       if (data.sharedTasks) setSharedTasks(data.sharedTasks)
     } catch (e: any) {
-      setLoadError(e?.message || '加载任务失败，请重试')
+      setLoadError(e?.message || '加载任务失败，请检查网络连接后重试')
     } finally { setLoading(false) }
   }
 
@@ -91,12 +91,12 @@ export default function DashboardPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.task) {
-        setActionError(data.error || '创建任务失败')
+        setActionError(data.error || '创建任务失败，请稍后重试')
         return
       }
       router.push('/tasks/' + data.task.id)
     } catch (err: any) {
-      setActionError(err?.message || '创建任务失败，请重试')
+      setActionError(err?.message || '创建任务失败，请检查网络连接')
     } finally { setCreating(false) }
   }
 
@@ -108,12 +108,12 @@ export default function DashboardPage() {
       const res = await fetch('/api/tasks/' + id, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setActionError(data.error || '删除失败')
+        setActionError(data.error || '删除失败，请稍后重试')
         return
       }
       await loadTasks()
     } catch (err: any) {
-      setActionError(err?.message || '删除失败，请重试')
+      setActionError(err?.message || '删除失败，请检查网络连接')
     } finally { setDeletingId(null) }
   }
 
