@@ -10,7 +10,7 @@ import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
-type ExportFormat = 'zip' | 'json' | 'csv' | 'md'
+type ExportFormat = 'zip' | 'json' | 'csv' | 'md' | 'submission-md'
 
 function formatIntegerScore(score: number): string {
   const value = Number(score)
@@ -27,11 +27,83 @@ function formatHalfScore(score: number): string {
 
 function resolveFormat(searchParams: URLSearchParams): ExportFormat {
   const raw = (searchParams.get('format') || 'zip').toLowerCase()
+  // Submission scope: either the explicit `format=submission-md` alias or
+  // `format=md&scope=submission` — both produce the lightweight per-model
+  // 5-module payload suitable for pasting into the external platform form.
+  const scope = (searchParams.get('scope') || '').toLowerCase()
+  if (scope === 'submission') return 'submission-md'
   if (raw === 'json') return 'json'
   if (raw === 'csv') return 'csv'
   if (raw === 'md' || raw === 'markdown') return 'md'
+  if (raw === 'submission-md' || raw === 'submission') return 'submission-md'
   return 'zip'
 }
+
+/**
+ * Build a "submission" markdown: only the model name + the five required
+ * modules (产品效果反馈 / 交付效率 / 产物质量 / 综合评价 / 轨迹分析), so it can
+ * be pasted into the external evaluation platform form without extra context.
+ *
+ * Intentionally omits: task title, task description, export time, scoring
+ * overview table, generationSnapshot, verificationSummary, system notes,
+ * debug info, and any raw model "think" content.
+ */
+export function buildSubmissionMarkdownPayload(task: any): string {
+  const lines: string[] = []
+  for (const model of task.models || []) {
+    const report = model.reports?.[0]
+    const modelName = model.displayName || model.modelCode
+    lines.push(`## ${modelName}`)
+    lines.push('')
+    if (!report) {
+      lines.push('*暂无评估报告*')
+      lines.push('')
+      continue
+    }
+    lines.push(`### ${SUBMISSION_SECTION_TITLES.product}`)
+    lines.push('')
+    lines.push(report.productFeedback || MISSING_PRODUCT_FEEDBACK)
+    lines.push('')
+
+    lines.push(`### ${SUBMISSION_SECTION_TITLES.efficiency}`)
+    lines.push('')
+    lines.push(`评分：${formatHalfScore(report.efficiencyScore)}/10`)
+    lines.push('')
+    lines.push(report.efficiencyComment || '（暂无）')
+    lines.push('')
+
+    lines.push(`### ${SUBMISSION_SECTION_TITLES.quality}`)
+    lines.push('')
+    lines.push(`评分：${formatHalfScore(report.qualityScore)}/10`)
+    lines.push('')
+    lines.push(report.qualityComment || '（暂无）')
+    lines.push('')
+
+    lines.push(`### ${SUBMISSION_SECTION_TITLES.overall}`)
+    lines.push('')
+    lines.push(`评分：${formatIntegerScore(report.overallScore)}/10`)
+    lines.push('')
+    lines.push(report.overallComment || '（暂无）')
+    lines.push('')
+
+    lines.push(`### ${SUBMISSION_SECTION_TITLES.trajectory}`)
+    lines.push('')
+    lines.push(report.trajectoryAnalysis || MISSING_TRAJECTORY_PLACEHOLDER)
+    lines.push('')
+  }
+  return lines.join('\n').trimEnd() + '\n'
+}
+
+export const SUBMISSION_SECTION_TITLES = {
+  product: '产物效果反馈',
+  efficiency: '交付效率',
+  quality: '产物质量',
+  overall: '综合评价',
+  trajectory: '轨迹分析',
+} as const
+
+export const MISSING_PRODUCT_FEEDBACK = '未上传产物效果截图，暂无法填写产物效果反馈。'
+export const MISSING_TRAJECTORY_PLACEHOLDER = '未提供轨迹截图。'
 
 function buildReportText(modelCode: string, report: any): string {
   return `====================================
@@ -361,6 +433,16 @@ export async function GET(
       headers: {
         'Content-Type': 'text/markdown; charset=utf-8',
         'Content-Disposition': `attachment; filename="${baseFilename}.md"`,
+      },
+    })
+  }
+
+  if (format === 'submission-md') {
+    const markdown = buildSubmissionMarkdownPayload(task)
+    return new NextResponse(markdown, {
+      headers: {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Disposition': `inline; filename="${baseFilename}-submission.md"`,
       },
     })
   }

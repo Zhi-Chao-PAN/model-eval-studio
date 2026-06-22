@@ -275,8 +275,11 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
         <div>
           <h2 className="display text-xl sm:text-2xl tracking-tight">产物提交</h2>
           <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-            为每个待测模型上传最终产物（ZIP 源码包、输出文档、截图等），或直接粘贴文本输出。
-            上传后系统会自动解析文件内容（约 1–3 分钟），作为 AI 撰写评估报告的依据。
+            为每个待测模型上传最终产物（ZIP 源码包、输出文档等），或直接粘贴文本输出。
+            系统会自动解析文件内容（约 1–3 分钟），作为 AI 撰写评估报告「交付效率 / 产物质量 / 综合评价」模块的核心依据。
+            <span className="block mt-1 text-cyan-200/80">
+              报告中的「产物效果反馈」模块需要测试者本地验收后的截图支撑，可在下方模型卡片右侧的「产物效果截图」区域上传。
+            </span>
           </p>
         </div>
       </div>
@@ -287,6 +290,9 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
         <div className="text-[12px] text-gray-400 leading-relaxed">
           <span className="text-gray-300 font-medium">操作指引：</span>
           为每个模型上传产物文件（支持 ZIP、代码文件、文本、Markdown 等），或直接粘贴模型的文本输出。所有模型产物添加完成后，点击「AI 分析产物」等待分析完成。分析完成后即可生成最终评估报告。
+          <span className="block mt-1.5 text-cyan-200/80">
+            注意：这里的「产物文件」与「产物效果截图」是两件事 —— 前者是模型生成的原始文件，后者是测试者把产物下载到本地、实际打开或运行后拍摄的真实截图，仅后者会作为「产物效果反馈」模块的证据。
+          </span>
         </div>
       </div>
 
