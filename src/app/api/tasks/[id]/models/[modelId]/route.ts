@@ -35,10 +35,9 @@ export async function DELETE(
 
   try {
     const { access } = await getTaskAccess(id, session)
-    const denied = requireAccess(access, 'EDITOR')
-    if (denied) {
-      errorMsg = denied.error
-      return NextResponse.json({ error: denied.error }, { status: denied.status })
+    if (access !== 'OWNER') {
+      errorMsg = '只有任务创建者可以删除模型'
+      return NextResponse.json({ error: errorMsg }, { status: 403 })
     }
 
     const model = await prisma.taskModel.findFirst({
