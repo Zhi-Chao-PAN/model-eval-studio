@@ -9,6 +9,7 @@ import {
 import { getNextReportVersion } from '@/lib/report-versioning'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
+import { validateScores } from '@/lib/score-validation'
 
 export async function GET(
   _request: Request,
@@ -24,7 +25,22 @@ export async function GET(
 
   const model = await prisma.taskModel.findFirst({
     where: { id: modelId, taskId: id },
-    include: { reports: { orderBy: { version: 'desc' }, take: 1 } },
+    select: {
+      id: true,
+      reports: {
+        select: {
+          id: true,
+          version: true,
+          source: true,
+          overallScore: true,
+          efficiencyScore: true,
+          qualityScore: true,
+          createdAt: true,
+        },
+        orderBy: { version: 'desc' },
+        take: 1,
+      },
+    },
   })
   if (!model) return NextResponse.json({ error: '模型不存在' }, { status: 404 })
 
@@ -85,17 +101,9 @@ export async function POST(
     storedEvidence = evidence.length ? serializeVerificationEvidence(evidence) : null
   }
 
-  // 严格校验评分，非法直接返回 400（与 generate-report 保持一致）
-  let validatedOverallScore: number
-  let validatedEfficiencyScore: number
-  let validatedQualityScore: number
-  try {
-    validatedOverallScore = validateScore(overallScore, '综合评分')
-    validatedEfficiencyScore = validateScore(efficiencyScore, '效率评分')
-    validatedQualityScore = validateScore(qualityScore, '质量评分')
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || '评分校验失败' }, { status: 400 })
-  }
+  // 统一评分校验（综合 1-10 整数步长；效率/质量 1-10 步长 0.5）
+  const scoreErr = validateScores({ overallScore, efficiencyScore, qualityScore }, { required: true })
+  if (scoreErr) return NextResponse.json({ error: scoreErr }, { status: 400 })
 
   const version = await getNextReportVersion(modelId)
 
@@ -108,29 +116,15 @@ export async function POST(
       productFeedback: clampRequiredText(pfText, DB_TEXT_LIMITS.COMMENT),
       verificationScreenshotUrls: storedEvidence,
       verificationSummary: clampDbText(vsText, DB_TEXT_LIMITS.VERIFICATION),
-      overallScore: validatedOverallScore,
+      overallScore: Number(overallScore),
       overallComment: clampRequiredText(ocText, DB_TEXT_LIMITS.COMMENT),
-      efficiencyScore: validatedEfficiencyScore,
+      efficiencyScore: Number(efficiencyScore),
       efficiencyComment: clampRequiredText(ecText, DB_TEXT_LIMITS.COMMENT),
-      qualityScore: validatedQualityScore,
+      qualityScore: Number(qualityScore),
       qualityComment: clampRequiredText(qcText, DB_TEXT_LIMITS.COMMENT),
       trajectoryAnalysis: clampDbText(taText || '未提供轨迹截图。', DB_TEXT_LIMITS.ANALYSIS),
     },
   })
 
   return NextResponse.json({ report })
-}
-
-function validateScore(score: unknown, fieldName: string): number {
-  const value = Number(score)
-  if (!Number.isFinite(value)) {
-    throw new Error(`${fieldName} 必须是数字`)
-  }
-  if (value < 1 || value > 10) {
-    throw new Error(`${fieldName} 必须在 1-10 之间`)
-  }
-  if (Math.round(value * 2) / 2 !== value) {
-    throw new Error(`${fieldName} 精度必须为 0.5 的倍数`)
-  }
-  return value
 }
