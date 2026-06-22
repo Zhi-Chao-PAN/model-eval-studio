@@ -332,7 +332,7 @@ export async function DELETE(
     const artifactId = typeof (body as Record<string, unknown>).artifactId === 'string'
       ? (body as Record<string, unknown>).artifactId as string
       : ''
-    if (!artifactId || !/^[a-z0-9]{20,32}$/.test(artifactId)) {
+    if (!isValidCuid(artifactId)) {
       errorMsg = 'artifactId 格式无效'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
