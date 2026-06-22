@@ -22,6 +22,7 @@ import {
 import {
   isFreshArtifactFileAnalysis,
   parseStoredModelArtifactAnalysis,
+  type ArtifactAnalysisArtifact,
 } from '@/lib/model-artifact-analysis'
 import {
   ReportParseError,
@@ -29,11 +30,16 @@ import {
   parseReportStrict,
   type ParsedModelReport,
   type ReportParseOptions,
+  type ReportTextLike,
 } from '@/lib/report-parser'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { clampDbText, clampRequiredText, DB_TEXT_LIMITS, isValidCuid } from '@/lib/utils'
+import {
+  normalizeValidatedHalfStepScore,
+  normalizeValidatedIntegerScore,
+} from '@/lib/score-validation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,6 +50,16 @@ const FILE_ANALYSIS_CHAR_LIMIT = 32_000
 const AUXILIARY_CALL_TIMEOUT_MS = 45_000
 const REPORT_CALL_TIMEOUT_MS = 90_000
 
+type ReportArtifact = ArtifactAnalysisArtifact & {
+  parsedText?: string | null
+  textContent?: string | null
+}
+
+type LatestModelReport = ReportTextLike & {
+  verificationScreenshotUrls?: string | null
+  verificationSummary?: string | null
+}
+
 /**
  * Sanitize AI-parsed report fields before writing to DB, applying the same
  * length limits used by the manual report creation endpoint.
@@ -52,20 +68,14 @@ function clampReportFields(parsed: ParsedModelReport, verificationSummary: strin
   return {
     productFeedback: clampRequiredText(String(parsed.productFeedback || ''), DB_TEXT_LIMITS.COMMENT),
     verificationSummary: clampDbText(verificationSummary, DB_TEXT_LIMITS.VERIFICATION),
-    overallScore: clampScore(parsed.overallScore),
+    overallScore: normalizeValidatedIntegerScore(parsed.overallScore),
     overallComment: clampRequiredText(String(parsed.overallComment || ''), DB_TEXT_LIMITS.COMMENT),
-    efficiencyScore: clampScore(parsed.efficiencyScore),
+    efficiencyScore: normalizeValidatedHalfStepScore(parsed.efficiencyScore),
     efficiencyComment: clampRequiredText(String(parsed.efficiencyComment || ''), DB_TEXT_LIMITS.COMMENT),
-    qualityScore: clampScore(parsed.qualityScore),
+    qualityScore: normalizeValidatedHalfStepScore(parsed.qualityScore),
     qualityComment: clampRequiredText(String(parsed.qualityComment || ''), DB_TEXT_LIMITS.COMMENT),
     trajectoryAnalysis: clampRequiredText(String(parsed.trajectoryAnalysis || '未提供轨迹截图。'), DB_TEXT_LIMITS.ANALYSIS),
   }
-}
-
-function clampScore(v: unknown): number {
-  const n = typeof v === 'number' ? v : Number(v)
-  if (!Number.isFinite(n)) return 0
-  return Math.max(0, Math.min(100, Math.round(n)))
 }
 
 export async function POST(
@@ -90,8 +100,8 @@ export async function POST(
     models: Array<{
       id: string
       modelCode: string
-      artifacts: any[]
-      reports: any[]
+      artifacts: ReportArtifact[]
+      reports: LatestModelReport[]
       verificationScreenshotUrls: string | null
       processText: string | null
       hardMetricsJson: string | null
@@ -172,12 +182,12 @@ export async function POST(
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (event: string, data: any) => {
+      const send = (event: string, data: unknown) => {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
       }
 
       const startedAtInner = Date.now()
-      const phase = (name: string, extra?: Record<string, any>) => {
+      const phase = (name: string, extra?: Record<string, unknown>) => {
         send('phase', { name, elapsedMs: Date.now() - startedAtInner, ...extra })
       }
 
@@ -338,7 +348,7 @@ export async function POST(
                 totalTokenInput += imgResult.usage.promptTokens
                 totalTokenOutput += imgResult.usage.completionTokens
               }
-            } catch (err: any) {
+            } catch {
               // Sanitize error message — do not leak raw AI/network errors into DB
               verificationSummary = '已提供产物效果截图，但视觉解读失败，请稍后重试。'
             }
@@ -347,8 +357,9 @@ export async function POST(
           }
 
           // Phase 1.5: Per-file deep analysis (per-file → summary)
-          const analysisContext = task.analysisJson
-            ? safeJsonParse(task.analysisJson)?.content || ''
+          const parsedAnalysisContext = task.analysisJson ? safeJsonParse(task.analysisJson) : null
+          const analysisContext = isRecord(parsedAnalysisContext) && typeof parsedAnalysisContext.content === 'string'
+            ? parsedAnalysisContext.content
             : ''
 
           const processText = model.processText || ''
@@ -582,8 +593,12 @@ export async function POST(
 
 // ---- helpers ----
 
-function safeJsonParse(text: string): any {
+function safeJsonParse(text: string): unknown {
   try { return JSON.parse(text) } catch { return null }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function buildArtifactsText(artifacts: Array<{ name: string; parsedText?: string | null; textContent?: string | null }>): string {
