@@ -5,6 +5,18 @@ import { getSession } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, getRequestIp, rateLimitResponse } from '@/lib/rate-limit'
 
+// bcrypt silently truncates at 72 bytes; cap inputs well below that to avoid
+// silently accepting passwords where only the first 72 bytes matter, and to
+// prevent DoS via huge request bodies.
+const MAX_USERNAME_LENGTH = 64
+const MAX_PASSWORD_LENGTH = 200
+
+// Pre-computed dummy bcrypt hash used when a username is not found, to
+// equalize response time vs. the bcrypt.compare() path. Generated from a
+// fixed random password; never used for authentication.
+const DUMMY_BCRYPT_HASH =
+  '$2a$10$CwTycUXWue0Thq9StjUM0uJ8Xb6w5j4lf8NpFpXw3rX7X7X7X7X7X'
+
 export async function POST(request: Request) {
   const startedAt = Date.now()
   let userId: string | null = null
@@ -13,18 +25,31 @@ export async function POST(request: Request) {
   let username = ''
 
   try {
-    const body = await request.json()
-    username = body.username || ''
-    const password = body.password || ''
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      errorMsg = '请求内容格式无效'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+
+    username = typeof body.username === 'string' ? body.username.trim() : ''
+    const password = typeof body.password === 'string' ? body.password : ''
 
     if (!username || !password) {
       errorMsg = '用户名和密码必填'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
+    if (username.length > MAX_USERNAME_LENGTH) {
+      errorMsg = '用户名过长'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (password.length > MAX_PASSWORD_LENGTH) {
+      errorMsg = '密码过长'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
 
     const rateLimit = await consumeRateLimit({
       scope: 'auth-login',
-      identifier: `${getRequestIp(request)}:${String(username).toLowerCase()}`,
+      identifier: `${getRequestIp(request)}:${username.toLowerCase()}`,
       limit: 10,
       windowMs: 15 * 60_000,
     })
@@ -34,13 +59,19 @@ export async function POST(request: Request) {
     }
 
     const user = await prisma.user.findUnique({ where: { username } })
-    if (!user) {
-      errorMsg = '用户名或密码错误'
-      return NextResponse.json({ error: errorMsg }, { status: 401 })
+
+    // Always run bcrypt.compare to mitigate timing-based user enumeration:
+    // when the username doesn't exist we still do a compare against a
+    // fixed dummy hash so the response time approximates a real compare.
+    let valid = false
+    if (user) {
+      valid = await bcrypt.compare(password, user.passwordHash)
+    } else {
+      // Swallow result; always fails.
+      await bcrypt.compare(password, DUMMY_BCRYPT_HASH).catch(() => false)
     }
 
-    const valid = await bcrypt.compare(password, user.passwordHash)
-    if (!valid) {
+    if (!user || !valid) {
       errorMsg = '用户名或密码错误'
       return NextResponse.json({ error: errorMsg }, { status: 401 })
     }
@@ -48,7 +79,7 @@ export async function POST(request: Request) {
     const session = await getSession()
     session.userId = user.id
     session.username = user.username
-    session.role = user.role as any
+    session.role = user.role as 'ADMIN' | 'USER'
     await session.save()
 
     await prisma.user.update({
