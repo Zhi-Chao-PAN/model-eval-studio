@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Download, Trash2, Loader2, Check, Share2,
+  ArrowLeft, Download, Trash2, Loader2, Check, CheckCircle, Share2,
   AlertTriangle, Sparkles, X, FileJson, FileSpreadsheet, ChevronDown,
 } from 'lucide-react'
 import StepInfo from './StepInfo'
@@ -472,6 +472,11 @@ export default function TaskPage() {
           <div className="min-w-0">
             <h1 className="display text-2xl sm:text-3xl text-white tracking-tight truncate">
               {task.title || '未命名任务'}
+              {task.status === 'COMPLETED' && (
+                <span className="ml-2 inline-flex items-center gap-1 align-middle text-[11px] px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/25 text-emerald-300 font-normal">
+                  <CheckCircle className="h-3 w-3" /> 已完成
+                </span>
+              )}
             </h1>
             <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-2 flex-wrap">
               <span className="mono px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/10">
