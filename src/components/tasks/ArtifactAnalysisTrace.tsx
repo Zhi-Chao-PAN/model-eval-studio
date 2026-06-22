@@ -165,6 +165,12 @@ function Metadata({ metadata }: { metadata: Record<string, unknown> }) {
     fileName: '文件',
     charactersRead: '已读取字符',
     truncated: '内容截取',
+    itemCount: '证据条目数',
+    types: '证据类型',
+    primaryName: '主产物名',
+    hasUsablePrimary: '是否识别到主产物',
+    artifactChanged: '产物发生变化',
+    evidenceChanged: '截图发生变化',
   }
 
   return (
