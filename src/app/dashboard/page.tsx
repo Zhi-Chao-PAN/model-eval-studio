@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, FlaskConical, FileText, Image as ImageIcon, Wand2,
-  Package, FileCheck2, Loader2, ArrowRight, Trash2,
+  Package, FileCheck2, Loader2, ArrowRight, Trash2, Copy,
   AlertTriangle, RefreshCw, Lightbulb, Code2, Bot, Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -56,6 +56,7 @@ export default function DashboardPage() {
   const [newCategory, setNewCategory] = useState<'CODING' | 'AGENT'>('CODING')
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'mine' | 'shared'>('mine')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -124,6 +125,23 @@ export default function DashboardPage() {
     } catch (err: any) {
       setActionError(err?.message || '删除失败，请检查网络连接')
     } finally { setDeletingId(null) }
+  }
+
+  async function duplicateTask(id: string) {
+    setDuplicatingId(id)
+    setActionError(null)
+    try {
+      const res = await fetch(`/api/tasks/${id}/duplicate`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setActionError(data.error || '复制任务失败，请稍后重试')
+        return
+      }
+      await loadTasks()
+      router.push(`/tasks/${data.id}`)
+    } catch (err: any) {
+      setActionError(err?.message || '复制任务失败，请检查网络连接')
+    } finally { setDuplicatingId(null) }
   }
 
   const displayTasks = activeTab === 'mine' ? tasks : sharedTasks
@@ -315,6 +333,14 @@ export default function DashboardPage() {
                       )
                     })}
                   </div>
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); duplicateTask(task.id) }}
+                    disabled={duplicatingId === task.id || deletingId === task.id}
+                    title="复制任务"
+                    className="pointer-events-auto p-1.5 rounded-md text-gray-500 opacity-0 group-hover:opacity-100 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all"
+                  >
+                    {duplicatingId === task.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                  </button>
                   <button
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteClick(task.id, task.title) }}
                     disabled={deletingId === task.id}
