@@ -20,7 +20,7 @@ export function Topbar({ user }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuBtnRef = useRef<HTMLButtonElement | null>(null)
 
-  // Close dropdown on Escape key
+  // Close dropdown on Escape key + body scroll lock for mobile menu
   useEffect(() => {
     if (!menuOpen && !mobileOpen) return
     function onKey(e: KeyboardEvent) {
@@ -31,7 +31,12 @@ export function Topbar({ user }: Props) {
       }
     }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    if (mobileOpen) document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
   }, [menuOpen, mobileOpen])
 
   const navItems: Array<{ href: string; label: string; icon: any }> = [
@@ -144,7 +149,15 @@ export function Topbar({ user }: Props) {
                 )}
               </div>
 
-              <Button variant="ghost" size="icon" onClick={() => setMobileOpen(v => !v)} className="md:hidden">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileOpen(v => !v)}
+                className="md:hidden"
+                aria-label={mobileOpen ? '关闭导航菜单' : '打开导航菜单'}
+                aria-expanded={mobileOpen}
+                aria-controls="mobile-nav-menu"
+              >
                 {mobileOpen ? <span className="text-lg leading-none">×</span> : <Menu className="h-4 w-4" />}
               </Button>
             </>
@@ -155,7 +168,7 @@ export function Topbar({ user }: Props) {
       </div>
 
       {mobileOpen && user && (
-        <div className="md:hidden border-t border-white/[0.06] bg-[#07070b]/95 backdrop-blur-xl">
+        <div id="mobile-nav-menu" role="navigation" aria-label="移动端导航" className="md:hidden border-t border-white/[0.06] bg-[#07070b]/95 backdrop-blur-xl">
           <div className="container-page py-3 space-y-1">
             <div className="flex items-center gap-2.5 px-3 py-2 mb-1">
               <div className="h-8 w-8 rounded-md bg-gradient-to-br from-indigo-400/80 to-fuchsia-400/80 flex items-center justify-center text-xs font-semibold text-white">
