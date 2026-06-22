@@ -11,12 +11,20 @@ export default function NotFound() {
             你访问的页面可能已被删除、重命名，或者从未存在。
           </p>
         </div>
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
-        >
-          返回首页
-        </Link>
+        <div className="flex items-center justify-center gap-3">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
+          >
+            返回工作台
+          </Link>
+          <Link
+            href="/"
+            className="inline-flex items-center justify-center rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-white/70 transition hover:bg-white/5"
+          >
+            返回首页
+          </Link>
+        </div>
       </div>
     </div>
   )

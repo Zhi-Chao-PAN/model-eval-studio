@@ -636,9 +636,10 @@ export default function AdminPage() {
             {loading ? (
               <div className="p-16 text-center"><Loader2 className="h-6 w-6 text-gray-500 animate-spin inline" /></div>
             ) : users.length === 0 ? (
-              <div className="p-16 text-center text-sm text-gray-500">
+              <div className="p-16 text-center text-sm text-gray-500 space-y-1">
                 <Users className="h-10 w-10 mx-auto mb-3 text-gray-700" />
-                还没有用户。
+                <p>还没有注册用户</p>
+                <p className="text-xs text-gray-600">在「邀请码」标签页生成邀请码，发给团队成员注册。</p>
               </div>
             ) : (
               <div>
@@ -854,9 +855,10 @@ export default function AdminPage() {
             {auditLoading ? (
               <div className="p-16 text-center"><Loader2 className="h-6 w-6 text-gray-500 animate-spin inline" /></div>
             ) : auditLogs.length === 0 ? (
-              <div className="p-16 text-center text-sm text-gray-500">
+              <div className="p-16 text-center text-sm text-gray-500 space-y-1">
                 <Activity className="h-10 w-10 mx-auto mb-3 text-gray-700" />
-                暂无审计日志
+                <p>暂无审计日志</p>
+                <p className="text-xs text-gray-600">当前时间范围内没有操作记录。尝试切换时间范围或清除筛选条件。</p>
               </div>
             ) : (
               <div>

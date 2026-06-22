@@ -136,7 +136,7 @@ export function ChatPanel({
                 onSend()
               }
             }}
-            placeholder="输入消息... (Enter 发送)"
+                  placeholder="例如：帮我分析各模型在这个任务上的差异... (Enter 发送)"
             className="w-full resize-none rounded-xl border border-white/[0.08] px-3 py-2.5 pr-12 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400/50 bg-white/[0.03] focus:bg-white/[0.05] max-h-[100px] scrollbar-thin transition-colors"
             rows={1}
           />

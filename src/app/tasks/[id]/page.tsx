@@ -359,6 +359,10 @@ export default function TaskPage() {
   if (loading) {
     return (
       <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Loader2 className="h-4 w-4 text-indigo-400 animate-spin" />
+          <span className="text-sm text-gray-400">正在加载任务数据...</span>
+        </div>
         <Skeleton className="h-8 w-1/3 mb-4" />
         <Skeleton className="h-4 w-1/4 mb-8" />
         <div className="grid grid-cols-12 gap-6">

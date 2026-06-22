@@ -247,7 +247,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         <div>
           <h2 className="display text-xl sm:text-2xl tracking-tight">产物提交</h2>
           <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-            为每个待测模型上传或粘贴最终产物，上传后系统会自动启动后台解压、解析与产物预分析。
+            为每个待测模型上传最终产物（ZIP 源码包、输出文档、截图等），或直接粘贴文本输出。
+            上传后系统会自动解析文件内容（约 1–3 分钟），作为 AI 撰写评估报告的依据。
           </p>
         </div>
       </div>
@@ -263,7 +264,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                 addModelManual()
               }
             }}
-            placeholder="手动添加模型代号，多个用逗号分隔"
+            placeholder="手动添加模型代号，如 GPT4O、CLAUDE-3、DEEPSEEK，多个用逗号分隔"
             className="mono flex-1 bg-white/[0.02] border-white/[0.07]"
           />
           <Button size="sm" onClick={addModelManual} loading={addingModel} disabled={!newModelCode.trim()}>
@@ -272,7 +273,8 @@ export default function StepArtifact({ task, onRefresh }: Props) {
         </div>
         {models.length === 0 && (
           <div className="mt-2.5 text-[11px] text-gray-500 flex items-center gap-1.5">
-            <AlertTriangle className="h-3 w-3" /> AI 没识别到模型时，可以手动添加代号
+            <AlertTriangle className="h-3 w-3" />
+            如果 AI 没有自动识别到模型，可以在此手动输入模型代号（例如 GPT4O、CLAUDE-3-5-SONNET 等）
           </div>
         )}
       </div>
@@ -293,7 +295,10 @@ export default function StepArtifact({ task, onRefresh }: Props) {
             </div>
           </div>
           <p className="text-[13px] text-gray-400 mb-1">暂无待测模型</p>
-          <p className="text-[11px] text-gray-600">先在第 3 步上传数据看板，或在上方手动添加模型代号</p>
+          <p className="text-[11px] text-gray-600">
+            请先在「看板识别」步骤上传数据看板截图，AI 会自动识别模型代号；
+            或使用上方输入框手动添加。
+          </p>
         </div>
       ) : (
         <div className="grid gap-3">
@@ -340,7 +345,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                     >
                       <Sparkles className="h-3 w-3" /> {isAnalyzing ? '后台分析中' : hasFreshAnalysis ? '重新分析' : '开始产物分析'}
                     </Button>
-                    <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)}>
+                    <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)} title="如果模型输出是纯文本（如代码、Markdown），可直接粘贴而无需打包成文件">
                       <Plus className="h-3 w-3" /> 粘贴文本
                     </Button>
                     {isUploading ? (
@@ -384,8 +389,12 @@ export default function StepArtifact({ task, onRefresh }: Props) {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-500 py-3 text-center border border-dashed border-white/[0.06] rounded-lg">
-                    尚未上传该模型的产物
+                  <div className="text-xs text-gray-500 py-4 text-center border border-dashed border-white/[0.06] rounded-lg space-y-1">
+                    <p>尚未上传该模型的产物</p>
+                    <p className="text-gray-600 px-3">
+                      点击「上传文件」选择 ZIP / 代码 / 文档 / 图片，或「粘贴文本」直接粘贴模型输出内容，
+                      上传后会自动开始产物预分析。
+                    </p>
                   </div>
                 )}
                 <ArtifactAnalysisTrace run={latestAnalysisRun} modelCode={model.modelCode} />
@@ -420,7 +429,7 @@ export default function StepArtifact({ task, onRefresh }: Props) {
               onChange={event => setTextContent(event.target.value)}
               rows={12}
               className="mono bg-white/[0.02] border-white/[0.07] focus:bg-white/[0.03]"
-              placeholder="将模型输出的产物文本粘贴到这里..."
+              placeholder="将模型输出的文本内容粘贴到这里，例如模型生成的代码、回答文本、Markdown 文档等..."
               autoFocus
             />
             <div className="flex justify-end gap-2 mt-4">

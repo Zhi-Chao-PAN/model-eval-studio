@@ -210,7 +210,12 @@ export default function SettingsPage() {
     }
   }
 
-  if (!loaded) return <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 text-gray-500 animate-spin" /></div>
+  if (!loaded) return (
+    <div className="flex flex-col items-center justify-center py-20 gap-2">
+      <Loader2 className="h-5 w-5 text-gray-500 animate-spin" />
+      <p className="text-xs text-gray-500">正在加载设置...</p>
+    </div>
+  )
 
   if (loadError) {
     return (

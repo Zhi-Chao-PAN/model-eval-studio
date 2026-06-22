@@ -211,18 +211,24 @@ export default function DashboardPage() {
       )}
 
       {loading ? (
-        <div className="grid gap-3">
-          {[0,1,2].map(i => (
-            <div key={i} className="panel p-5">
-              <div className="flex items-center gap-4">
-                <div className="h-10 w-10 rounded-lg bg-white/5 animate-pulse" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-1/3 rounded bg-white/5 animate-pulse" />
-                  <div className="h-3 w-1/5 rounded bg-white/5 animate-pulse" />
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Loader2 className="h-3 w-3 text-gray-500 animate-spin" />
+            <span className="text-xs text-gray-500">正在加载任务列表...</span>
+          </div>
+          <div className="grid gap-3">
+            {[0,1,2].map(i => (
+              <div key={i} className="panel p-5">
+                <div className="flex items-center gap-4">
+                  <div className="h-10 w-10 rounded-lg bg-white/5 animate-pulse" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-1/3 rounded bg-white/5 animate-pulse" />
+                    <div className="h-3 w-1/5 rounded bg-white/5 animate-pulse" />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       ) : loadError ? null : filtered.length === 0 ? (
         <EmptyState onNew={() => setShowNew(true)} hasSearch={!!search} />

@@ -325,7 +325,7 @@ export function SharePanel({ taskId, onClose }: Props) {
                   <Input
                     value={addUsername}
                     onChange={e => setAddUsername(e.target.value)}
-                    placeholder="输入用户名"
+                    placeholder="输入对方注册时使用的用户名"
                     className="bg-white/[0.02] border-white/[0.07] flex-1"
                     onKeyDown={e => { if (e.key === 'Enter') addCollaborator() }}
                   />
@@ -346,8 +346,11 @@ export function SharePanel({ taskId, onClose }: Props) {
               {/* Collaborator list */}
               <div className="space-y-1.5">
                 {collaborators.length === 0 ? (
-                  <div className="text-center text-sm text-gray-500 py-6">
-                    暂无协作者，添加用户来共享此任务
+                  <div className="text-center text-sm text-gray-500 py-6 space-y-1">
+                    <p>暂无协作者，添加用户来共享此任务</p>
+                    <p className="text-xs text-gray-600">
+                      输入对方注册时使用的用户名即可添加。协作者登录后会在工作台的「与我共享」中看到此任务。
+                    </p>
                   </div>
                 ) : (
                   collaborators.map(c => {
@@ -431,8 +434,9 @@ export function SharePanel({ taskId, onClose }: Props) {
               {/* Share list */}
               <div className="space-y-1.5">
                 {shares.length === 0 ? (
-                  <div className="text-center text-sm text-gray-500 py-6">
-                    暂无共享链接，创建后可分享给任何人查看
+                  <div className="text-center text-sm text-gray-500 py-6 space-y-1">
+                    <p>暂无共享链接，创建后可分享给任何人查看</p>
+                    <p className="text-xs text-gray-600">公开链接为只读权限，可随时吊销。</p>
                   </div>
                 ) : (
                   shares.map(s => (

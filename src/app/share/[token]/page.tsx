@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   FileCheck2, Star, ShieldCheck, Zap, Award, Activity,
-  Sparkles, AlertTriangle, ArrowLeft,
+  Sparkles, AlertTriangle, ArrowLeft, Loader2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -68,6 +68,10 @@ export default function SharePage() {
     return (
       <div className="min-h-screen bg-[#0a0a0f] text-gray-200">
         <div className="max-w-5xl mx-auto px-4 py-10">
+          <div className="flex items-center gap-2 mb-4">
+            <Loader2 className="h-4 w-4 text-indigo-400 animate-spin" />
+            <span className="text-sm text-gray-400">正在加载共享报告...</span>
+          </div>
           <Skeleton className="h-10 w-64 rounded-lg mb-4" />
           <Skeleton className="h-5 w-96 rounded mb-10" />
           <div className="grid grid-cols-3 gap-3 mb-6">
