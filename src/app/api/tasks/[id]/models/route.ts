@@ -97,11 +97,15 @@ export async function POST(
 
     const normalizedCodes = [...new Set(
       modelCodes
-        .map((code) => String(code).trim().toUpperCase())
-        .filter(Boolean),
+        .map((code) => String(code ?? '').trim().toUpperCase())
+        .filter((code) => code.length > 0 && code.length <= 32 && /^[A-Z0-9_\-./+]+$/.test(code)),
     )]
     if (normalizedCodes.length === 0) {
-      errorMsg = 'modelCodes 必须包含有效模型代号'
+      errorMsg = 'modelCodes 必须包含有效模型代号（1-32 位，仅支持字母/数字/._-+/）'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
+    }
+    if (normalizedCodes.length > 50) {
+      errorMsg = '单次最多添加 50 个模型'
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
