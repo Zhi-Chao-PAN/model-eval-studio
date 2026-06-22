@@ -89,11 +89,18 @@ function MarkdownPart({ text, compact }: { text: string; compact?: boolean }) {
           th: ({ children }) => <th className="px-3 py-1.5 text-left font-semibold text-white border border-white/[0.06]">{children}</th>,
           td: ({ children }) => <td className="px-3 py-1.5 text-gray-300 border border-white/[0.06]">{children}</td>,
           tr: ({ children }) => <tr className="hover:bg-white/[0.02] transition-colors">{children}</tr>,
-          a: ({ children, href }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
-              {children}
-            </a>
-          ),
+          a: ({ children, href }) => {
+            // Only allow known-safe URL schemes to prevent javascript:/data: link injection
+            // from AI-generated markdown content.
+            const safeHref = typeof href === 'string' && /^(https?:|mailto:|#|\/)/i.test(href)
+              ? href
+              : '#'
+            return (
+              <a href={safeHref} target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
+                {children}
+              </a>
+            )
+          },
           hr: () => <hr className="my-4 border-white/[0.08]" />,
         }}
       >

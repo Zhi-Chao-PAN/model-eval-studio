@@ -340,8 +340,11 @@ export default function StepReport({ task, onRefresh }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || '修订失败')
+      // Safely parse JSON to handle non-JSON error responses
+      const text = await res.text()
+      let data: any = {}
+      try { data = text ? JSON.parse(text) : {} } catch { data = { error: '服务器返回了非预期内容' } }
+      if (!res.ok) throw new Error(data.error || '修订失败，请稍后重试')
 
       showNote('ok', '修订已保存为新版本')
       setReviseOpen(false)
@@ -410,8 +413,13 @@ export default function StepReport({ task, onRefresh }: Props) {
 
       if (!res.ok || !res.body) {
         const errText = await res.text().catch(() => '')
-        let errMsg = '生成评估报告失败'
-        try { errMsg = JSON.parse(errText).error || errMsg } catch { errMsg = errText.slice(0, 200) || errMsg }
+        let errMsg = '生成评估报告失败，请稍后重试'
+        try {
+          const parsed = JSON.parse(errText)
+          if (parsed?.error) errMsg = parsed.error
+        } catch {
+          // Non-JSON error response (HTML error page, etc.) — use generic message
+        }
         showNote('err', errMsg)
         return
       }

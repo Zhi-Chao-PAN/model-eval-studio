@@ -23,12 +23,15 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       })
-      const data = await res.json()
+      // Safely parse JSON to avoid SyntaxError if server returns HTML error page
+      const text = await res.text()
+      let data: any = {}
+      try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
       if (!res.ok) throw new Error(data.error || '登录失败，请稍后重试')
       router.push('/dashboard')
       router.refresh()
     } catch (e: any) {
-      setError(e.message)
+      setError(e.message || '登录失败，请稍后重试')
     } finally {
       setSubmitting(false)
     }

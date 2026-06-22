@@ -25,9 +25,11 @@ export default function SharePage() {
     async function load() {
       try {
         const res = await fetch('/api/share/' + token)
-        const data = await res.json()
+        const text = await res.text()
+        let data: any = {}
+        try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
         if (!res.ok) {
-          setError(data.error || '加载失败')
+          setError(data.error || '加载失败，请稍后重试')
           return
         }
         setTask(data.task)
@@ -36,7 +38,7 @@ export default function SharePage() {
           setSelectedModelId(data.task.models[0].id)
         }
       } catch (e: any) {
-        setError(e.message || '加载失败')
+        setError(e.message || '网络异常，请稍后重试')
       } finally {
         setLoading(false)
       }
