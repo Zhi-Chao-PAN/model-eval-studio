@@ -5,7 +5,7 @@ import { decrypt } from '@/lib/crypto'
 import { validateApiKey, sanitizeAiError } from '@/lib/ai'
 import { apiError } from '@/lib/api-error'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
-import { normalizeAiBaseUrl, parseAiProvider } from '@/lib/ai-endpoint'
+import { normalizeAiBaseUrl, parseAiProvider, assertSafeAiBaseUrl } from '@/lib/ai-endpoint'
 
 const MAX_VALIDATE_MODEL_NAME = 120
 const MAX_VALIDATE_KEY = 500
@@ -66,9 +66,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'provider 无效' }, { status: 400 })
     }
     try {
-      // Use the synchronous normalizer (no DNS resolution) for inline test
-      // values — DNS SSRF protection is applied on save in the PUT handler.
-      baseUrl = normalizeAiBaseUrl(b.baseUrl)
+      // Use the full SSRF-safe validator (DNS resolution + private IP check)
+      // even for inline test values to prevent SSRF attacks.
+      baseUrl = await assertSafeAiBaseUrl(b.baseUrl)
     } catch (err) {
       return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'Base URL 无效' }, { status: 400 })
     }

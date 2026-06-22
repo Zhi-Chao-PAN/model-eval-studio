@@ -45,7 +45,9 @@ export async function GET(
 
   const { token } = await params
 
-  if (typeof token !== 'string' || token.length < 8) {
+  // Share tokens are always generated as "sh_" + 32 base64url chars (35 total).
+  // Tighten validation to prevent unnecessary DB hits for malformed tokens.
+  if (typeof token !== 'string' || !/^sh_[A-Za-z0-9_-]{20,64}$/.test(token)) {
     return apiError('共享链接无效', 404)
   }
 

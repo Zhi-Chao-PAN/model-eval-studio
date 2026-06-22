@@ -90,14 +90,18 @@ export async function POST(
     const contentType = request.headers.get('content-type') || ''
 
     if (contentType.includes('application/json')) {
-      const body = await request.json()
-      const textContent = dbText(body.textContent)
+      const body = await request.json().catch(() => null)
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        errorMsg = '请求内容格式无效'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      const textContent = dbText((body as Record<string, unknown>).textContent)
       if (!textContent.trim()) {
         errorMsg = '文本内容不能为空'
         return NextResponse.json({ error: errorMsg }, { status: 400 })
       }
-      const parsedText = dbText(body.parsedText || textContent)
-      const rawName = typeof body.name === 'string' ? body.name : '文本内容.txt'
+      const parsedText = dbText((body as Record<string, unknown>).parsedText || textContent)
+      const rawName = typeof (body as Record<string, unknown>).name === 'string' ? (body as Record<string, unknown>).name as string : '文本内容.txt'
       const name = sanitizeFileName(rawName, '文本内容.txt')
       const nameErr = validateFileName(name)
       if (nameErr) {

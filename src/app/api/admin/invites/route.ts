@@ -52,13 +52,17 @@ export async function POST(request: Request) {
     }
     const { maxUses = 1, expiresInDays = 7 } = body as Record<string, unknown>
 
+    // Clamp values to safe ranges
+    const safeMaxUses = Math.max(1, Math.min(100, Math.round(Number(maxUses) || 1)))
+    const safeExpiresDays = Math.max(1, Math.min(365, Math.round(Number(expiresInDays) || 7)))
+
     const code = randomBytes(8).toString('hex').toUpperCase()
-    const expiresAt = new Date(Date.now() + (Number(expiresInDays) || 7) * 24 * 60 * 60 * 1000)
+    const expiresAt = new Date(Date.now() + safeExpiresDays * 24 * 60 * 60 * 1000)
 
     const invite = await prisma.inviteCode.create({
       data: {
         code,
-        maxUses: Math.max(1, Math.min(100, Number(maxUses) || 1)),
+        maxUses: safeMaxUses,
         expiresAt,
         createdById: session.userId,
       },

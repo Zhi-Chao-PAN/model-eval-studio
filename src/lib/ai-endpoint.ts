@@ -52,12 +52,23 @@ export function normalizeAiBaseUrl(value: unknown): string {
   if (url.search || url.hash) throw new Error('AI Base URL 不能包含查询参数或片段')
 
   const hostname = url.hostname.toLowerCase()
+
+  // Block raw IP addresses (both private and public) from being used directly —
+  // all AI endpoints must use hostnames so DNS-based SSRF checks are possible.
+  // Also explicitly block well-known private hostnames.
+  if (isIP(hostname)) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('AI Base URL 不能直接使用 IP 地址')
+    }
+  }
   if (
     hostname === 'localhost' ||
     hostname.endsWith('.localhost') ||
     hostname.endsWith('.local') ||
     hostname.endsWith('.internal') ||
-    hostname === 'metadata.google.internal'
+    hostname === 'metadata.google.internal' ||
+    hostname === 'metadata' ||
+    hostname === '169.254.169.254'
   ) {
     if (process.env.NODE_ENV === 'production') throw new Error('AI Base URL 不能指向本机或内部网络')
   }

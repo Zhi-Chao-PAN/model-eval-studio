@@ -10,6 +10,7 @@ import { logAudit } from '@/lib/audit'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { clampDbText } from '@/lib/utils'
 import { storeArtifactFile, deleteArtifactFile } from '@/lib/artifact-storage'
 import {
   parseTrajectoryScreenshots,
@@ -310,13 +311,14 @@ export async function POST(
             if (!modelCode) continue
 
             if (type === 'dashboard') {
-              const metricsJson = JSON.stringify(m.metrics || m)
+              const metricsJson = clampDbText(JSON.stringify(m.metrics || {}), 40_000)
               // 合并：保留另一类（process）的截图，替换本类（dashboard）的截图
               const existingModel = task.models.find((tm: any) => tm.modelCode.toUpperCase() === modelCode)
               const existingScreenshots = parseTrajectoryScreenshots(existingModel?.screenshotUrls)
               const otherType = filterScreenshotsByType(existingScreenshots, 'process')
               const mergedScreenshots = [...otherType, ...storedScreenshots]
               const screenshotUrls = serializeTrajectoryScreenshots(mergedScreenshots)
+              const displayName = clampDbText(m.displayName || modelCode, 80)
               ops.push(
                 prisma.taskModel.upsert({
                   where: { taskId_modelCode: { taskId: id, modelCode } },
@@ -324,14 +326,14 @@ export async function POST(
                   create: {
                     taskId: id,
                     modelCode,
-                    displayName: m.displayName || modelCode,
+                    displayName,
                     hardMetricsJson: metricsJson,
                     screenshotUrls: serializeTrajectoryScreenshots(storedScreenshots),
                   },
                 }),
               )
             } else {
-              const processText = m.processDetail || m.processSummary
+              const processText = clampDbText(m.processDetail || m.processSummary || null, 200_000)
               // 合并：保留另一类（dashboard）的截图，替换本类（process）的截图
               const existingModel = task.models.find((tm: any) => tm.modelCode.toUpperCase() === modelCode)
               const existingScreenshots = parseTrajectoryScreenshots(existingModel?.screenshotUrls)
@@ -347,7 +349,7 @@ export async function POST(
                   create: {
                     taskId: id,
                     modelCode,
-                    displayName: m.displayName || modelCode,
+                    displayName: clampDbText(m.displayName || modelCode, 80),
                     processText: processText || null,
                     screenshotUrls: serializeTrajectoryScreenshots(storedScreenshots),
                   },

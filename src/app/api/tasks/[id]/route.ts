@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { TaskStep } from '@prisma/client'
 import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
@@ -12,6 +13,8 @@ import { safeServerError } from '@/lib/api-error'
 const ALLOWED_CATEGORIES = new Set(['PRODUCT', 'CODING', 'DESIGN', 'RESEARCH', 'OTHER'])
 const ALLOWED_REQUIREMENT_TYPES = new Set(['CODING', 'AGENT'])
 const ALLOWED_STATUSES = new Set(['DRAFT', 'IN_PROGRESS', 'COMPLETED', 'DELETED'])
+const ALLOWED_STEPS = new Set<TaskStep>(Object.values(TaskStep))
+const ANALYSIS_JSON_MAX = 500_000
 const TITLE_MAX = 100
 const DESCRIPTION_MAX = 5_000
 const REQUIREMENT_NAME_MAX = 200
@@ -226,6 +229,21 @@ export async function PUT(
     }
     if ('backgroundUsed' in updateData && updateData.backgroundUsed != null) {
       updateData.backgroundUsed = clampDbText(String(updateData.backgroundUsed), BACKGROUND_MAX)
+    }
+    if ('currentStep' in updateData && updateData.currentStep != null) {
+      const step = String(updateData.currentStep)
+      if (!ALLOWED_STEPS.has(step as TaskStep)) {
+        errorMsg = 'currentStep 非法'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      updateData.currentStep = step
+    }
+    if ('analysisJson' in updateData && updateData.analysisJson != null) {
+      if (typeof updateData.analysisJson !== 'string') {
+        errorMsg = 'analysisJson 必须是字符串'
+        return NextResponse.json({ error: errorMsg }, { status: 400 })
+      }
+      updateData.analysisJson = clampDbText(updateData.analysisJson, ANALYSIS_JSON_MAX)
     }
 
     // 状态机：用户首次修改任务信息时，DRAFT → IN_PROGRESS
