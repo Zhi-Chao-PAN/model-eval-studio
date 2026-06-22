@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/session'
 import { getTaskAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { isValidCuid } from '@/lib/utils'
 
 // 撤销分享链接
 export async function DELETE(
@@ -24,6 +25,9 @@ export async function DELETE(
     if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id, shareId } = await params
+    if (!isValidCuid(id) || !isValidCuid(shareId)) {
+      return NextResponse.json({ error: '参数格式无效' }, { status: 400 })
+    }
 
     const { access } = await getTaskAccess(id, session)
     if (access !== 'OWNER') return NextResponse.json({ error: '只有任务创建者可以撤销分享' }, { status: 403 })

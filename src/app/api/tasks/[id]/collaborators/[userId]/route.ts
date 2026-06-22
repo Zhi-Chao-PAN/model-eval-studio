@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/session'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess } from '@/lib/task-access'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { isValidCuid } from '@/lib/utils'
 
 // 修改协作者角色
 export async function PUT(
@@ -24,6 +25,9 @@ export async function PUT(
     if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id, userId } = await params
+    if (!isValidCuid(id) || typeof userId !== 'string' || userId.length > 64) {
+      return apiError('参数格式无效', 400)
+    }
 
     const { access } = await getTaskAccess(id, session)
     if (!access) return apiError('任务不存在', 404)
@@ -82,6 +86,9 @@ export async function DELETE(
     if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id, userId } = await params
+    if (!isValidCuid(id) || typeof userId !== 'string' || userId.length > 64) {
+      return apiError('参数格式无效', 400)
+    }
 
     const { access } = await getTaskAccess(id, session)
     if (!access) return apiError('任务不存在', 404)

@@ -8,7 +8,7 @@ import {
 } from '@/lib/verification-evidence'
 import { getNextReportVersion } from '@/lib/report-versioning'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
-import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
+import { clampDbText, clampRequiredText, DB_TEXT_LIMITS, isValidCuid } from '@/lib/utils'
 import { validateScores } from '@/lib/score-validation'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { safeServerError } from '@/lib/api-error'
@@ -21,6 +21,9 @@ export async function GET(
     const session = await requireAuth()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
     const { id, modelId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId)) {
+      return NextResponse.json({ error: '参数格式无效' }, { status: 400 })
+    }
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'VIEWER')
@@ -71,6 +74,9 @@ export async function POST(
   if (!rl.allowed) return rateLimitResponse(rl)
 
   const { id, modelId } = await params
+  if (!isValidCuid(id) || !isValidCuid(modelId)) {
+    return NextResponse.json({ error: '参数格式无效' }, { status: 400 })
+  }
 
   try {
     const body = await request.json().catch(() => null)

@@ -9,7 +9,7 @@ import {
 } from '@/lib/verification-evidence'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { safeServerError } from '@/lib/api-error'
-import { clampDbText, clampRequiredText } from '@/lib/utils'
+import { clampDbText, clampRequiredText, isValidCuid } from '@/lib/utils'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 const DB_TEXT_LIMITS = {
@@ -22,10 +22,6 @@ const DB_TEXT_LIMITS = {
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
-}
-
-function isValidCuid(value: unknown): value is string {
-  return typeof value === 'string' && /^[a-z0-9]{20,32}$/.test(value)
 }
 
 // 列出该任务的所有待测模型

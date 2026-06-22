@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/session'
 import { parseTrajectoryScreenshots } from '@/lib/trajectory-screenshots'
 import { apiError, safeServerError } from '@/lib/api-error'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
+import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -15,6 +16,9 @@ export async function GET(
     const session = await requireAuth()
     if (!session) return apiError('未登录', 401)
     const { id, modelId } = await params
+    if (!isValidCuid(id) || !isValidCuid(modelId)) {
+      return apiError('参数格式无效', 400)
+    }
 
     const { access } = await getTaskAccess(id, session)
     const denied = requireAccess(access, 'VIEWER')
