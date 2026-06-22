@@ -8,7 +8,17 @@ export const metadata: Metadata = {
     template: '%s · ModelEval Studio',
   },
   description: 'AI 辅助的多模型测试评估工作台。输入任务，上传看板与产物，AI 生成专业评估报告。',
-  keywords: ['模型评估', '大模型测试', 'AI 评估', '多模型对比'],
+  keywords: ['模型评估', '大模型测试', 'AI 评估', '多模型对比', 'ModelEval Studio'],
+  applicationName: 'ModelEval Studio',
+  authors: [{ name: 'ModelEval Studio' }],
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+  },
+  robots: {
+    index: false,
+    follow: false,
+  },
 }
 
 export const viewport: Viewport = {
