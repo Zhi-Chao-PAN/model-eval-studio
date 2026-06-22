@@ -44,6 +44,14 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
     if (noteTimerRef.current) window.clearTimeout(noteTimerRef.current)
   }, [])
 
+  // Lock body scroll when text-paste modal is open
+  useEffect(() => {
+    if (!selectedModel) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [selectedModel])
+
   useEffect(() => {
     if (!hasRunningAnalysis) return
     const timer = window.setInterval(onRefresh, 1_500)
@@ -439,16 +447,24 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
       )}
 
       {selectedModel && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade">
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="paste-text-title"
+          onClick={(e) => { if (e.target === e.currentTarget) { setSelectedModel(null); setTextContent('') } }}
+          onKeyDown={(e) => { if (e.key === 'Escape') { setSelectedModel(null); setTextContent('') } }}
+        >
           <div className="panel w-full max-w-lg p-5 animate-rise" style={{ background: 'rgba(15,15,20,0.9)' }}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-white flex items-center gap-2">
+              <h3 id="paste-text-title" className="font-medium text-white flex items-center gap-2">
                 <FileText className="h-4 w-4 text-indigo-300" />
                 粘贴产物文本
               </h3>
               <button
                 onClick={() => { setSelectedModel(null); setTextContent('') }}
                 className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/10 transition"
+                aria-label="关闭"
               >
                 <X className="h-4 w-4" />
               </button>

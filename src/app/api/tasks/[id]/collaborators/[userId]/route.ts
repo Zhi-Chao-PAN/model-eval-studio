@@ -25,7 +25,7 @@ export async function PUT(
     if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id, userId } = await params
-    if (!isValidCuid(id) || typeof userId !== 'string' || userId.length > 64) {
+    if (!isValidCuid(id) || !isValidCuid(userId)) {
       return apiError('参数格式无效', 400)
     }
 
@@ -33,6 +33,10 @@ export async function PUT(
     if (!access) return apiError('任务不存在', 404)
     if (access !== 'OWNER') {
       return apiError('只有任务创建者可以管理协作者', 403)
+    }
+
+    if (userId === session.userId) {
+      return apiError('不能修改自己的协作角色', 400)
     }
 
     const body = await request.json().catch(() => null)
@@ -86,7 +90,7 @@ export async function DELETE(
     if (!rl.allowed) return rateLimitResponse(rl)
 
     const { id, userId } = await params
-    if (!isValidCuid(id) || typeof userId !== 'string' || userId.length > 64) {
+    if (!isValidCuid(id) || !isValidCuid(userId)) {
       return apiError('参数格式无效', 400)
     }
 

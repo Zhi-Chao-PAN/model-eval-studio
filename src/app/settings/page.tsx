@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   Settings as SettingsIcon, Key, Save, Check, User as UserIcon, FlaskConical,
   CheckCircle2, XCircle, Loader2, Sparkles, ShieldCheck, Wand2, AlertTriangle, RefreshCw,
-  Eye, EyeOff, ArrowRight,
+  Eye, EyeOff, ArrowRight, Lock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label, Textarea, Select } from '@/components/ui/input'
@@ -87,6 +87,15 @@ export default function SettingsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [bgError, setBgError] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
+  // Password change state
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showCurrentPw, setShowCurrentPw] = useState(false)
+  const [showNewPw, setShowNewPw] = useState(false)
+  const [savingPw, setSavingPw] = useState(false)
+  const [pwSaved, setPwSaved] = useState(false)
+  const [pwError, setPwError] = useState<string | null>(null)
   const searchParams = useSearchParams()
   const isWelcome = searchParams.get('welcome') === '1'
 
@@ -205,6 +214,46 @@ export default function SettingsPage() {
       setValidateResult({ ok: false, error: err instanceof Error ? err.message : '测试连接失败，请检查网络' })
     } finally {
       setValidating(false)
+    }
+  }
+
+  async function changePassword() {
+    setPwError(null)
+    setPwSaved(false)
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPwError('请填写完整的密码信息')
+      return
+    }
+    if (newPassword.length < 8) {
+      setPwError('新密码长度不能少于 8 个字符')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPwError('两次输入的新密码不一致')
+      return
+    }
+    if (currentPassword === newPassword) {
+      setPwError('新密码不能与当前密码相同')
+      return
+    }
+    setSavingPw(true)
+    try {
+      const res = await fetch('/api/user/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '修改密码失败，请稍后重试')
+      setPwSaved(true)
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setTimeout(() => setPwSaved(false), 3000)
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : '修改密码失败，请检查网络连接')
+    } finally {
+      setSavingPw(false)
     }
   }
 
@@ -464,6 +513,66 @@ export default function SettingsPage() {
                   <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span className="flex-1">{bgError}</span>
                   <button onClick={() => setBgError(null)} className="text-red-400/70 hover:text-red-300 text-xs">关闭</button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Password Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-[14px]">
+                <Lock className="h-4 w-4 text-gray-400" /> 修改密码
+              </CardTitle>
+              <p className="text-xs text-gray-500 mt-1">
+                定期更换密码有助于保护账户安全。
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>当前密码</Label>
+                <div className="relative">
+                  <Input type={showCurrentPw ? 'text' : 'password'} value={currentPassword}
+                    onChange={e => setCurrentPassword(e.target.value)} placeholder="输入当前密码"
+                    className="pr-10" autoComplete="current-password" />
+                  <button type="button" onClick={() => setShowCurrentPw(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                    tabIndex={-1}>
+                    {showCurrentPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>新密码</Label>
+                <div className="relative">
+                  <Input type={showNewPw ? 'text' : 'password'} value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)} placeholder="至少 8 个字符"
+                    className="pr-10" autoComplete="new-password" />
+                  <button type="button" onClick={() => setShowNewPw(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                    tabIndex={-1}>
+                    {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>确认新密码</Label>
+                <Input type="password" value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)} placeholder="再次输入新密码"
+                  autoComplete="new-password" />
+              </div>
+              <div className="flex items-center gap-3 pt-1">
+                <Button onClick={changePassword} loading={savingPw}
+                  disabled={!currentPassword || !newPassword || !confirmPassword}>
+                  <Lock className="h-3.5 w-3.5" /> 修改密码
+                </Button>
+                {pwSaved && <span className="text-emerald-400 text-xs flex items-center gap-1"><Check className="h-3 w-3" /> 密码已更新</span>}
+              </div>
+              {pwError && (
+                <div className="text-sm px-3 py-2 rounded-lg border bg-red-500/10 text-red-300 border-red-500/20 flex items-center gap-2">
+                  <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span className="flex-1">{pwError}</span>
+                  <button onClick={() => setPwError(null)} className="text-red-400/70 hover:text-red-300 text-xs">关闭</button>
                 </div>
               )}
             </CardContent>

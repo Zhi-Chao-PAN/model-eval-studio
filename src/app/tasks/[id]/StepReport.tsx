@@ -180,6 +180,14 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
     Object.values(abortRefs.current).forEach(ctrl => ctrl.abort())
   }, [])
 
+  // Lock body scroll when revise modal is open
+  useEffect(() => {
+    if (!reviseOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [reviseOpen])
+
   const selectedModel = models.find((model: any) => model.id === currentModelId)
   const latestReport = selectedModel?.reports?.[0]
   const activeJob = currentModelId ? activeJobs[currentModelId] : undefined
@@ -1066,7 +1074,14 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
 
       {/* 人工修订弹窗 */}
       {reviseOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="revise-dialog-title"
+          onClick={(e) => { if (e.target === e.currentTarget) setReviseOpen(false) }}
+          onKeyDown={(e) => { if (e.key === 'Escape') setReviseOpen(false) }}
+        >
           <div className="panel p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -1074,13 +1089,14 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                   <Edit3 className="h-4 w-4 text-amber-300" />
                 </div>
                 <div>
-                  <h3 className="font-medium">人工修订报告</h3>
+                  <h3 id="revise-dialog-title" className="font-medium">人工修订报告</h3>
                   <p className="text-xs text-gray-500">将创建一个新版本，原版本保留</p>
                 </div>
               </div>
               <button
                 onClick={() => setReviseOpen(false)}
                 className="p-1.5 rounded-md hover:bg-white/5 text-gray-500 hover:text-gray-300"
+                aria-label="关闭修订弹窗"
               >
                 <X className="h-4 w-4" />
               </button>

@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FlaskConical, LayoutDashboard, Settings, LogOut, Menu, ChevronDown, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -18,6 +18,21 @@ export function Topbar({ user }: Props) {
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuBtnRef = useRef<HTMLButtonElement | null>(null)
+
+  // Close dropdown on Escape key
+  useEffect(() => {
+    if (!menuOpen && !mobileOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        setMobileOpen(false)
+        menuBtnRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [menuOpen, mobileOpen])
 
   const navItems: Array<{ href: string; label: string; icon: any }> = [
     { href: '/dashboard', label: '工作台', icon: LayoutDashboard },
@@ -79,8 +94,12 @@ export function Topbar({ user }: Props) {
             <>
               <div className="relative hidden sm:block">
                 <button
+                  ref={menuBtnRef}
                   onClick={() => setMenuOpen(v => !v)}
                   className="flex items-center gap-2 pl-1 pr-2.5 h-8 rounded-md text-sm text-gray-300 hover:text-white hover:bg-white/[0.06] transition-colors"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  aria-label="用户菜单"
                 >
                   <div className="h-6 w-6 rounded-md bg-gradient-to-br from-indigo-400/80 to-fuchsia-400/80 flex items-center justify-center text-[11px] font-semibold text-white">
                     {user.username.slice(0, 1).toUpperCase()}
@@ -94,7 +113,7 @@ export function Topbar({ user }: Props) {
                 {menuOpen && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1.5 z-20 w-52 glass-strong py-1 animate-rise">
+                    <div role="menu" className="absolute right-0 top-full mt-1.5 z-20 w-52 glass-strong py-1 animate-rise">
                       <Link
                         href="/settings"
                         onClick={() => setMenuOpen(false)}
