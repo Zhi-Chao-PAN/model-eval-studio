@@ -574,7 +574,7 @@ function UploadBox({ label, images, onUpload, onRemove, accent }: {
       {images.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
           {images.map((img, i) => (
-            <div key={i} className="relative aspect-video rounded-lg overflow-hidden border border-white/10 group">
+            <div key={i} className="relative aspect-video rounded-lg overflow-hidden border border-white/10 group animate-rise">
               <img src={img.dataUrl} alt={img.name} className="w-full h-full object-cover" />
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
                 <div className="text-[10px] text-gray-300 truncate">{img.name}</div>

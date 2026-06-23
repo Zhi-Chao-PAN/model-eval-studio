@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, FlaskConical, FileText, Image as ImageIcon, Wand2,
   Package, FileCheck2, Loader2, ArrowRight, Trash2, Copy,
-  AlertTriangle, RefreshCw, Lightbulb, Code2, Bot, Check,
+  AlertTriangle, RefreshCw, Lightbulb, Code2, Bot, Check, Keyboard, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/toast'
 import { cn, formatRelativeTime } from '@/lib/utils'
 
 interface Task {
@@ -60,8 +61,8 @@ export default function DashboardPage() {
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'mine' | 'shared'>('mine')
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
+  const [showShortcuts, setShowShortcuts] = useState(false)
 
   async function loadTasks() {
     setLoadError(null)
@@ -102,19 +103,27 @@ export default function DashboardPage() {
         e.preventDefault()
         setShowNew(true)
       }
-      if (e.key === 'Escape' && showNew) {
-        setShowNew(false)
+      // '?' opens the keyboard shortcut sheet (Shift+Slash on US layouts)
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const active = document.activeElement as HTMLElement | null
+        if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return
+        if (active && active.isContentEditable) return
+        e.preventDefault()
+        setShowShortcuts(v => !v)
+      }
+      if (e.key === 'Escape') {
+        if (showNew) setShowNew(false)
+        if (showShortcuts) setShowShortcuts(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [showNew])
+  }, [showNew, showShortcuts])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!newTitle.trim()) return
     setCreating(true)
-    setActionError(null)
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -123,12 +132,12 @@ export default function DashboardPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.task) {
-        setActionError(data.error || '创建任务失败，请稍后重试')
+        toast.error(data.error || '创建任务失败，请稍后重试')
         return
       }
       router.push('/tasks/' + data.task.id)
     } catch (err: any) {
-      setActionError(err?.message || '创建任务失败，请检查网络连接')
+      toast.error(err?.message || '创建任务失败，请检查网络连接')
     } finally { setCreating(false) }
   }
 
@@ -140,35 +149,33 @@ export default function DashboardPage() {
     if (!confirmDelete) return
     const { id } = confirmDelete
     setDeletingId(id)
-    setActionError(null)
     setConfirmDelete(null)
     try {
       const res = await fetch('/api/tasks/' + id, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setActionError(data.error || '删除失败，请稍后重试')
+        toast.error(data.error || '删除失败，请稍后重试')
         return
       }
       await loadTasks()
     } catch (err: any) {
-      setActionError(err?.message || '删除失败，请检查网络连接')
+      toast.error(err?.message || '删除失败，请检查网络连接')
     } finally { setDeletingId(null) }
   }
 
   async function duplicateTask(id: string) {
     setDuplicatingId(id)
-    setActionError(null)
     try {
       const res = await fetch(`/api/tasks/${id}/duplicate`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setActionError(data.error || '复制任务失败，请稍后重试')
+        toast.error(data.error || '复制任务失败，请稍后重试')
         return
       }
       await loadTasks()
       router.push(`/tasks/${data.id}`)
     } catch (err: any) {
-      setActionError(err?.message || '复制任务失败，请检查网络连接')
+      toast.error(err?.message || '复制任务失败，请检查网络连接')
     } finally { setDuplicatingId(null) }
   }
 
@@ -193,6 +200,14 @@ export default function DashboardPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
             <Input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索任务... （按 / 聚焦）" aria-label="搜索任务" className="pl-8 w-56" />
           </div>
+          <button
+            onClick={() => setShowShortcuts(v => !v)}
+            title="键盘快捷键（按 ?）"
+            aria-label="键盘快捷键"
+            className="h-9 w-9 rounded-lg border border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.08] flex items-center justify-center transition-colors"
+          >
+            <Keyboard className="h-4 w-4" />
+          </button>
           <Button onClick={() => setShowNew(v => !v)}>
             <Plus className="h-3.5 w-3.5" /> 新建任务
           </Button>
@@ -273,14 +288,6 @@ export default function DashboardPage() {
               </div>
             </div>
           </form>
-        </div>
-      )}
-
-      {actionError && (
-        <div className="mb-4 panel p-3 border-red-500/30 bg-red-500/5 flex items-center gap-2 text-sm text-red-300">
-          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-          <span className="flex-1">{actionError}</span>
-          <button onClick={() => setActionError(null)} className="text-red-400/70 hover:text-red-300 text-xs">关闭</button>
         </div>
       )}
 
@@ -395,6 +402,46 @@ export default function DashboardPage() {
         onConfirm={confirmDeleteTask}
         onCancel={() => setConfirmDelete(null)}
       />
+
+      {/* Keyboard shortcut sheet */}
+      {showShortcuts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}>
+          <div className="panel w-full max-w-sm p-5 animate-rise" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Keyboard className="h-4 w-4 text-indigo-300" />
+                <h3 className="font-medium">键盘快捷键</h3>
+              </div>
+              <button
+                onClick={() => setShowShortcuts(false)}
+                aria-label="关闭"
+                className="p-1.5 rounded-md hover:bg-white/5 text-gray-500 hover:text-gray-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <ul className="space-y-2.5 text-sm">
+              <li className="flex items-center justify-between">
+                <span className="text-gray-300">聚焦搜索框</span>
+                <kbd className="px-1.5 h-6 inline-flex items-center rounded border border-white/15 bg-white/[0.04] text-[11px] font-mono text-gray-200">/</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span className="text-gray-300">新建任务</span>
+                <kbd className="px-1.5 h-6 inline-flex items-center rounded border border-white/15 bg-white/[0.04] text-[11px] font-mono text-gray-200">N</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span className="text-gray-300">显示/隐藏此面板</span>
+                <kbd className="px-1.5 h-6 inline-flex items-center rounded border border-white/15 bg-white/[0.04] text-[11px] font-mono text-gray-200">?</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span className="text-gray-300">关闭弹层</span>
+                <kbd className="px-1.5 h-6 inline-flex items-center rounded border border-white/15 bg-white/[0.04] text-[11px] font-mono text-gray-200">Esc</kbd>
+              </li>
+            </ul>
+            <p className="text-[11px] text-gray-500 mt-4">提示：在输入框里按这些键不会触发。</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
