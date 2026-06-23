@@ -158,6 +158,10 @@
       0 12px 40px -8px rgba(99,102,241,0.75),
       inset 0 1px 0 rgba(255,255,255,0.2);
   }
+  .btn-glow:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
 
   /* Display heading */
   .display {
@@ -215,6 +219,13 @@
 
   .animate-rise { animation: rise 400ms cubic-bezier(0.22, 1, 0.36, 1) both; }
   .animate-pulse-glow { animation: glow-pulse 2.4s ease-in-out infinite; }
+  /* One-shot glow used by the active step indicator when it becomes active */
+  @keyframes step-activate {
+    0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.6); }
+    70%  { box-shadow: 0 0 0 10px rgba(99,102,241,0); }
+    100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+  }
+  .animate-step-activate { animation: step-activate 600ms ease-out; }
   .shimmer {
     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
     background-size: 200% 100%;

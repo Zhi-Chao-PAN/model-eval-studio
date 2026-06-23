@@ -57,7 +57,7 @@ export function DesktopStepSidebar({ steps, currentStep, onChange, completedStep
             )}
             <div className={cn(
               'flex-shrink-0 mt-0.5 h-7 w-7 rounded-lg flex items-center justify-center transition-all',
-              isCurrent ? `bg-gradient-to-br ${accent} text-white shadow-lg shadow-indigo-500/30` :
+              isCurrent ? `bg-gradient-to-br ${accent} text-white shadow-lg shadow-indigo-500/30 animate-step-activate` :
               isDone ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/20' :
               'bg-white/[0.05] text-gray-500 border border-white/[0.04]',
             )}>

@@ -76,6 +76,7 @@ export default function TaskPage() {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  const [mdCopied, setMdCopied] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
   const [chatOpen, setChatOpen] = useState(true)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -388,13 +389,8 @@ export default function TaskPage() {
       if (!res.ok) throw new Error('导出失败')
       const text = await res.text()
       await navigator.clipboard.writeText(text)
-      // Briefly show success feedback
-      const btn = document.getElementById('copy-md-btn')
-      if (btn) {
-        const orig = btn.innerHTML
-        btn.innerHTML = '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> 已复制'
-        setTimeout(() => { btn.innerHTML = orig }, 2000)
-      }
+      setMdCopied(true)
+      setTimeout(() => setMdCopied(false), 2000)
       toast.success('提交版报告已复制到剪贴板（仅含 5 模块正文）')
     } catch (e: any) {
       toast.error('复制失败：' + (e?.message || '请检查浏览器剪贴板权限'))
@@ -600,9 +596,9 @@ export default function TaskPage() {
             {duplicating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline ml-1.5">复制</span>
           </Button>
-          <Button variant="secondary" size="sm" onClick={copyMarkdownReport} id="copy-md-btn" title="复制 Markdown 报告到剪贴板">
-            <FileText className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline ml-1.5">复制 MD</span>
+          <Button variant="secondary" size="sm" onClick={copyMarkdownReport} id="copy-md-btn" title={mdCopied ? '已复制到剪贴板' : '复制 Markdown 报告到剪贴板'}>
+            {mdCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <FileText className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline ml-1.5">{mdCopied ? '已复制' : '复制 MD'}</span>
           </Button>
           <Button
             variant={deleteConfirm ? 'danger' : 'ghost'}
