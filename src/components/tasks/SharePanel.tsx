@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -43,8 +44,6 @@ export function SharePanel({ taskId, onClose }: Props) {
   const [addUsername, setAddUsername] = useState('')
   const [addRole, setAddRole] = useState<'VIEWER' | 'EDITOR'>('VIEWER')
   const [adding, setAdding] = useState(false)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [creatingShare, setCreatingShare] = useState(false)
   const [expiresDays, setExpiresDays] = useState('7')
@@ -58,13 +57,10 @@ export function SharePanel({ taskId, onClose }: Props) {
   }, [taskId, activeTab])
 
   function flashSuccess(msg: string) {
-    setActionSuccess(msg)
-    setActionError(null)
-    setTimeout(() => setActionSuccess(null), 2500)
+    toast.success(msg)
   }
   function flashError(msg: string) {
-    setActionError(msg)
-    setActionSuccess(null)
+    toast.error(msg)
   }
 
   async function loadData() {
@@ -96,7 +92,6 @@ export function SharePanel({ taskId, onClose }: Props) {
       return
     }
     setAdding(true)
-    setActionError(null)
     try {
       const res = await fetch('/api/tasks/' + taskId + '/collaborators', {
         method: 'POST',
@@ -120,7 +115,6 @@ export function SharePanel({ taskId, onClose }: Props) {
 
   async function updateRole(userId: string, role: string) {
     setActingUserId(userId)
-    setActionError(null)
     try {
       const res = await fetch('/api/tasks/' + taskId + '/collaborators/' + userId, {
         method: 'PUT',
@@ -150,7 +144,6 @@ export function SharePanel({ taskId, onClose }: Props) {
     if (!userId) return
     setConfirmRemoveUser(null)
     setActingUserId(userId)
-    setActionError(null)
     try {
       const res = await fetch('/api/tasks/' + taskId + '/collaborators/' + userId, {
         method: 'DELETE',
@@ -171,7 +164,6 @@ export function SharePanel({ taskId, onClose }: Props) {
 
   async function createShare() {
     setCreatingShare(true)
-    setActionError(null)
     try {
       const days = Number(expiresDays)
       const res = await fetch('/api/tasks/' + taskId + '/shares', {
@@ -205,7 +197,6 @@ export function SharePanel({ taskId, onClose }: Props) {
     if (!shareId) return
     setConfirmRevokeShare(null)
     setRevokingId(shareId)
-    setActionError(null)
     try {
       const res = await fetch('/api/tasks/' + taskId + '/shares/' + shareId, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
@@ -299,25 +290,6 @@ export function SharePanel({ taskId, onClose }: Props) {
             )}
           </button>
         </div>
-
-        {/* Flash messages */}
-        {(actionError || actionSuccess) && (
-          <div className={cn(
-            'px-4 py-2 text-sm flex items-center gap-2 border-b',
-            actionError
-              ? 'bg-red-500/10 border-red-500/20 text-red-300'
-              : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300',
-          )}>
-            {actionError ? <AlertTriangle className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-            <span className="flex-1">{actionError || actionSuccess}</span>
-            <button
-              onClick={() => { setActionError(null); setActionSuccess(null) }}
-              className="text-current opacity-60 hover:opacity-100"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">

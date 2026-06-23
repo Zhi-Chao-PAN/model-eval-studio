@@ -15,7 +15,9 @@ import {
   isFreshModelArtifactAnalysis,
   parseStoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
+import { clampAnalysisError } from '@/lib/analysis-error'
 import { ArtifactAnalysisTrace } from '@/components/tasks/ArtifactAnalysisTrace'
+import { ArtifactEvidenceChainPanel } from '@/components/tasks/ArtifactEvidenceChainPanel'
 
 interface Props {
   task: any
@@ -38,6 +40,9 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
     message: string
     onConfirm: () => void
   } | null>(null)
+  // Per-model persistent analysis error banner — survives until the next
+  // successful analyze call (or until the user clicks "重新分析" to clear).
+  const [analysisErrors, setAnalysisErrors] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const noteTimerRef = useRef<number | null>(null)
   const models = task.models || []
@@ -177,9 +182,19 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
       })
       const data = await readJsonResponse(res)
       if (!res.ok) {
-        showNote('err', (options.automatic ? '自动预分析失败: ' : '预分析失败: ') + (data.error || '未知错误'))
+        const rawError = (data.error || '未知错误').toString()
+        const message = clampAnalysisError(rawError)
+        setAnalysisErrors(prev => ({ ...prev, [modelId]: message }))
+        showNote('err', (options.automatic ? '自动预分析失败: ' : '预分析失败: ') + message)
         return
       }
+      // 成功提交后，清除该模型旧的失败提示，让"分析中"状态自然接管
+      setAnalysisErrors(prev => {
+        if (!(modelId in prev)) return prev
+        const next = { ...prev }
+        delete next[modelId]
+        return next
+      })
       showNote(
         'ok',
         data.alreadyRunning
@@ -189,11 +204,22 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
             : '已提交后台产物分析，拆解轨迹会自动更新。有验证截图的模型将自动生成评估报告。',
       )
       onRefresh()
-    } catch {
-      showNote('err', (options.automatic ? '自动预分析' : '预分析') + '失败：网络异常，请稍后重试')
+    } catch (err: any) {
+      const message = clampAnalysisError(err?.message || '网络异常，请稍后重试')
+      setAnalysisErrors(prev => ({ ...prev, [modelId]: message }))
+      showNote('err', (options.automatic ? '自动预分析' : '预分析') + '失败：' + message)
     } finally {
       setStartingModelId(null)
     }
+  }
+
+  function clearAnalysisError(modelId: string) {
+    setAnalysisErrors(prev => {
+      if (!(modelId in prev)) return prev
+      const next = { ...prev }
+      delete next[modelId]
+      return next
+    })
   }
 
   async function addModelManual() {
@@ -275,8 +301,11 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
         <div>
           <h2 className="display text-xl sm:text-2xl tracking-tight">产物提交</h2>
           <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-            为每个待测模型上传最终产物（ZIP 源码包、输出文档、截图等），或直接粘贴文本输出。
-            上传后系统会自动解析文件内容（约 1–3 分钟），作为 AI 撰写评估报告的依据。
+            为每个待测模型上传最终产物（ZIP 源码包、输出文档等），或直接粘贴文本输出。
+            系统会自动解析文件内容（约 1–3 分钟），作为 AI 撰写评估报告「交付效率 / 产物质量 / 综合评价」模块的核心依据。
+            <span className="block mt-1 text-cyan-200/80">
+              报告中的「产物效果反馈」模块需要测试者本地验收后的截图支撑，可在下方模型卡片右侧的「产物效果截图」区域上传。
+            </span>
           </p>
         </div>
       </div>
@@ -287,6 +316,9 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
         <div className="text-[12px] text-gray-400 leading-relaxed">
           <span className="text-gray-300 font-medium">操作指引：</span>
           为每个模型上传产物文件（支持 ZIP、代码文件、文本、Markdown 等），或直接粘贴模型的文本输出。所有模型产物添加完成后，点击「AI 分析产物」等待分析完成。分析完成后即可生成最终评估报告。
+          <span className="block mt-1.5 text-cyan-200/80">
+            注意：这里的「产物文件」与「产物效果截图」是两件事 —— 前者是模型生成的原始文件，后者是测试者把产物下载到本地、实际打开或运行后拍摄的真实截图，仅后者会作为「产物效果反馈」模块的证据。
+          </span>
         </div>
       </div>
 
@@ -343,10 +375,16 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
             const artifactCount = model.artifacts?.length || 0
             const isUploading = uploadingModelId === model.id
             const latestAnalysisRun = model.artifactAnalysisRuns?.[0] || null
-            const isAnalyzing = startingModelId === model.id || latestAnalysisRun?.status === 'QUEUED' || latestAnalysisRun?.status === 'RUNNING'
+            const runStatus = latestAnalysisRun?.status || null
+            const isAnalyzing = startingModelId === model.id || runStatus === 'QUEUED' || runStatus === 'RUNNING'
+            const hasFailedRun = runStatus === 'FAILED'
             const artifactAnalysis = parseStoredModelArtifactAnalysis(model.artifactAnalysisJson)
             const hasFreshAnalysis = isFreshModelArtifactAnalysis(artifactAnalysis, model.artifacts || [])
             const hasStaleAnalysis = Boolean(artifactAnalysis && !hasFreshAnalysis)
+            // "pending" = 用户已经上传了产物，但还没点分析按钮，也没在分析中，
+            // 也没拿到最新结果。覆盖：上传后自动分析失败 / 用户取消上传后剩文件等。
+            const isPendingAnalysis = artifactCount > 0 && !isAnalyzing && !hasFreshAnalysis && !hasStaleAnalysis && !hasFailedRun
+            const persistentError = analysisErrors[model.id] || (hasFailedRun ? (latestAnalysisRun?.error || '产物分析失败，请稍后重试') : null)
             return (
               <div key={model.id} className="panel p-4">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -364,11 +402,22 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
                     <Badge variant="muted" className="text-[10px]">
                       {artifactCount} 个文件
                     </Badge>
+                    {isAnalyzing && (
+                      <Badge variant="primary" className="text-[10px] gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" /> 分析中
+                      </Badge>
+                    )}
+                    {!isAnalyzing && isPendingAnalysis && (
+                      <Badge variant="muted" className="text-[10px]">待分析</Badge>
+                    )}
                     {hasFreshAnalysis && (
                       <Badge variant="success" className="text-[10px]">已预分析</Badge>
                     )}
                     {hasStaleAnalysis && (
                       <Badge variant="warn" className="text-[10px]">需重新分析</Badge>
+                    )}
+                    {hasFailedRun && !isAnalyzing && (
+                      <Badge variant="danger" className="text-[10px]">分析失败</Badge>
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -380,7 +429,20 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
                        loadingText="正在提交..."
                        disabled={artifactCount === 0 || isUploading || isAnalyzing}
                     >
-                      <Sparkles className="h-3 w-3" /> {isAnalyzing ? '后台分析中' : hasFreshAnalysis ? '重新分析' : '开始产物分析'}
+                      <Sparkles className="h-3 w-3" />
+                      {isAnalyzing
+                        ? '后台分析中'
+                        : artifactCount === 0
+                          ? '请先上传产物'
+                          : hasFailedRun
+                            ? '重新分析'
+                            : hasFreshAnalysis
+                              ? '重新分析'
+                              : isPendingAnalysis
+                                ? '开始产物分析'
+                                : hasStaleAnalysis
+                                  ? '重新分析'
+                                  : '开始产物分析'}
                     </Button>
                     <Button variant="subtle" size="sm" onClick={() => setSelectedModel(model.id)} title="如果模型输出是纯文本（如代码、Markdown），可直接粘贴而无需打包成文件">
                       <Plus className="h-3 w-3" /> 粘贴文本
@@ -406,6 +468,30 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
                     )}
                   </div>
                 </div>
+
+                {persistentError && (
+                  <div
+                    role="alert"
+                    aria-live="polite"
+                    className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-200 break-words"
+                    data-testid={`analysis-error-${model.id}`}
+                  >
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-300" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-red-100">产物分析失败</div>
+                      <div className="mt-0.5 text-red-200/90 leading-relaxed">{persistentError}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => clearAnalysisError(model.id)}
+                      className="flex-shrink-0 rounded p-1 text-red-200/80 hover:bg-red-500/15 hover:text-red-100"
+                      title="关闭错误提示（重新分析时会自动清除）"
+                      aria-label="关闭错误提示"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
 
                 {artifactCount > 0 ? (
                   <div className="space-y-1.5">
@@ -435,6 +521,12 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
                   </div>
                 )}
                 <ArtifactAnalysisTrace run={latestAnalysisRun} modelCode={model.modelCode} />
+                <ArtifactEvidenceChainPanel
+                  evidenceChainRaw={
+                    artifactAnalysis?.evidenceChain ?? null
+                  }
+                  modelCode={model.modelCode}
+                />
                 {latestAnalysisRun?.status === 'COMPLETED' && model.artifacts && model.artifacts.length > FILE_ANALYSIS_LIMIT && (
                   <div className="mt-2 text-[11px] text-gray-500 leading-relaxed px-1">
                     深度分析覆盖前 {FILE_ANALYSIS_LIMIT} 个主要文件，每文件约 {(FILE_ANALYSIS_CHAR_LIMIT / 1000).toFixed(0)}k 字符。其余文件已列入清单但未做逐文件深度分析。

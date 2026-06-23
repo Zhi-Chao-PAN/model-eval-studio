@@ -25,6 +25,10 @@ import {
   type ArtifactAnalysisArtifact,
 } from '@/lib/model-artifact-analysis'
 import {
+  buildEvidenceChainSummaryForReport,
+  loadEvidenceChainFromAnalysis,
+} from '@/lib/artifact-evidence-chain'
+import {
   ReportParseError,
   formatReportText,
   parseReportStrict,
@@ -481,6 +485,12 @@ export async function POST(
           // Phase 2: report generation (streaming)
           phase('generating_report', { modelCode: model.modelCode })
 
+          const evidenceChainSummary = buildEvidenceChainSummaryForReport(
+            loadEvidenceChainFromAnalysis(
+              parseStoredModelArtifactAnalysis(model.artifactAnalysisJson),
+            ),
+          )
+
           const prompt = buildReportPrompt({
             task,
             modelCode: model.modelCode,
@@ -492,6 +502,7 @@ export async function POST(
             verificationSummary,
             hasTrajectory: Boolean(processText?.trim()),
             taskType: task.requirementType || undefined,
+            evidenceChainSummary,
           })
 
           let reportText = ''
@@ -721,8 +732,9 @@ ${input.issues.map(issue => `- ${issue}`).join('\n')}
 - 每个评分模块都必须包含非空评论。
 - ${productInstruction}
 - ${trajectoryInstruction}
-- 全部使用第一人称“我”的测试者口吻，不要写给用户看的说明。
-- 只输出修复后的完整报告纯文本，不要 Markdown，不要解释修复过程。
+- 全部使用第一人称“我”的测试者口吻，不要使用“用户”“测试者”“测试人员”等任何第三人称称呼，也不要写“建议用户…”“提交到平台后请填写…”“你需要…”之类面向读者的话。
+- 不要改变已有评分、是否含产物效果截图、是否含轨迹的约束。
+- 只输出修复后的完整报告正文，不要解释修复过程，不要输出任何额外说明。
 
 必须使用以下固定标题：
 【产物效果反馈】

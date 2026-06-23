@@ -5,6 +5,19 @@ import {
   FileJson, MessageSquare,
 } from 'lucide-react'
 
+// NavBtn: kept at the top of the module so the nav section above can read it
+// without relying on function hoisting.
+function NavBtn({ children, variant = 'primary', ...rest }: any) {
+  const v = variant === 'ghost'
+    ? 'text-gray-300 hover:text-white hover:bg-white/[0.06]'
+    : 'bg-white text-black hover:bg-gray-100 shadow-[0_0_0_0.5px_rgba(255,255,255,0.2)]'
+  return (
+    <button {...rest} className={`inline-flex items-center justify-center gap-1.5 font-medium transition-colors disabled:opacity-40 h-8 px-3 text-xs rounded-lg ${v}`}>
+      {children}
+    </button>
+  )
+}
+
 const features = [
   {
     icon: BarChart3,
@@ -273,16 +286,5 @@ export default function Home() {
         </div>
       </footer>
     </div>
-  )
-}
-
-function NavBtn({ children, variant = 'primary', ...rest }: any) {
-  const v = variant === 'ghost'
-    ? 'text-gray-300 hover:text-white hover:bg-white/[0.06]'
-    : 'bg-white text-black hover:bg-gray-100 shadow-[0_0_0_0.5px_rgba(255,255,255,0.2)]'
-  return (
-    <button {...rest} className={`inline-flex items-center justify-center gap-1.5 font-medium transition-colors disabled:opacity-40 h-8 px-3 text-xs rounded-lg ${v}`}>
-      {children}
-    </button>
   )
 }
