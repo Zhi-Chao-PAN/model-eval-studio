@@ -570,7 +570,8 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
           <div>
             <h2 className="display text-xl sm:text-2xl tracking-tight">评估报告</h2>
             <p className="text-sm text-gray-400 mt-1 max-w-2xl">
-              基于本地验收截图与上传产物，输出产物效果反馈、交付效率、产物质量、综合评价与轨迹分析。
+              以「我是测试者本人」的视角，基于本地验收截图与上传产物，输出可一键粘贴到外部评测平台的 5 模块评估报告：
+              产物效果反馈、交付效率、产物质量、综合评价、轨迹分析。
             </p>
           </div>
         </div>
@@ -580,7 +581,11 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
           <Lightbulb className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="text-[12px] text-gray-400 leading-relaxed">
             <span className="text-gray-300 font-medium">操作指引：</span>
-            点击「生成评估报告」让 AI 基于已上传的截图和产物撰写完整评估报告。生成后你可以查看各模型排名、评分矩阵、优劣势分析。报告支持导出 ZIP 和 Markdown 格式，也可以通过分享链接共享给团队成员。
+            点击「生成评估报告」让 AI 基于已上传的截图和产物撰写完整评估报告。生成后你可以查看各模型排名、评分矩阵、优劣势分析。
+            报告模块使用第一人称「我」撰写，可通过顶部「复制 MD」一键复制 5 模块正文到外部评测平台。
+            <span className="block mt-1.5 text-cyan-200/80">
+              其中「产物效果反馈」必须基于测试者上传的本地验收截图；「轨迹分析」在未上传执行轨迹截图时将明确显示「未提供轨迹截图」。
+            </span>
           </div>
         </div>
 
