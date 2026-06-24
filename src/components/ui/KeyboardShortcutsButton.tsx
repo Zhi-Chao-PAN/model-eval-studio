@@ -1,7 +1,8 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Keyboard, X } from 'lucide-react'
 import { isTypingTarget } from '@/lib/keyboard-shortcuts'
+import { useFocusTrap } from './useFocusTrap'
 
 /**
  * 一条键盘快捷键的展示模型。
@@ -41,6 +42,19 @@ export function KeyboardShortcutsButton({
   buttonClassName,
 }: Props) {
   const [open, setOpen] = useState(false)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null)
+
+  // 锁焦点在浮层内：
+  // - 打开时记录 trigger 并把焦点放到「关闭按钮」（一个无害的默认目标）
+  // - Tab / Shift+Tab 在 panel 内循环
+  // - body 锁滚动
+  // - 关闭时还原焦点到打开前聚焦的元素（一般是 Keyboard 触发按钮）
+  useFocusTrap({
+    enabled: open,
+    containerRef: panelRef,
+    initialFocusRef: closeBtnRef,
+  })
 
   useEffect(() => {
     if (!bindToggleKey) return
@@ -80,13 +94,14 @@ export function KeyboardShortcutsButton({
           aria-modal="true"
           aria-label="键盘快捷键"
         >
-          <div className="panel w-full max-w-sm p-5 animate-rise" onClick={e => e.stopPropagation()}>
+          <div ref={panelRef} className="panel w-full max-w-sm p-5 animate-rise" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Keyboard className="h-4 w-4 text-indigo-300" />
                 <h3 className="font-medium">键盘快捷键</h3>
               </div>
               <button
+                ref={closeBtnRef}
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="关闭"
