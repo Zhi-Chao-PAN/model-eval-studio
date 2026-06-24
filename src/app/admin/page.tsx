@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { AdminHealthTab } from '@/components/admin/AdminHealthTab'
+import { HealthAlertBanner } from '@/components/admin/HealthAlertBanner'
 import { cn, formatRelativeTime } from '@/lib/utils'
 
 interface Invite {
@@ -314,6 +315,9 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6 animate-rise pb-12">
+      {/* === HEALTH ALERT BANNER (auto-polling 1h health) === */}
+      <HealthAlertBanner />
+
       {/* === HEADER === */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-start gap-3">
