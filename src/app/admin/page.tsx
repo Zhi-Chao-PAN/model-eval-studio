@@ -4,11 +4,12 @@ import {
   ShieldCheck, Users, Copy, Check, Loader2, KeyRound, Plus, Power,
   TrendingUp, Clock, UserCheck, UserPlus, Settings2, RefreshCw,
   Activity, Zap, AlertTriangle, ChevronDown, ChevronUp, Search,
-  Terminal, FileText, Bot, Eye,
+  Terminal, FileText, Bot, Eye, Gauge,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { AdminHealthTab } from '@/components/admin/AdminHealthTab'
 import { cn, formatRelativeTime } from '@/lib/utils'
 
 interface Invite {
@@ -59,7 +60,7 @@ interface AuditStats {
   from: string
 }
 
-type TabKey = 'invites' | 'users' | 'audit'
+type TabKey = 'invites' | 'users' | 'audit' | 'health'
 
 const ACTION_LABELS: Record<string, { label: string; color: string; icon: any }> = {
   LOGIN: { label: '登录', color: 'success', icon: UserCheck },
@@ -391,6 +392,18 @@ export default function AdminPage() {
         >
           <Activity className="h-3.5 w-3.5" />
           审计日志
+        </button>
+        <button
+          onClick={() => setTab('health')}
+          className={cn(
+            'inline-flex items-center gap-2 px-4 h-9 rounded-lg text-[13px] font-medium transition-all',
+            tab === 'health'
+              ? 'bg-white/[0.08] text-white shadow-sm'
+              : 'text-gray-400 hover:text-white',
+          )}
+        >
+          <Gauge className="h-3.5 w-3.5" />
+          健康监控
         </button>
       </div>
 
@@ -1058,6 +1071,9 @@ export default function AdminPage() {
           </div>
         </>
       )}
+
+      {/* === HEALTH TAB === */}
+      {tab === 'health' && <AdminHealthTab />}
     </div>
   )
 }
