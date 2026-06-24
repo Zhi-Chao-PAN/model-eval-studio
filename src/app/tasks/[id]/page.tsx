@@ -15,11 +15,17 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/toast'
+import { KeyboardShortcutsButton, type ShortcutItem } from '@/components/ui/KeyboardShortcutsButton'
 import { DesktopStepSidebar, MobileStepBar } from '@/components/tasks/StepSidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { SharePanel } from '@/components/tasks/SharePanel'
 import { filterConversationMessages } from '@/lib/task-messages'
 import { cn, formatRelativeTime } from '@/lib/utils'
+import {
+  consumeGPrefix,
+  isTypingTarget,
+  nextStepKey,
+} from '@/lib/keyboard-shortcuts'
 import {
   isAuthenticVerificationEvidence,
   parseVerificationEvidence,
@@ -272,6 +278,64 @@ export default function TaskPage() {
       setCurrentStep(previousStep)
     })
   }
+
+  // 详情页全局快捷键：
+  // - j / k        在 STEPS 里前后切换当前步骤（向前/向后）
+  // - g d          回到 dashboard
+  // - g s          打开设置
+  // `?` 与 Escape 由 KeyboardShortcutsButton 内部托管，避免重复绑定。
+  // 注意：`g` 是前缀键，1.5s 内的下一个字母才会被消费。
+  useEffect(() => {
+    let gPrefixAt: number | null = null
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (isTypingTarget(e.target)) return
+      // 单键：j / k 切换 step
+      if (e.key === 'j' || e.key === 'J') {
+        const next = nextStepKey(STEPS, currentStep, 1)
+        if (next) { e.preventDefault(); goToStep(next) }
+        return
+      }
+      if (e.key === 'k' || e.key === 'K') {
+        const next = nextStepKey(STEPS, currentStep, -1)
+        if (next) { e.preventDefault(); goToStep(next) }
+        return
+      }
+      // g 前缀双键
+      const r = consumeGPrefix(e, gPrefixAt)
+      if (r.isPrefixStart) {
+        gPrefixAt = r.nextPrefixAt
+        return
+      }
+      if (r.matched === 'd') {
+        e.preventDefault()
+        gPrefixAt = null
+        router.push('/dashboard')
+        return
+      }
+      if (r.matched === 's') {
+        e.preventDefault()
+        gPrefixAt = null
+        router.push('/settings')
+        return
+      }
+      // 其它键不消费 prefix，但 prefix 已超时由 consumeGPrefix 自己判定
+      if (r.matched) gPrefixAt = null
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep])
+
+  // 共享浮层要展示的快捷键清单。和上面 handler 严格对齐。
+  const SHORTCUTS: ShortcutItem[] = [
+    { keys: ['J'], label: '下一步骤' },
+    { keys: ['K'], label: '上一步骤' },
+    { keys: ['G', 'D'], label: '回到工作台' },
+    { keys: ['G', 'S'], label: '打开设置' },
+    { keys: ['?'], label: '显示/隐藏此面板' },
+    { keys: ['Esc'], label: '关闭弹层' },
+  ]
 
   async function handleChatSend() {
     if (!chatInput.trim() || streaming) return
@@ -592,6 +656,7 @@ export default function TaskPage() {
               </div>
             )}
           </div>
+          <KeyboardShortcutsButton shortcuts={SHORTCUTS} />
           <Button variant="secondary" size="sm" onClick={handleDuplicate} disabled={duplicating} title="复制任务">
             {duplicating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline ml-1.5">复制</span>

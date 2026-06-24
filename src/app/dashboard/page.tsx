@@ -5,13 +5,15 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, FlaskConical, FileText, Image as ImageIcon, Wand2,
   Package, FileCheck2, Loader2, ArrowRight, Trash2, Copy,
-  AlertTriangle, RefreshCw, Lightbulb, Code2, Bot, Check, Keyboard, X,
+  AlertTriangle, RefreshCw, Lightbulb, Code2, Bot, Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { KeyboardShortcutsButton, type ShortcutItem } from '@/components/ui/KeyboardShortcutsButton'
 import { toast } from '@/components/ui/toast'
+import { isTypingTarget } from '@/lib/keyboard-shortcuts'
 import { cn, formatRelativeTime } from '@/lib/utils'
 
 interface Task {
@@ -62,7 +64,15 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'mine' | 'shared'>('mine')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
-  const [showShortcuts, setShowShortcuts] = useState(false)
+
+  // 静态：本页要展示给共享浮层的快捷键清单。
+  // `?` 与 Escape 由 KeyboardShortcutsButton 自身托管；这里只列展示项。
+  const SHORTCUTS: ShortcutItem[] = [
+    { keys: ['/'], label: '聚焦搜索框' },
+    { keys: ['N'], label: '新建任务' },
+    { keys: ['?'], label: '显示/隐藏此面板' },
+    { keys: ['Esc'], label: '关闭弹层' },
+  ]
 
   async function loadTasks() {
     setLoadError(null)
@@ -87,38 +97,30 @@ export default function DashboardPage() {
   // Keyboard shortcut: press '/' to focus search (when not in an input)
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const active = document.activeElement as HTMLElement | null
-        if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return
-        if (active && active.isContentEditable) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (isTypingTarget(e.target)) {
+        // 用户在输入框里 — 只允许 Escape 走下面的逻辑（输入框里的 Escape 由各自处理）。
+        return
+      }
+      if (e.key === '/') {
         e.preventDefault()
         searchInputRef.current?.focus()
         searchInputRef.current?.select()
+        return
       }
-      // 'N' key to open new task dialog (Shift+N also works)
-      if ((e.key === 'n' || e.key === 'N') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        const active = document.activeElement as HTMLElement | null
-        if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return
-        if (active && active.isContentEditable) return
+      // 'N' / Shift+N to open new task dialog
+      if ((e.key === 'n' || e.key === 'N') && !e.shiftKey) {
         e.preventDefault()
         setShowNew(true)
-      }
-      // '?' opens the keyboard shortcut sheet (Shift+Slash on US layouts)
-      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const active = document.activeElement as HTMLElement | null
-        if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return
-        if (active && active.isContentEditable) return
-        e.preventDefault()
-        setShowShortcuts(v => !v)
+        return
       }
       if (e.key === 'Escape') {
         if (showNew) setShowNew(false)
-        if (showShortcuts) setShowShortcuts(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [showNew, showShortcuts])
+  }, [showNew])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -200,14 +202,7 @@ export default function DashboardPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
             <Input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索任务... （按 / 聚焦）" aria-label="搜索任务" className="pl-8 w-56" />
           </div>
-          <button
-            onClick={() => setShowShortcuts(v => !v)}
-            title="键盘快捷键（按 ?）"
-            aria-label="键盘快捷键"
-            className="h-9 w-9 rounded-lg border border-white/10 bg-white/[0.03] text-gray-400 hover:text-white hover:bg-white/[0.08] flex items-center justify-center transition-colors"
-          >
-            <Keyboard className="h-4 w-4" />
-          </button>
+          <KeyboardShortcutsButton shortcuts={SHORTCUTS} />
           <Button onClick={() => setShowNew(v => !v)}>
             <Plus className="h-3.5 w-3.5" /> 新建任务
           </Button>
@@ -402,46 +397,6 @@ export default function DashboardPage() {
         onConfirm={confirmDeleteTask}
         onCancel={() => setConfirmDelete(null)}
       />
-
-      {/* Keyboard shortcut sheet */}
-      {showShortcuts && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}>
-          <div className="panel w-full max-w-sm p-5 animate-rise" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Keyboard className="h-4 w-4 text-indigo-300" />
-                <h3 className="font-medium">键盘快捷键</h3>
-              </div>
-              <button
-                onClick={() => setShowShortcuts(false)}
-                aria-label="关闭"
-                className="p-1.5 rounded-md hover:bg-white/5 text-gray-500 hover:text-gray-300"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <ul className="space-y-2.5 text-sm">
-              <li className="flex items-center justify-between">
-                <span className="text-gray-300">聚焦搜索框</span>
-                <kbd className="px-1.5 h-6 inline-flex items-center rounded border border-white/15 bg-white/[0.04] text-[11px] font-mono text-gray-200">/</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-gray-300">新建任务</span>
-                <kbd className="px-1.5 h-6 inline-flex items-center rounded border border-white/15 bg-white/[0.04] text-[11px] font-mono text-gray-200">N</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-gray-300">显示/隐藏此面板</span>
-                <kbd className="px-1.5 h-6 inline-flex items-center rounded border border-white/15 bg-white/[0.04] text-[11px] font-mono text-gray-200">?</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-gray-300">关闭弹层</span>
-                <kbd className="px-1.5 h-6 inline-flex items-center rounded border border-white/15 bg-white/[0.04] text-[11px] font-mono text-gray-200">Esc</kbd>
-              </li>
-            </ul>
-            <p className="text-[11px] text-gray-500 mt-4">提示：在输入框里按这些键不会触发。</p>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

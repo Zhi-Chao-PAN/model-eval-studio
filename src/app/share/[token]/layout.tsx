@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { SkipLink } from '@/components/ui/SkipLink'
 
 export const metadata: Metadata = {
   title: '分享的评测',
@@ -9,7 +10,8 @@ export const metadata: Metadata = {
 export default function ShareLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col bg-[#07070b]">
-      <main className="flex-1 container-page py-8">{children}</main>
+      <SkipLink />
+      <main id="main-content" className="flex-1 container-page py-8">{children}</main>
     </div>
   )
 }
