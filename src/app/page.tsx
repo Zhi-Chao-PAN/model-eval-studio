@@ -4,6 +4,7 @@ import {
   ArrowRight, ChevronDown, BarChart3, Users, Shield,
   FileJson, MessageSquare,
 } from 'lucide-react'
+import { SkipLink } from '@/components/ui/SkipLink'
 
 // NavBtn: kept at the top of the module so the nav section above can read it
 // without relying on function hoisting.
@@ -83,6 +84,7 @@ const faqs = [
 export default function Home() {
   return (
     <div className="relative min-h-screen overflow-hidden">
+      <SkipLink />
       <div className="pointer-events-none absolute inset-0 -z-0">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 h-[600px] w-[1000px] rounded-full blur-[140px] bg-gradient-to-r from-indigo-600/30 via-violet-600/20 to-fuchsia-600/20" />
         <div className="absolute bottom-0 right-0 h-[400px] w-[600px] rounded-full blur-[120px] bg-cyan-500/10" />
@@ -102,7 +104,7 @@ export default function Home() {
         </div>
       </nav>
 
-      <main className="container-page relative z-10 pt-16 sm:pt-28 pb-24">
+      <main id="main-content" className="container-page relative z-10 pt-16 sm:pt-28 pb-24">
         <div className="max-w-4xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-3 h-7 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-sm text-[11px] font-medium text-gray-300 mb-8 animate-rise">
             <Sparkles className="h-3 w-3 text-indigo-400" />
