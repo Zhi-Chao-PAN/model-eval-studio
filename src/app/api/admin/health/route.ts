@@ -45,13 +45,17 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const rangeParam = searchParams.get('range') || 'today'
+    const windowParam = searchParams.get('window') // 1h | 24h | 7d | 30d
     const range: 'today' | '7d' | '30d' =
       rangeParam === '7d' || rangeParam === '30d' ? rangeParam : 'today'
 
     const now = new Date()
     const to = now
     let from: Date
-    if (range === 'today') {
+    if (windowParam === '1h') {
+      // 1h 用于健康预警；不受 range 参数影响
+      from = new Date(now.getTime() - 60 * 60 * 1000)
+    } else if (range === 'today') {
       from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
     } else if (range === '7d') {
       from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -84,7 +88,11 @@ export async function GET(request: NextRequest) {
 
     const summary = buildHealthSummary(aggregatorInput, from, to, 10)
 
-    return NextResponse.json({ range, summary })
+    return NextResponse.json({
+      range,
+      window: windowParam === '1h' ? '1h' : '24h-or-range',
+      summary,
+    })
   } catch (err) {
     const { message } = safeServerError(err, 'admin-health')
     return NextResponse.json({ error: message }, { status: 500 })
