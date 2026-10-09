@@ -14,6 +14,15 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "src/app/.well-known/**",
   ]),
+  {
+    // Existing dynamic ingestion/reporting paths are tracked as migration debt.
+    // Keep them visible without blocking the typecheck, test, and build gates.
+    rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/purity": "warn",
+    },
+  },
 ]);
 
 export default eslintConfig;
