@@ -1,3 +1,4 @@
+import { createVersionedReport, createReportRevision } from '@/lib/report-versioning'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
@@ -60,6 +61,7 @@ type ReportArtifact = ArtifactAnalysisArtifact & {
 }
 
 type LatestModelReport = ReportTextLike & {
+  id: string
   verificationScreenshotUrls?: string | null
   verificationSummary?: string | null
 }
@@ -268,12 +270,14 @@ export async function POST(
           phase('saving')
           const parsed = validated.parsed
           const fields = clampReportFields(parsed, verificationSummary)
-          const report = await prisma.modelReport.create({
-            data: {
-              taskModelId: modelId,
-              verificationScreenshotUrls,
-              ...fields,
-            },
+          const report = await createReportRevision({
+            taskModelId: modelId,
+            parentReportId: current.id,
+            source: 'AI_ADJUSTED',
+            editedById: session.userId,
+            editNote: adjustInstruction,
+            verificationScreenshotUrls,
+            ...fields,
           })
           await prisma.task.update({ where: { id }, data: { currentStep: 'REPORT' } })
 
@@ -549,12 +553,11 @@ export async function POST(
           phase('saving')
           const parsed = validated.parsed
           const fields = clampReportFields(parsed, verificationSummary)
-          const report = await prisma.modelReport.create({
-            data: {
-              taskModelId: modelId,
-              verificationScreenshotUrls,
-              ...fields,
-            },
+          const report = await createVersionedReport({
+            taskModelId: modelId,
+            source: 'AI_GENERATED',
+            verificationScreenshotUrls,
+            ...fields,
           })
           await prisma.task.update({ where: { id }, data: { currentStep: 'REPORT' } })
 

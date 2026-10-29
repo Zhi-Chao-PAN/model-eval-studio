@@ -6,7 +6,7 @@ import {
   serializeVerificationEvidence,
   validateVerificationEvidence,
 } from '@/lib/verification-evidence'
-import { getNextReportVersion } from '@/lib/report-versioning'
+import { createVersionedReport } from '@/lib/report-versioning'
 import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { clampDbText, clampRequiredText, DB_TEXT_LIMITS, isValidCuid } from '@/lib/utils'
 import { validateScores } from '@/lib/score-validation'
@@ -135,25 +135,20 @@ export async function POST(
     const scoreErr = validateScores({ overallScore, efficiencyScore, qualityScore }, { required: true })
     if (scoreErr) return NextResponse.json({ error: scoreErr }, { status: 400 })
 
-    const version = await getNextReportVersion(modelId)
-
-    const report = await prisma.modelReport.create({
-      data: {
-        taskModelId: modelId,
-        version,
-        source: 'MANUAL',
-        editedById: session.userId,
-        productFeedback: clampRequiredText(pfText, DB_TEXT_LIMITS.COMMENT),
-        verificationScreenshotUrls: storedEvidence,
-        verificationSummary: clampDbText(vsText, DB_TEXT_LIMITS.VERIFICATION),
-        overallScore: Number(overallScore),
-        overallComment: clampRequiredText(ocText, DB_TEXT_LIMITS.COMMENT),
-        efficiencyScore: Number(efficiencyScore),
-        efficiencyComment: clampRequiredText(ecText, DB_TEXT_LIMITS.COMMENT),
-        qualityScore: Number(qualityScore),
-        qualityComment: clampRequiredText(qcText, DB_TEXT_LIMITS.COMMENT),
-        trajectoryAnalysis: clampDbText(taText || '未提供轨迹截图。', DB_TEXT_LIMITS.ANALYSIS),
-      },
+    const report = await createVersionedReport({
+      taskModelId: modelId,
+      source: 'MANUAL',
+      editedById: session.userId,
+      productFeedback: clampRequiredText(pfText, DB_TEXT_LIMITS.COMMENT),
+      verificationScreenshotUrls: storedEvidence,
+      verificationSummary: clampDbText(vsText, DB_TEXT_LIMITS.VERIFICATION),
+      overallScore: Number(overallScore),
+      overallComment: clampRequiredText(ocText, DB_TEXT_LIMITS.COMMENT),
+      efficiencyScore: Number(efficiencyScore),
+      efficiencyComment: clampRequiredText(ecText, DB_TEXT_LIMITS.COMMENT),
+      qualityScore: Number(qualityScore),
+      qualityComment: clampRequiredText(qcText, DB_TEXT_LIMITS.COMMENT),
+      trajectoryAnalysis: clampDbText(taText || '未提供轨迹截图。', DB_TEXT_LIMITS.ANALYSIS),
     })
 
     return NextResponse.json({ report })

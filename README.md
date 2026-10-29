@@ -22,8 +22,8 @@ AI 驱动的多模型对比评估工具。上传任务要求和多个模型的�
 - 🧩 **AI Prompt 动态适配**：生成报告时会基于当前任务的 rubric 动态拼装指导文本
 
 ### 报告版本与人工修订
-- 📜 **版本链**：每次 AI 生成或人工修订都会生成新版本，版本号单调递增
-- ✍️ **人工修订**：查看者可基于任一版本创建人工修订版（评分、评论、轨迹、说明均可修改）
+- 📜 **版本链**：AI 生成、流式生成、AI 调整和人工修订共用原子保存入口；数据库按模型锁定版本分配，并发保存不会复用版本号
+- ✍️ **人工修订**：有编辑权限的用户可基于任一版本创建人工修订版（评分、评论、轨迹、说明均可修改）
 - 📷 **生成依据快照**：每个版本记录生成时的 AI 模型、token 用量、产物签名、过程文本哈希、耗时等元信息，便于审计复现
 - 🔀 **修订关系**：parentReportId 形成修订链，版本历史面板可浏览/切换任意历史版本
 
@@ -112,9 +112,24 @@ pnpm test
 
 项目使用 Node 原生 `node:test` 运行器（`tsx` 直接跑 TS），无需 Jest/Vitest。新增测试放在 `src/lib/*.test.ts`。
 
+### PostgreSQL 并发回归
+
+`pnpm test:database` 使用真实 PostgreSQL，覆盖并发首次生成、并发修订、父版本归属和失败事务回滚。仅允许显式设置的本地 `modeleval_test_*` 数据库；不读取生产数据库作为默认目标。测试只清理自己创建的随机用户及其级联数据。
+
+先创建一个专用测试库，再执行以下命令（替换本地测试凭据）：
+
+```bash
+export TEST_DATABASE_URL='postgresql://ci:ci@localhost:5432/modeleval_test_local'
+DATABASE_URL="$TEST_DATABASE_URL" DIRECT_URL="$TEST_DATABASE_URL" pnpm prisma db push --skip-generate
+pnpm test:database
+```
+
+CI 自动创建 PostgreSQL 16 服务并运行这组回归。纯函数测试仍使用 `pnpm test`，不依赖数据库或付费模型。
+
 ### 7. 代码检查 & 构建
 
 ```bash
+pnpm typecheck
 pnpm lint     # ESLint
 pnpm build    # Next.js 生产构建（会自动在 VERCEL_ENV=production 时跑 prisma migrate deploy）
 ```
