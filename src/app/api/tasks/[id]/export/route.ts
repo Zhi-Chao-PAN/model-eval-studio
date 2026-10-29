@@ -1,3 +1,4 @@
+import type { Task, TaskModel, ModelReport } from '@prisma/client'
 import { NextResponse } from 'next/server'
 import JSZip from 'jszip'
 import { prisma } from '@/lib/prisma'
@@ -10,15 +11,19 @@ import { isValidCuid } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
+type ExportReport = Pick<ModelReport, 'id' | 'createdAt' | 'productFeedback' | 'verificationSummary' | 'efficiencyScore' | 'efficiencyComment' | 'qualityScore' | 'qualityComment' | 'overallScore' | 'overallComment' | 'trajectoryAnalysis'>
+type ExportTask = Pick<Task, 'id' | 'title' | 'description' | 'requirementType' | 'status' | 'currentStep' | 'createdAt' | 'updatedAt'> & { models: (Pick<TaskModel, 'id' | 'modelCode' | 'displayName' | 'hardMetricsJson'> & { reports: ExportReport[] })[] }
+type SubmissionTask = { models?: { modelCode: string; displayName?: string | null; reports?: (Partial<Omit<ModelReport, 'createdAt' | 'updatedAt' | 'productFeedback'>> & { productFeedback?: string | null })[] }[] }
+
 type ExportFormat = 'zip' | 'json' | 'csv' | 'md' | 'submission-md'
 
-function formatIntegerScore(score: number): string {
+function formatIntegerScore(score: number | null | undefined): string {
   const value = Number(score)
   if (!Number.isFinite(value) || value <= 0) return '-'
   return String(Math.min(10, Math.max(1, Math.round(value))))
 }
 
-function formatHalfScore(score: number): string {
+function formatHalfScore(score: number | null | undefined): string {
   const value = Number(score)
   if (!Number.isFinite(value) || value <= 0) return '-'
   const normalized = Math.min(10, Math.max(1, Math.round(value * 2) / 2))
@@ -48,7 +53,7 @@ function resolveFormat(searchParams: URLSearchParams): ExportFormat {
  * overview table, generationSnapshot, verificationSummary, system notes,
  * debug info, and any raw model "think" content.
  */
-export function buildSubmissionMarkdownPayload(task: any): string {
+export function buildSubmissionMarkdownPayload<T extends SubmissionTask>(task: T): string {
   const lines: string[] = []
   for (const model of task.models || []) {
     const report = model.reports?.[0]
@@ -105,7 +110,7 @@ export const SUBMISSION_SECTION_TITLES = {
 export const MISSING_PRODUCT_FEEDBACK = '未上传产物效果截图，暂无法填写产物效果反馈。'
 export const MISSING_TRAJECTORY_PLACEHOLDER = '未提供轨迹截图。'
 
-function buildReportText(modelCode: string, report: any): string {
+function buildReportText(modelCode: string, report: ExportReport): string {
   return `====================================
 评估对象：${modelCode}
 ====================================
@@ -140,7 +145,7 @@ ${report.trajectoryAnalysis || '未提供轨迹截图。'}
 /**
  * 构建完整 JSON 导出结构：任务信息 + 所有模型 + 最新报告 + 硬指标
  */
-function buildJsonPayload(task: any) {
+function buildJsonPayload(task: ExportTask) {
   return {
     task: {
       id: task.id,
@@ -153,7 +158,7 @@ function buildJsonPayload(task: any) {
       updatedAt: task.updatedAt,
     },
     exportedAt: new Date().toISOString(),
-    models: task.models.map((model: any) => {
+    models: task.models.map((model) => {
       const report = model.reports?.[0] || null
       return {
         id: model.id,
@@ -178,14 +183,14 @@ function buildJsonPayload(task: any) {
   }
 }
 
-function safeJsonParse(text: string): any {
+function safeJsonParse(text: string): unknown {
   try { return JSON.parse(text) } catch { return null }
 }
 
 /**
  * 构建 CSV 横向对比表：每个模型一行，包含各项评分和关键信息
  */
-function buildCsvPayload(task: any): string {
+function buildCsvPayload(task: ExportTask): string {
   const headers = [
     '模型编码',
     '显示名称',
@@ -200,7 +205,7 @@ function buildCsvPayload(task: any): string {
     '报告生成时间',
   ]
 
-  const rows = task.models.map((model: any) => {
+  const rows = task.models.map((model) => {
     const report = model.reports?.[0] || null
     return [
       model.modelCode || '',
@@ -220,7 +225,7 @@ function buildCsvPayload(task: any): string {
   return [headers.map(csvEscape).join(','), ...rows.map((r: string[]) => r.join(','))].join('\n')
 }
 
-function csvEscape(value: string): string {
+function csvEscape(value: unknown): string {
   if (value == null) return ''
   const str = String(value)
   if (/[",\n\r]/.test(str)) {
@@ -232,7 +237,7 @@ function csvEscape(value: string): string {
 /**
  * Build a markdown report document: title, summary table, per-model detailed analysis.
  */
-function buildMarkdownPayload(task: any): string {
+function buildMarkdownPayload(task: ExportTask): string {
   const lines: string[] = []
   lines.push(`# ${task.title}`)
   lines.push('')
@@ -462,7 +467,7 @@ export async function GET(
   const buffer = await zip.generateAsync({ type: 'uint8array' })
 
   auditStatus = 'success'
-  return new NextResponse(buffer as any, {
+  return new NextResponse(new Uint8Array(buffer), {
     headers: {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${baseFilename}.zip"`,

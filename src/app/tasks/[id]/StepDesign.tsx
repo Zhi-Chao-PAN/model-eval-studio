@@ -1,4 +1,6 @@
 'use client'
+import type { TaskView } from '@/lib/task-types'
+import { errorMessage } from '@/lib/api-error'
 import { useState, useEffect, useRef } from 'react'
 import {
   Wand2, Sparkles, Square, AlertCircle, Check, ArrowRight,
@@ -12,12 +14,14 @@ import { ThinkBlock } from '@/components/MarkdownView'
 import { toast } from '@/components/ui/toast'
 import { parseDesignOutput } from '@/lib/design-output'
 
+interface StarterProject { projectName: string; files: { path: string; content: string }[]; readme?: string }
+interface DesignEvent { text?: string; message?: string; prompt?: string; background?: string; thinking?: string; full?: string; starter?: StarterProject }
 type TaskType = 'CODING' | 'AGENT'
 type Phase = 'idle' | 'connecting' | 'streaming' | 'done' | 'error'
 
 interface Props {
-  task: any
-  onUpdate: (data: any) => void
+  task: TaskView
+  onUpdate: (data: Partial<TaskView>) => void
   onGoToInfo: () => void
 }
 
@@ -28,17 +32,16 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
       : null,
   )
   const [userIdea, setUserIdea] = useState('')
-  const [generatedPrompt, setGeneratedPrompt] = useState('')
-  const [generatedBackground, setGeneratedBackground] = useState('')
+  const [generatedPrompt, setGeneratedPrompt] = useState(task.description || '')
+  const [generatedBackground, setGeneratedBackground] = useState(task.backgroundUsed || '')
   const [promptThinking, setPromptThinking] = useState('')
   const [promptPhase, setPromptPhase] = useState<Phase>('idle')
   const [promptError, setPromptError] = useState<string | null>(null)
   const [adjustMode, setAdjustMode] = useState(false)
   const [adjustText, setAdjustText] = useState('')
-  const [showStarter, setShowStarter] = useState(false)
   const [starterPhase, setStarterPhase] = useState<Phase>('idle')
   const [starterError, setStarterError] = useState<string | null>(null)
-  const [starterData, setStarterData] = useState<any>(null)
+  const [starterData, setStarterData] = useState<StarterProject | null>(null)
   const [complexity, setComplexity] = useState<'low' | 'medium' | 'high'>('medium')
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -50,15 +53,6 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
     promptAbortRef.current?.abort()
   }, [])
 
-  // 如果任务已有 description，预填
-  useEffect(() => {
-    if (task.description && !generatedPrompt) {
-      setGeneratedPrompt(task.description)
-    }
-    if (task.backgroundUsed && !generatedBackground) {
-      setGeneratedBackground(task.backgroundUsed)
-    }
-  }, [task.description, task.backgroundUsed])
 
   async function generatePrompt() {
     if (!taskType) return
@@ -70,7 +64,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
     promptAbortRef.current = controller
 
     try {
-      const body: any = { taskType }
+      const body: Record<string, string> = { taskType }
       if (adjustMode) {
         body.adjustInstruction = adjustText.trim()
         body.currentPrompt = generatedPrompt
@@ -111,7 +105,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
             else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
           }
           if (!dataLine) continue
-          let payload: any
+          let payload: DesignEvent
           try { payload = JSON.parse(dataLine) } catch { continue }
           if (eventName === 'delta' && payload.text) {
             acc += payload.text
@@ -137,11 +131,11 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
       if (!completed) {
         setPromptPhase('done')
       }
-    } catch (e: any) {
-      if (e.name === 'AbortError') {
+    } catch (e) {
+      if ((e instanceof Error ? e.name : undefined) === 'AbortError') {
         setPromptPhase(generatedPrompt ? 'done' : 'idle')
       } else {
-        setPromptError(e.message || String(e))
+        setPromptError(errorMessage(e) || String(e))
         setPromptPhase('error')
       }
     } finally {
@@ -214,23 +208,23 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
             else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
           }
           if (!dataLine) continue
-          let payload: any
+          let payload: DesignEvent
           try { payload = JSON.parse(dataLine) } catch { continue }
           if (eventName === 'error') {
             throw new Error(payload.message || '生成出错')
           } else if (eventName === 'done') {
             completed = true
-            setStarterData(payload.starter)
+            setStarterData(payload.starter ?? null)
             setStarterPhase('done')
           }
         }
       }
       if (!completed) setStarterPhase('error')
-    } catch (e: any) {
-      if (e.name === 'AbortError') {
+    } catch (e) {
+      if ((e instanceof Error ? e.name : undefined) === 'AbortError') {
         setStarterPhase(starterData ? 'done' : 'idle')
       } else {
-        setStarterError(e.message || String(e))
+        setStarterError(errorMessage(e) || String(e))
         setStarterPhase('error')
       }
     } finally {
@@ -261,8 +255,8 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
       a.download = `${projectName}.zip`
       a.click()
       URL.revokeObjectURL(url)
-    } catch (e: any) {
-      toast.error('下载起始代码包失败：' + (e?.message || '请稍后重试'))
+    } catch (e) {
+      toast.error('下载起始代码包失败：' + (errorMessage(e) || '请稍后重试'))
     }
   }
 
@@ -285,8 +279,8 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
         onUpdate(data.task)
         onGoToInfo()
       }
-    } catch (e: any) {
-      setPromptError(e.message || String(e))
+    } catch (e) {
+      setPromptError(errorMessage(e) || String(e))
     }
   }
 
@@ -553,7 +547,7 @@ export default function StepDesign({ task, onUpdate, onGoToInfo }: Props) {
                 <div className="flex items-center gap-2">
                   <select
                     value={complexity}
-                    onChange={e => setComplexity(e.target.value as any)}
+                    onChange={e => setComplexity(e.target.value === 'low' ? 'low' : e.target.value === 'high' ? 'high' : 'medium')}
                     className="text-xs bg-white/[0.05] border border-white/[0.1] rounded-md px-2 py-1 text-gray-300 focus:outline-none"
                     disabled={isStarterWorking}
                   >

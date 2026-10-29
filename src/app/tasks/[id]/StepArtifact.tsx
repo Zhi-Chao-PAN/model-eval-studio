@@ -1,5 +1,7 @@
 'use client'
 
+import type { TaskView } from '@/lib/task-types'
+import { errorMessage } from '@/lib/api-error'
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle2, FileText, Package,
@@ -20,7 +22,7 @@ import { ArtifactAnalysisTrace } from '@/components/tasks/ArtifactAnalysisTrace'
 import { ArtifactEvidenceChainPanel } from '@/components/tasks/ArtifactEvidenceChainPanel'
 
 interface Props {
-  task: any
+  task: TaskView
   onRefresh: () => void
   onNext?: () => void
   onPrev?: () => void
@@ -46,7 +48,7 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const noteTimerRef = useRef<number | null>(null)
   const models = task.models || []
-  const hasRunningAnalysis = models.some((model: any) => {
+  const hasRunningAnalysis = models.some((model) => {
     const status = model.artifactAnalysisRuns?.[0]?.status
     return status === 'QUEUED' || status === 'RUNNING'
   })
@@ -204,8 +206,8 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
             : '已提交后台产物分析，拆解轨迹会自动更新。有验证截图的模型将自动生成评估报告。',
       )
       onRefresh()
-    } catch (err: any) {
-      const message = clampAnalysisError(err?.message || '网络异常，请稍后重试')
+    } catch (err) {
+      const message = clampAnalysisError(errorMessage(err) || '网络异常，请稍后重试')
       setAnalysisErrors(prev => ({ ...prev, [modelId]: message }))
       showNote('err', (options.automatic ? '自动预分析' : '预分析') + '失败：' + message)
     } finally {
@@ -231,7 +233,7 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
     )]
     if (inputCodes.length === 0) return
 
-    const existingCodes = new Set(models.map((model: any) => model.modelCode.toUpperCase()))
+    const existingCodes = new Set(models.map((model) => model.modelCode.toUpperCase()))
     const codes = inputCodes.filter(code => !existingCodes.has(code))
     const skipped = inputCodes.filter(code => existingCodes.has(code))
 
@@ -371,7 +373,7 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
         </div>
       ) : (
         <div className="grid gap-3">
-          {models.map((model: any) => {
+          {models.map((model) => {
             const artifactCount = model.artifacts?.length || 0
             const isUploading = uploadingModelId === model.id
             const latestAnalysisRun = model.artifactAnalysisRuns?.[0] || null
@@ -495,7 +497,7 @@ export default function StepArtifact({ task, onRefresh, onNext, onPrev }: Props)
 
                 {artifactCount > 0 ? (
                   <div className="space-y-1.5">
-                    {model.artifacts.map((artifact: any) => (
+                    {model.artifacts.map((artifact) => (
                       <div key={artifact.id} className="flex items-center justify-between text-[13px] bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.05] px-3 py-2 rounded-lg group transition-colors">
                         <div className="flex items-center gap-2 min-w-0">
                           <FileText className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />

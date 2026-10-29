@@ -17,7 +17,7 @@ type AnalysisEvent = {
   status: string
   label: string
   detail?: string | null
-  metadata?: Record<string, unknown> | null
+  metadata?: unknown
   createdAt: string
 }
 
@@ -121,7 +121,7 @@ export function ArtifactAnalysisTrace({ run, modelCode }: ArtifactAnalysisTraceP
                   {formatEventTime(event.createdAt)}
                 </time>
               </div>
-              {(event.detail || event.metadata) && (
+              {Boolean(event.detail || event.metadata) && (
                 <details className="group mt-1.5 text-[12px]">
                   <summary className="flex cursor-pointer list-none items-center gap-1 text-gray-500 hover:text-gray-300">
                     <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
@@ -129,7 +129,7 @@ export function ArtifactAnalysisTrace({ run, modelCode }: ArtifactAnalysisTraceP
                   </summary>
                   <div className="mt-2 border-l border-indigo-400/30 pl-3 text-gray-400 leading-5 whitespace-pre-wrap break-words">
                     {event.detail}
-                    {event.metadata && (
+                    {Boolean(event.metadata) && (
                       <Metadata metadata={event.metadata} />
                     )}
                   </div>
@@ -150,7 +150,8 @@ export function ArtifactAnalysisTrace({ run, modelCode }: ArtifactAnalysisTraceP
   )
 }
 
-function Metadata({ metadata }: { metadata: Record<string, unknown> }) {
+function Metadata({ metadata }: { metadata: unknown }) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null
   const items = Object.entries(metadata).filter(([, value]) => value !== null && value !== undefined && value !== '')
   if (items.length === 0) return null
 

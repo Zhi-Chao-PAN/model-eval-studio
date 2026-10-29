@@ -1,4 +1,5 @@
 'use client'
+import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
@@ -39,7 +40,7 @@ export function Topbar({ user }: Props) {
     }
   }, [menuOpen, mobileOpen])
 
-  const navItems: Array<{ href: string; label: string; icon: any }> = [
+  const navItems: Array<{ href: string; label: string; icon: LucideIcon }> = [
     { href: '/dashboard', label: '工作台', icon: LayoutDashboard },
     { href: '/settings', label: '设置', icon: Settings },
   ]

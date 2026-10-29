@@ -1,4 +1,5 @@
 'use client'
+import { errorMessage } from '@/lib/api-error'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -50,13 +51,13 @@ export default function RegisterPage() {
       })
       // Safely parse JSON to avoid SyntaxError if server returns HTML error page
       const text = await res.text()
-      let data: any = {}
+      let data: { error?: string; ok?: boolean } = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
       if (!res.ok) throw new Error(data.error || '注册失败，请稍后重试')
       router.push('/settings?welcome=1')
       router.refresh()
-    } catch (e: any) {
-      setError(e.message || '注册失败，请稍后重试')
+    } catch (e) {
+      setError(errorMessage(e) || '注册失败，请稍后重试')
     } finally {
       setSubmitting(false)
     }

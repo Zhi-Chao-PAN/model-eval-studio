@@ -1,3 +1,4 @@
+import type { PromptTask, PromptModel } from '@/lib/task-types'
 export function buildSystemPrompt(userBackground: string): string {
   return `你是一名专业的大模型能力评测分析师。你将协助用户对多个大模型在同一任务下的表现进行深度对比评估。
 
@@ -205,11 +206,11 @@ export function buildDashboardAnalysisPrompt(): string {
 - 只输出 JSON，不要额外解释。`.trim()
 }
 
-export function buildArtifactAnalysisPrompt(task: any, models: any[]): string {
+export function buildArtifactAnalysisPrompt(task: PromptTask, models: PromptModel[]): string {
   const modelDescriptions = models.map((model, index) => {
     const artifacts = model.artifacts || []
     const artifactText = artifacts
-      .map((artifact: any) => `文件：${artifact.name}\n内容：\n${artifact.parsedText || artifact.textContent || '[二进制文件，无法直接展示文本]'}`)
+      .map((artifact) => `文件：${artifact.name}\n内容：\n${artifact.parsedText || artifact.textContent || '[二进制文件，无法直接展示文本]'}`)
       .join('\n\n')
 
     return `模型 ${index + 1}：${model.modelCode}
@@ -237,9 +238,9 @@ ${modelDescriptions}
 }
 
 export function buildReportPrompt(opts: {
-  task: any
+  task: PromptTask
   modelCode: string
-  hardMetrics: any
+  hardMetrics: unknown
   processText: string
   artifactsText: string
   userBackground: string
@@ -467,7 +468,7 @@ ${opts.userBackground || '（用户尚未提供个人背景信息）'}
 }
 
 export function buildSingleFileAnalysisPrompt(opts: {
-  task: any
+  task: PromptTask
   fileName: string
   fileContent: string
   userBackground: string
@@ -531,9 +532,9 @@ ${opts.fileContent}
 }
 
 export function buildFilesSummaryPrompt(opts: {
-  task: any
+  task: PromptTask
   modelCode: string
-  hardMetrics: any
+  hardMetrics: unknown
   processText: string
   filesAnalysis: string
   userBackground: string

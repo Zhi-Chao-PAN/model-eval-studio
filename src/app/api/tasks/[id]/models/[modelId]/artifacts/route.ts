@@ -25,10 +25,6 @@ function dbText(value: unknown): string {
   return sanitizeParsedText(String(value || '')).slice(0, MAX_STORED_TEXT_CHARS)
 }
 
-function fileName(value: unknown, fallback: string): string {
-  return sanitizeFileName(value, fallback)
-}
-
 async function requireModel(taskId: string, modelId: string) {
   return prisma.taskModel.findFirst({
     where: { id: modelId, taskId },

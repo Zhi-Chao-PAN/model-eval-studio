@@ -1,5 +1,8 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import type { BadgeVariant } from '@/components/ui/badge'
+import { errorMessage } from '@/lib/api-error'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 import {
   ShieldCheck, Users, Copy, Check, Loader2, KeyRound, Plus, Power,
   TrendingUp, Clock, UserCheck, UserPlus, Settings2, RefreshCw,
@@ -37,7 +40,7 @@ interface AuditLog {
   action: string
   userId: string | null
   taskId: string | null
-  detail: any
+  detail: unknown
   ipAddress: string | null
   userAgent: string | null
   path: string | null
@@ -63,7 +66,7 @@ interface AuditStats {
 
 type TabKey = 'invites' | 'users' | 'audit' | 'health'
 
-const ACTION_LABELS: Record<string, { label: string; color: string; icon: any }> = {
+const ACTION_LABELS: Record<string, { label: string; color: BadgeVariant; icon: LucideIcon }> = {
   LOGIN: { label: '登录', color: 'success', icon: UserCheck },
   LOGOUT: { label: '登出', color: 'muted', icon: Power },
   REGISTER: { label: '注册', color: 'primary', icon: UserPlus },
@@ -97,6 +100,11 @@ const ACTION_LABELS: Record<string, { label: string; color: string; icon: any }>
 }
 
 export default function AdminPage() {
+  const [asOf, setAsOf] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setAsOf(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
   const [tab, setTab] = useState<TabKey>('invites')
   const [invites, setInvites] = useState<Invite[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -131,20 +139,20 @@ export default function AdminPage() {
   }
 
   async function loadInvites() {
-    try {
-      const res = await fetch('/api/admin/invites')
+
+    return fetch('/api/admin/invites').then(async (res) => {
       if (!res.ok) throw new Error('邀请码列表加载失败，请稍后重试')
       const data = await res.json().catch(() => ({}))
       if (data.invites) setInvites(data.invites)
-    } catch (e: any) { setLoadError(e?.message || '邀请码加载失败，请检查网络连接') }
+    }).catch((e) => { setLoadError(errorMessage(e) || '邀请码加载失败，请检查网络连接') })
   }
   async function loadUsers() {
-    try {
-      const res = await fetch('/api/admin/users')
+
+    return fetch('/api/admin/users').then(async (res) => {
       if (!res.ok) throw new Error('用户列表加载失败，请稍后重试')
       const data = await res.json().catch(() => ({}))
       if (data.users) setUsers(data.users)
-    } catch (e: any) { setLoadError(e?.message || '用户列表加载失败，请检查网络连接') }
+    }).catch((e) => { setLoadError(errorMessage(e) || '用户列表加载失败，请检查网络连接') })
   }
   // Load current user ID for self-demotion guard
   useEffect(() => {
@@ -166,23 +174,20 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(data.error || '操作失败，请稍后重试')
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
       flash('ok', newRole === 'ADMIN' ? '已提升为管理员' : '已降为普通用户')
-    } catch (e: any) {
-      flash('err', e?.message || '操作失败，请检查网络连接')
+    } catch (e) {
+      flash('err', errorMessage(e) || '操作失败，请检查网络连接')
     } finally {
       setRoleUpdatingId(null)
     }
   }
-  async function loadAuditLogs() {
-    setAuditLoading(true)
-    setAuditError(null)
-    try {
-      const params = new URLSearchParams()
-      params.set('page', String(auditPage))
-      params.set('pageSize', String(auditPageSize))
-      if (auditUserId) params.set('userId', auditUserId)
-      if (auditAction) params.set('action', auditAction)
-      if (auditStatus) params.set('status', auditStatus)
-      if (auditRange === 'today') {
+  const loadAuditLogs = useCallback(async () => {
+    const params = new URLSearchParams()
+    params.set('page', String(auditPage))
+    params.set('pageSize', String(auditPageSize))
+    if (auditUserId) params.set('userId', auditUserId)
+    if (auditAction) params.set('action', auditAction)
+    if (auditStatus) params.set('status', auditStatus)
+    if (auditRange === 'today') {
         const d = new Date()
         const start = new Date(d.getFullYear(), d.getMonth(), d.getDate())
         params.set('from', start.toISOString())
@@ -191,11 +196,11 @@ export default function AdminPage() {
       } else if (auditRange === '30d') {
         params.set('from', new Date(Date.now() - 30 * 86400_000).toISOString())
       }
-
-      const [logsRes, statsRes] = await Promise.all([
+    return Promise.all([
         fetch('/api/admin/audit-logs?' + params.toString()),
         fetch('/api/admin/audit-stats?range=' + auditRange),
-      ])
+      ]).then(async ([logsRes, statsRes]) => {
+      setAuditError(null)
       if (!logsRes.ok) throw new Error('审计日志加载失败，请稍后重试')
       if (!statsRes.ok) throw new Error('审计统计加载失败，请稍后重试')
       const [logsData, statsData] = await Promise.all([
@@ -205,43 +210,20 @@ export default function AdminPage() {
       if (logsData.logs) setAuditLogs(logsData.logs)
       if (logsData.total !== undefined) setAuditTotal(logsData.total)
       if (statsData.stats) setAuditStats(statsData.stats)
-    } catch (e: any) {
-      setAuditError(e?.message || '审计数据加载失败，请稍后重试')
-    } finally {
+    }).catch((e) => {
+      setAuditError(errorMessage(e) || '审计数据加载失败，请稍后重试')
+    }).finally(() => {
       setAuditLoading(false)
-    }
-  }
+    })
+  }, [auditPage, auditPageSize, auditUserId, auditAction, auditStatus, auditRange])
 
   useEffect(() => {
-    setLoading(true)
-    setLoadError(null)
-    ;(async () => {
-      // 初始加载：用户和邀请码是轻量数据，并行加载，确保顶部统计卡片有数据
-      try {
-        const loads: Promise<any>[] = [loadInvites(), loadUsers()]
-        if (tab === 'audit') loads.push(loadAuditLogs())
-        await Promise.all(loads)
-      } catch (e: any) {
-        setLoadError(e?.message || '数据加载失败，请检查网络连接后重试')
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [tab])
+    void Promise.all([loadInvites(), loadUsers()]).finally(() => setLoading(false))
+  }, [])
 
   useEffect(() => {
-    if (tab === 'audit') {
-      setAuditPage(1)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditAction, auditUserId, auditStatus, auditRange])
-
-  useEffect(() => {
-    if (tab === 'audit') {
-      loadAuditLogs()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditPage, tab])
+    if (tab === 'audit') void loadAuditLogs()
+  }, [tab, loadAuditLogs])
 
   async function generate() {
     setGenerating(true)
@@ -258,8 +240,8 @@ export default function AdminPage() {
         setInvites([...data.invites, ...invites])
         flash('ok', '已生成 ' + data.invites.length + ' 个邀请码')
       }
-    } catch (e: any) {
-      flash('err', e?.message || '生成邀请码失败，请检查网络连接')
+    } catch (e) {
+      flash('err', errorMessage(e) || '生成邀请码失败，请检查网络连接')
     } finally { setGenerating(false) }
   }
 
@@ -275,8 +257,8 @@ export default function AdminPage() {
         throw new Error(data.error || '切换失败，请稍后重试')
       }
       loadInvites()
-    } catch (e: any) {
-      flash('err', e?.message || '切换邀请码状态失败，请检查网络连接')
+    } catch (e) {
+      flash('err', errorMessage(e) || '切换邀请码状态失败，请检查网络连接')
     }
   }
 
@@ -307,7 +289,7 @@ export default function AdminPage() {
     const meta = ACTION_LABELS[action] || { label: action, color: 'muted', icon: Activity }
     const Icon = meta.icon
     return (
-      <Badge variant={meta.color as any} className="inline-flex items-center gap-1">
+      <Badge variant={meta.color} className="inline-flex items-center gap-1">
         <Icon className="h-3 w-3" /> {meta.label}
       </Badge>
     )
@@ -386,7 +368,7 @@ export default function AdminPage() {
           用户
         </button>
         <button
-          onClick={() => setTab('audit')}
+          onClick={() => { setTab('audit'); setAuditLoading(true) }}
           className={cn(
             'inline-flex items-center gap-2 px-4 h-9 rounded-lg text-[13px] font-medium transition-all',
             tab === 'audit'
@@ -640,7 +622,7 @@ export default function AdminPage() {
                   <UserCheck className="h-4 w-4 text-cyan-400/70" />
                 </div>
                 <div className="display text-4xl tabular text-white leading-none">
-                  {users.filter(u => Date.now() - new Date(u.lastActiveAt).getTime() < 7 * 86400_000).length}
+                  {users.filter(u => asOf - new Date(u.lastActiveAt).getTime() < 7 * 86400_000).length}
                 </div>
                 <div className="mt-2 text-[11px] text-gray-500">近 7 天活跃</div>
               </div>
@@ -702,7 +684,7 @@ export default function AdminPage() {
                   <div className="col-span-3">最后活跃</div>
                 </div>
                 {users.map(u => {
-                  const isActive = Date.now() - new Date(u.lastActiveAt).getTime() < 24 * 3600 * 1000
+                  const isActive = asOf - new Date(u.lastActiveAt).getTime() < 24 * 3600 * 1000
                   return (
                     <div key={u.id} className="px-5 py-3.5 grid grid-cols-12 gap-3 items-center hover:bg-white/[0.02] transition-colors group border-b border-white/[0.02] last:border-0">
                       <div className="col-span-3 flex items-center gap-3 min-w-0">
@@ -845,7 +827,7 @@ export default function AdminPage() {
                   {(['today', '7d', '30d'] as const).map(r => (
                     <button
                       key={r}
-                      onClick={() => setAuditRange(r)}
+                      onClick={() => { setAuditRange(r); setAuditPage(1); setAuditLoading(true) }}
                       className={cn(
                         'px-3 h-7 rounded-md text-[11px] font-medium transition-colors',
                         auditRange === r
@@ -863,7 +845,7 @@ export default function AdminPage() {
                 <Search className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
                 <select
                   value={auditAction}
-                  onChange={e => setAuditAction(e.target.value)}
+                  onChange={e => { setAuditAction(e.target.value); setAuditPage(1); setAuditLoading(true) }}
                   className="flex-1 h-8 bg-white/[0.02] border border-white/10 rounded-lg px-2 text-[12px] text-white focus:outline-none focus:border-indigo-500/50"
                 >
                   <option value="">全部操作类型</option>
@@ -876,7 +858,7 @@ export default function AdminPage() {
               <div className="flex items-center gap-2">
                 <select
                   value={auditUserId}
-                  onChange={e => setAuditUserId(e.target.value)}
+                  onChange={e => { setAuditUserId(e.target.value); setAuditPage(1); setAuditLoading(true) }}
                   className="h-8 w-36 bg-white/[0.02] border border-white/10 rounded-lg px-2 text-[12px] text-white focus:outline-none focus:border-indigo-500/50"
                 >
                   <option value="">全部用户</option>
@@ -889,7 +871,7 @@ export default function AdminPage() {
               <div className="flex items-center gap-2">
                 <select
                   value={auditStatus}
-                  onChange={e => setAuditStatus(e.target.value)}
+                  onChange={e => { setAuditStatus(e.target.value); setAuditPage(1); setAuditLoading(true) }}
                   className="h-8 w-24 bg-white/[0.02] border border-white/10 rounded-lg px-2 text-[12px] text-white focus:outline-none focus:border-indigo-500/50"
                 >
                   <option value="">全部状态</option>
@@ -898,7 +880,7 @@ export default function AdminPage() {
                 </select>
               </div>
 
-              <Button variant="ghost" size="sm" onClick={loadAuditLogs}>
+              <Button variant="ghost" size="sm" onClick={() => { setAuditLoading(true); void loadAuditLogs() }}>
                 <Loader2 className="h-3 w-3" /> 刷新
               </Button>
             </div>
@@ -1013,7 +995,7 @@ export default function AdminPage() {
                                 </div>
                               </div>
                             )}
-                            {log.detail && (
+                            {log.detail != null && (
                               <div>
                                 <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">详细信息</div>
                                 <pre className="text-[11px] text-gray-300 bg-white/[0.02] border border-white/[0.04] rounded px-2 py-1.5 overflow-x-auto mono">
@@ -1054,7 +1036,7 @@ export default function AdminPage() {
                     variant="ghost"
                     size="sm"
                     disabled={auditPage <= 1}
-                    onClick={() => setAuditPage(p => Math.max(1, p - 1))}
+                    onClick={() => { setAuditLoading(true); setAuditPage(p => Math.max(1, p - 1)) }}
                   >
                     上一页
                   </Button>
@@ -1065,7 +1047,7 @@ export default function AdminPage() {
                     variant="ghost"
                     size="sm"
                     disabled={auditPage >= Math.ceil(auditTotal / auditPageSize)}
-                    onClick={() => setAuditPage(p => p + 1)}
+                    onClick={() => { setAuditLoading(true); setAuditPage(p => p + 1) }}
                   >
                     下一页
                   </Button>

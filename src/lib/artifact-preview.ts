@@ -52,7 +52,6 @@ export function shouldIgnoreArchiveEntry(name: string): boolean {
   const segments = normalized.split('/')
   // Block any path-traversal segment (zip-slip attack)
   if (segments.some(segment => segment === '..')) return true
-  const lower = normalized.toLowerCase()
   const basename = segments.filter(Boolean).at(-1) || ''
   if (!basename || basename.startsWith('.') || basename.startsWith('~$')) return true
   const segsLower = segments.filter(Boolean).map(s => s.toLowerCase())

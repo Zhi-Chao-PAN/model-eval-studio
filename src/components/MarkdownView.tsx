@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState, useEffect, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ChevronDown, Brain, Loader2 } from 'lucide-react'

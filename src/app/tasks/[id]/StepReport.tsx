@@ -1,6 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import type { TaskView } from '@/lib/task-types'
+import { selectReportForView } from '@/lib/report-selection'
+import { useAsyncResource } from '@/hooks/use-async-resource'
+import { errorMessage } from '@/lib/api-error'
+import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   AlertTriangle, Activity, Award, Check, ChevronDown, ChevronUp, Copy,
@@ -43,7 +47,7 @@ interface ReportDetail extends ReportVersion {
 }
 
 interface Props {
-  task: any
+  task: TaskView
   onRefresh: () => void
   onPrev?: () => void
 }
@@ -138,7 +142,7 @@ function buildSectionCopyText(section: ReportSection): string {
   return [section.title, section.content].join('\n')
 }
 
-export default function StepReport({ task, onRefresh, onPrev }: Props) {
+export default function StepReport({ task, onRefresh }: Props) {
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [activeJobs, setActiveJobs] = useState<Record<string, ActiveJob>>({})
   const [adjustText, setAdjustText] = useState('')
@@ -148,13 +152,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
   const abortRefs = useRef<Record<string, AbortController>>({})
 
   // 版本历史相关
-  const [reportVersions, setReportVersions] = useState<ReportVersion[]>([])
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
-  const [versionsLoading, setVersionsLoading] = useState(false)
-  const [versionsError, setVersionsError] = useState<string | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
-  const [selectedReportDetail, setSelectedReportDetail] = useState<ReportDetail | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
+  const [reportSelection, setSelectedReportId] = useState<string | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [reviseFormError, setReviseFormError] = useState<string | null>(null)
 
@@ -188,7 +186,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
     return () => { document.body.style.overflow = prev }
   }, [reviseOpen])
 
-  const selectedModel = models.find((model: any) => model.id === currentModelId)
+  const selectedModel = models.find((model) => model.id === currentModelId)
   const latestReport = selectedModel?.reports?.[0]
   const activeJob = currentModelId ? activeJobs[currentModelId] : undefined
   const isGenerating = Boolean(activeJob && activeJob.mode === 'generate')
@@ -198,67 +196,39 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
     : 0
   const hasTesterEvidence = testerEvidenceCount > 0
 
-  // 当切换模型时加载版本历史
-  useEffect(() => {
-    if (currentModelId && latestReport) {
-      loadReportVersions(currentModelId)
-    } else {
-      setReportVersions([])
-      setSelectedReportId(null)
-    }
-  }, [currentModelId, latestReport?.id])
+  const selectedReportId = String(reportSelection ?? latestReport?.id ?? '')
+  const loadVersions = useCallback(async (signal: AbortSignal): Promise<ReportVersion[]> => {
+    const res = await fetch(`/api/tasks/${task.id}/models/${currentModelId}/reports`, { signal })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || '版本列表加载失败')
+    return data.reports || []
+  }, [task.id, currentModelId])
+  const versions = useAsyncResource(
+    currentModelId && latestReport ? `${task.id}:${currentModelId}:${latestReport.id}` : null,
+    loadVersions,
+  )
+  const reportVersions = versions.data || []
+  const versionsLoading = versions.loading
+  const versionsError = versions.error
+  const loadReportVersions = versions.refresh
 
-  async function loadReportVersions(modelId: string) {
-    setVersionsLoading(true)
-    setVersionsError(null)
-    try {
-      const res = await fetch('/api/tasks/' + task.id + '/models/' + modelId + '/reports')
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || '版本列表加载失败（HTTP ' + res.status + '）')
-      if (data.reports) {
-        setReportVersions(data.reports)
-        if (data.reports.length > 0 && !selectedReportId) {
-          setSelectedReportId(data.reports[0].id)
-        }
-      }
-    } catch (e: any) {
-      setVersionsError(e?.message || '版本列表加载失败')
-    } finally {
-      setVersionsLoading(false)
-    }
-  }
-
-  async function loadReportDetail(reportId: string) {
-    if (!currentModelId) return
-    setDetailLoading(true)
-    setDetailError(null)
-    setSelectedReportDetail(null) // 清空旧数据，避免显示上一个版本
-    try {
-      const res = await fetch('/api/tasks/' + task.id + '/models/' + currentModelId + '/reports/' + reportId)
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || '版本详情加载失败（HTTP ' + res.status + '）')
-      if (data.report) {
-        setSelectedReportDetail(data.report)
-      }
-    } catch (e: any) {
-      setDetailError(e?.message || '版本详情加载失败')
-    } finally {
-      setDetailLoading(false)
-    }
-  }
-
-  // 选中版本变化时加载详情
-  useEffect(() => {
-    if (selectedReportId && versionsOpen) {
-      loadReportDetail(selectedReportId)
-    }
-  }, [selectedReportId, versionsOpen])
+  const loadDetail = useCallback(async (signal: AbortSignal): Promise<ReportDetail | null> => {
+    const res = await fetch(`/api/tasks/${task.id}/models/${currentModelId}/reports/${selectedReportId}`, { signal })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || '版本详情加载失败')
+    return data.report || null
+  }, [task.id, currentModelId, selectedReportId])
+  const detail = useAsyncResource(
+    currentModelId && selectedReportId ? `${task.id}:${currentModelId}:${selectedReportId}` : null,
+    loadDetail,
+  )
+  const selectedReportDetail = detail.data
+  const detailLoading = detail.loading
+  const detailError = detail.error
 
   // 查看的报告：如果选了历史版本就显示历史的，否则显示最新的
-  const viewedReport = selectedReportId && selectedReportDetail
-    ? selectedReportDetail
-    : latestReport
-  const isViewingHistorical = selectedReportId !== null && latestReport && selectedReportId !== latestReport.id
+  const viewedReport = selectReportForView(selectedReportId, latestReport, selectedReportDetail)
+  const isViewingHistorical = Boolean(selectedReportId) && latestReport && selectedReportId !== latestReport.id
 
   const SECTION_DEFS: Array<Omit<ReportSection, 'score' | 'content'>> = [
     { key: 'product',     title: '产物效果反馈',     icon: Sparkles,    accent: 'cyan' },
@@ -294,7 +264,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
   }
 
   async function submitRevise() {
-    if (!currentModelId || !selectedReportId) return
+    if (!currentModelId || !selectedReportId || !viewedReport) return
     // 前端校验评分范围
     const overallScore = Number(reviseForm.overallScore)
     const efficiencyScore = Number(reviseForm.efficiencyScore)
@@ -352,7 +322,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
       })
       // Safely parse JSON to handle non-JSON error responses
       const text = await res.text()
-      let data: any = {}
+      let data: { error?: string } = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { error: '服务器返回了非预期内容' } }
       if (!res.ok) throw new Error(data.error || '修订失败，请稍后重试')
 
@@ -360,9 +330,9 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
       setReviseOpen(false)
       onRefresh()
       // 重新加载版本列表
-      if (currentModelId) loadReportVersions(currentModelId)
-    } catch (e: any) {
-      showNote('err', e.message || '修订失败')
+      if (currentModelId) loadReportVersions()
+    } catch (e) {
+      showNote('err', errorMessage(e) || '修订失败')
     } finally {
       setReviseSaving(false)
     }
@@ -492,9 +462,9 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
           }
         }
       }
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        showNote('err', err?.message || String(err))
+    } catch (err) {
+      if ((err instanceof Error ? err.name : undefined) !== 'AbortError') {
+        showNote('err', errorMessage(err) || String(err))
       }
     } finally {
       setActiveJobs(prev => { const copy = { ...prev }; delete copy[modelId]; return copy })
@@ -542,7 +512,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
   const liveStreamText = currentModelId ? (streamPreview[currentModelId] || '') : ''
 
   // Build per-model score summary
-  const modelSummaries: ModelSummary[] = models.map((model: any): ModelSummary => {
+  const modelSummaries: ModelSummary[] = models.map((model): ModelSummary => {
     const report = model.reports?.[0]
     return {
       id: model.id,
@@ -598,7 +568,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
             </div>
           </div>
         )}
-        {models.length > 0 && !models.some((m: any) => m.artifacts?.length > 0) && (
+        {models.length > 0 && !models.some((m) => m.artifacts?.length > 0) && (
           <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.05]">
             <AlertTriangle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
             <div className="text-[12px] text-amber-200/80 leading-relaxed">
@@ -615,7 +585,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
               return (
                 <button
                   key={m.id}
-                  onClick={() => setSelectedModelId(m.id)}
+                  onClick={() => { setSelectedModelId(m.id); setSelectedReportId(null) }}
                   className={cn('step-pill', isActive && 'active')}
                 >
                   <span className="mono">{m.code}</span>
@@ -646,7 +616,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
       )}
 
       {/* === COMPLETION BANNER === */}
-      {models.length > 0 && models.every((m: any) => Array.isArray(m.reports) && m.reports.length > 0) && (
+      {models.length > 0 && models.every((m) => Array.isArray(m.reports) && m.reports.length > 0) && (
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 panel p-4 border-emerald-500/20 bg-emerald-500/[0.04]">
           <div className="flex items-center gap-2 flex-1">
             <Check className="h-5 w-5 text-emerald-400 flex-shrink-0" />
@@ -674,7 +644,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
             return (
               <button
                 key={m.id}
-                onClick={() => setSelectedModelId(m.id)}
+                onClick={() => { setSelectedModelId(m.id); setSelectedReportId(null) }}
                 className={cn(
                   'score-tile text-left cursor-pointer group',
                   tier,
@@ -734,6 +704,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                       variant="secondary"
                       size="sm"
                       onClick={openRevise}
+                      disabled={!viewedReport}
                       title="人工修订评分和评论"
                     >
                       <Edit3 className="h-3.5 w-3.5" />
@@ -745,7 +716,6 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                         size="sm"
                         onClick={() => {
                           setSelectedReportId(latestReport.id)
-                          setSelectedReportDetail(null)
                         }}
                       >
                         回到最新版
@@ -858,7 +828,7 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                         <div className="text-xs text-amber-400 text-center py-2 flex flex-col items-center gap-1">
                           <AlertTriangle className="h-3.5 w-3.5" />
                           {versionsError}
-                          <button onClick={() => currentModelId && loadReportVersions(currentModelId)} className="underline hover:text-amber-300">重试</button>
+                          <button onClick={() => currentModelId && loadReportVersions()} className="underline hover:text-amber-300">重试</button>
                         </div>
                       ) : reportVersions.length === 0 ? (
                         <div className="text-xs text-gray-500 text-center py-2">暂无版本记录</div>
@@ -872,7 +842,6 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
                                 key={v.id}
                                 onClick={() => {
                                   setSelectedReportId(v.id)
-                                  loadReportDetail(v.id)
                                 }}
                                 className={cn(
                                   'w-full text-left p-2 rounded-lg border transition-all',
@@ -967,7 +936,12 @@ export default function StepReport({ task, onRefresh, onPrev }: Props) {
               )}
 
               {/* Report module cards */}
-              {latestReport && !isGenerating && !isAdjusting ? (
+              {latestReport && !viewedReport && !isGenerating && !isAdjusting ? (
+                <div className="panel p-8 text-center text-sm text-gray-400" role="status">
+                  {detailLoading ? '正在加载所选版本…' : (detailError || '所选报告版本不可用，请重试或返回最新版。')}
+                  {!detailLoading && <Button variant="ghost" size="sm" onClick={detail.refresh}>重试</Button>}
+                </div>
+              ) : viewedReport && !isGenerating && !isAdjusting ? (
                 <div className="space-y-3">
                   {reportSections.map(section => {
                     const Icon = section.icon

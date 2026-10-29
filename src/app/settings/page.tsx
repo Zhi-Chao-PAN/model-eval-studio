@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { errorMessage } from '@/lib/api-error'
+import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -83,7 +84,7 @@ export default function SettingsPage() {
   const [validating, setValidating] = useState(false)
   const [validateResult, setValidateResult] = useState<{ ok: boolean; error?: string } | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [me, setMe] = useState<any>(null)
+  const [me, setMe] = useState<{ username: string; role: string; createdAt: string } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [bgError, setBgError] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
@@ -115,17 +116,17 @@ export default function SettingsPage() {
     return { score: 5, label: '强', color: 'bg-emerald-400', textColor: 'text-emerald-300' }
   })()
 
-  async function load() {
-    setLoadError(null)
-    try {
-      const [meRes, aiRes] = await Promise.all([
+  const load = useCallback(async () => {
+
+    return Promise.all([
         fetch('/api/auth/me'),
         fetch('/api/user/ai-config'),
-      ])
+      ]).then(async ([meRes, aiRes]) => {
       const [data, aiData] = await Promise.all([
         meRes.json().catch(() => ({})),
         aiRes.json().catch(() => ({})),
       ])
+      setLoadError(null)
       if (!meRes.ok) throw new Error(data.error || '账户信息加载失败，请稍后重试')
       if (data.user) {
         setMe(data.user)
@@ -139,14 +140,14 @@ export default function SettingsPage() {
         setMaxTokens(aiData.config.maxTokens?.toString() || '')
         setHasApiKey(aiData.config.hasApiKey)
       }
-    } catch (err: any) {
-      setLoadError(err?.message || '加载失败，请重试')
-    } finally {
+    }).catch((err) => {
+      setLoadError(errorMessage(err) || '加载失败，请重试')
+    }).finally(() => {
       setLoaded(true)
-    }
-  }
+    })
+  }, [])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [load])
 
   async function saveBackground() {
     setSavingBg(true)
@@ -219,13 +220,13 @@ export default function SettingsPage() {
       })
       // Safely parse JSON to handle non-JSON error responses
       const text = await res.text()
-      let data: any = {}
+      let data: { error?: string; ok?: boolean } = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { ok: false, error: '服务器返回了非预期内容' } }
       if (!res.ok && !data.ok) {
         setValidateResult({ ok: false, error: data.error || '测试连接失败，请检查配置后重试' })
         return
       }
-      setValidateResult(data)
+      setValidateResult({ ok: data.ok === true, error: data.error })
     } catch (err) {
       setValidateResult({ ok: false, error: err instanceof Error ? err.message : '测试连接失败，请检查网络' })
     } finally {

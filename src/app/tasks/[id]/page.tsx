@@ -1,5 +1,7 @@
 'use client'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import type { TaskView } from '@/lib/task-types'
+import { errorMessage } from '@/lib/api-error'
+import { useCallback, useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -12,7 +14,6 @@ import StepArtifact from './StepArtifact'
 import StepReport from './StepReport'
 import StepDesign from './StepDesign'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/toast'
 import { KeyboardShortcutsButton, type ShortcutItem } from '@/components/ui/KeyboardShortcutsButton'
@@ -47,14 +48,14 @@ interface ChatMessage {
   modelId?: string | null
 }
 
-function mergeTaskUpdate(previous: unknown, updated: unknown) {
+function mergeTaskUpdate(previous: TaskView | null, updated: Partial<TaskView>): TaskView | null {
   if (
     typeof previous !== 'object' || previous === null ||
     typeof updated !== 'object' || updated === null
-  ) return updated
+  ) return previous
 
-  const previousTask = previous as Record<string, unknown>
-  const updatedTask = updated as Record<string, unknown>
+  const previousTask = previous
+  const updatedTask = updated
 
   return {
     ...previousTask,
@@ -67,10 +68,13 @@ function mergeTaskUpdate(previous: unknown, updated: unknown) {
 
 export default function TaskPage() {
   const params = useParams()
-  const router = useRouter()
-  const taskId = params.id as string
+  return <TaskEditor key={String(params.id)} taskId={String(params.id)} />
+}
 
-  const [task, setTask] = useState<any>(null)
+function TaskEditor({ taskId }: { taskId: string }) {
+  const router = useRouter()
+
+  const [task, setTask] = useState<TaskView | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [currentStep, setCurrentStep] = useState<string>('DESIGN')
@@ -106,14 +110,12 @@ export default function TaskPage() {
     }
   }
 
-  async function loadTask(options: { forceStep?: string } = {}) {
+  const loadTask = useCallback(async (options: { forceStep?: string } = {}) => {
     const seq = ++loadTaskSeqRef.current
-    const showGlobalLoading = task === null
-    if (showGlobalLoading) setLoading(true)
-    setLoadError(null)
-    try {
-      const res = await fetch('/api/tasks/' + taskId)
+
+    return fetch('/api/tasks/' + taskId).then(async (res) => {
       const data = await readJsonResponse(res)
+      setLoadError(null)
       if (seq !== loadTaskSeqRef.current) return
       if (data.task) {
         setTask(data.task)
@@ -125,31 +127,30 @@ export default function TaskPage() {
       } else if (!res.ok) {
         setLoadError(data.error || '任务加载失败，请稍后重试')
       }
-    } catch (e: any) {
-      setLoadError(e?.message || '网络异常，任务加载失败，请稍后重试')
-    } finally {
-      if (seq === loadTaskSeqRef.current && showGlobalLoading) setLoading(false)
-    }
-  }
+    }).catch((e) => {
+      setLoadError(errorMessage(e) || '网络异常，任务加载失败，请稍后重试')
+    }).finally(() => {
+      if (seq === loadTaskSeqRef.current) setLoading(false)
+    })
+  }, [taskId, router])
 
-  async function loadMessages() {
-    setMessagesError(null)
-    try {
-      const res = await fetch('/api/tasks/' + taskId + '/messages')
+  const loadMessages = useCallback(async () => {
+    return fetch('/api/tasks/' + taskId + '/messages').then(async (res) => {
       const data = await readJsonResponse(res)
       if (!res.ok) {
         setMessagesError(data.error || '消息加载失败')
         return
       }
+      setMessagesError(null)
       if (data.messages) setMessages(data.messages)
-    } catch (e: any) {
-      setMessagesError(e?.message || '消息加载失败')
-    }
-  }
+    }).catch((e) => {
+      setMessagesError(errorMessage(e) || '消息加载失败')
+    })
+  }, [taskId])
 
   // ---- auto-report: 产物分析完成后自动生成报告 ----
 
-  function showAutoReportNote(type: 'ok' | 'err', text: string, timeout = type === 'err' ? 15000 : 6000) {
+  const showAutoReportNote = useCallback((type: 'ok' | 'err', text: string, timeout = type === 'err' ? 15000 : 6000) => {
     if (autoReportNoteTimerRef.current) {
       window.clearTimeout(autoReportNoteTimerRef.current)
       autoReportNoteTimerRef.current = null
@@ -158,29 +159,28 @@ export default function TaskPage() {
     autoReportNoteTimerRef.current = window.setTimeout(() => {
       setAutoReportNote(null)
     }, timeout)
-  }
+  }, [])
 
-  async function triggerAutoReport(modelId: string, modelCode: string) {
-    try {
-      showAutoReportNote('ok', `「${modelCode}」产物分析完成，正在自动生成评估报告…`)
-      const res = await fetch('/api/tasks/' + taskId + '/generate-report', {
+  const triggerAutoReport = useCallback(async (modelId: string, modelCode: string) => {
+    return fetch('/api/tasks/' + taskId + '/generate-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId }),
-      })
+      }).then(async (res) => {
       if (!res.ok) {
         const data = await readJsonResponse(res)
         showAutoReportNote('err', `「${modelCode}」自动生成报告失败: ${data.error || '未知错误'}`)
         autoReportedRef.current.delete(modelId)
       }
+      if (res.ok) showAutoReportNote('ok', `「${modelCode}」评估报告已自动生成`)
       void loadTask()
-    } catch (err) {
+    }).catch(() => {
       showAutoReportNote('err', `「${modelCode}」自动生成报告失败，请稍后在报告步骤手动重试`)
       autoReportedRef.current.delete(modelId)
-    }
-  }
+    })
+  }, [taskId, showAutoReportNote, loadTask])
 
-  useEffect(() => { loadTask(); loadMessages() }, [taskId])
+  useEffect(() => { loadTask(); loadMessages() }, [loadTask, loadMessages])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamingContent, currentStep, chatOpen])
 
   // Update document title with task name
@@ -211,10 +211,9 @@ export default function TaskPage() {
   }, [exportMenuOpen])
 
   // 自动报告：检测刚完成的产物分析，自动触发报告生成
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!task?.models) return
-    const models = task.models as any[]
+    const models = task.models
     for (const model of models) {
       const run = model.artifactAnalysisRuns?.[0]
       if (!run || run.status !== 'COMPLETED') continue
@@ -235,10 +234,10 @@ export default function TaskPage() {
         autoReportedRef.current.add(model.id)
       }
     }
-  }, [task?.models])
+  }, [task?.models, triggerAutoReport])
 
   // 有正在运行的分析时，轮询刷新任务数据（驱动 auto-report 检测）
-  const hasRunningAnalysis = task?.models?.some((m: any) => {
+  const hasRunningAnalysis = task?.models?.some((m) => {
     const status = m.artifactAnalysisRuns?.[0]?.status
     return status === 'QUEUED' || status === 'RUNNING'
   })
@@ -248,16 +247,16 @@ export default function TaskPage() {
       void loadTask()
     }, 1500)
     return () => window.clearInterval(timer)
-  }, [hasRunningAnalysis])
+  }, [hasRunningAnalysis, loadTask])
 
   const chatMessages = filterConversationMessages(messages, task || {})
 
-  function handleTaskUpdate(updated: any) {
-    setTask((previous: unknown) => mergeTaskUpdate(previous, updated))
+  function handleTaskUpdate(updated: Partial<TaskView>) {
+    setTask((previous) => mergeTaskUpdate(previous, updated))
     if (updated.currentStep) setCurrentStep(updated.currentStep)
   }
 
-  function goToStep(stepKey: string) {
+  const goToStep = useCallback((stepKey: string) => {
     if (stepKey === currentStep) return
     loadTaskSeqRef.current += 1
     const previousStep = currentStep
@@ -268,16 +267,16 @@ export default function TaskPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentStep: stepKey }),
     }).then(readJsonResponse).then(data => {
-      if (data.task) setTask((previous: unknown) => mergeTaskUpdate(previous, data.task))
+      if (data.task) setTask((previous) => mergeTaskUpdate(previous, data.task))
       else {
         setStepError(data.error || '步骤切换失败，请稍后重试')
         setCurrentStep(previousStep)
       }
-    }).catch((err: Error) => {
+    }).catch(() => {
       setStepError('步骤切换失败，请检查网络连接后重试')
       setCurrentStep(previousStep)
     })
-  }
+  }, [currentStep, taskId])
 
   // 详情页全局快捷键：
   // - j / k        在 STEPS 里前后切换当前步骤（向前/向后）
@@ -324,8 +323,7 @@ export default function TaskPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep])
+  }, [currentStep, goToStep, router])
 
   // 共享浮层要展示的快捷键清单。和上面 handler 严格对齐。
   const SHORTCUTS: ShortcutItem[] = [
@@ -371,25 +369,25 @@ export default function TaskPage() {
             else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
           }
           if (!dataLine) continue
-          let payload: any
+          let payload: { text?: string; message?: ChatMessage | string }
           try {
             payload = JSON.parse(dataLine)
           } catch {
             continue
           }
-          if (eventName === 'user-message' && payload.message) setMessages(p => [...p, payload.message])
+          if (eventName === 'user-message' && typeof payload.message !== 'string' && payload.message) setMessages(p => [...p, payload.message as ChatMessage])
           else if (eventName === 'delta' && payload.text) { acc += payload.text; setStreamingContent(acc) }
           else if (eventName === 'done') {
             completed = true
-            if (payload.message) setMessages(p => [...p, payload.message])
+            if (typeof payload.message !== 'string' && payload.message) setMessages(p => [...p, payload.message as ChatMessage])
             setStreamingContent('')
-          } else if (eventName === 'error') throw new Error(payload.message || '对话出错')
+          } else if (eventName === 'error') throw new Error(typeof payload.message === 'string' ? payload.message : '对话出错')
         }
       }
       if (!completed) setStreamingContent('')
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        const msg = err?.message || '对话失败，请稍后重试'
+    } catch (err) {
+      if ((err instanceof Error ? err.name : undefined) !== 'AbortError') {
+        const msg = errorMessage(err) || '对话失败，请稍后重试'
         // Don't display raw technical errors from SSE stream in chat UI
         const safeMsg = /^[A-Za-z\u4e00-\u9fa5]/.test(msg) && msg.length < 200 ? msg : '对话出现异常，请稍后重试'
         setMessages(p => [...p, { id: 'err-' + Date.now(), role: 'system', content: safeMsg, step: currentStep }])
@@ -417,8 +415,8 @@ export default function TaskPage() {
       }
       router.push('/dashboard')
       router.refresh()
-    } catch (e: any) {
-      setDeleteError(e?.message || '删除失败，请重试')
+    } catch (e) {
+      setDeleteError(errorMessage(e) || '删除失败，请重试')
       setDeleteConfirm(false)
     }
   }
@@ -436,8 +434,8 @@ export default function TaskPage() {
       if (!res.ok) throw new Error(data.error || '复制失败')
       router.push('/tasks/' + data.id)
       router.refresh()
-    } catch (e: any) {
-      toast.error(e?.message || '复制任务失败，请稍后重试')
+    } catch (e) {
+      toast.error(errorMessage(e) || '复制任务失败，请稍后重试')
     } finally {
       setDuplicating(false)
     }
@@ -456,8 +454,8 @@ export default function TaskPage() {
       setMdCopied(true)
       setTimeout(() => setMdCopied(false), 2000)
       toast.success('提交版报告已复制到剪贴板（仅含 5 模块正文）')
-    } catch (e: any) {
-      toast.error('复制失败：' + (e?.message || '请检查浏览器剪贴板权限'))
+    } catch (e) {
+      toast.error('复制失败：' + (errorMessage(e) || '请检查浏览器剪贴板权限'))
     }
   }
 
@@ -477,13 +475,13 @@ export default function TaskPage() {
     if (models.length > 0) set.add('SCREENSHOT')
 
     // ARTIFACT: completed if at least one model has artifacts uploaded AND analyzed
-    const hasArtifacts = models.some((m: any) =>
+    const hasArtifacts = models.some((m) =>
       Array.isArray(m.artifacts) && m.artifacts.length > 0
     )
     if (hasArtifacts) set.add('ARTIFACT')
 
     // REPORT: completed if any model has a report
-    const hasReport = models.some((m: any) =>
+    const hasReport = models.some((m) =>
       Array.isArray(m.reports) && m.reports.length > 0
     )
     if (hasReport) set.add('REPORT')

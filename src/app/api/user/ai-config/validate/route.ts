@@ -1,3 +1,4 @@
+import type { AiProvider } from '@prisma/client'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
@@ -29,20 +30,20 @@ export async function POST(request: Request) {
     })
     if (!rateLimit.allowed) return rateLimitResponse(rateLimit)
 
-    let provider: string
+    let provider: AiProvider
     let baseUrl: string
     let apiKey: string
     let model: string
 
-    const body = await request.json().catch(() => null)
+    const body: unknown = await request.json().catch(() => null)
 
     const hasInline =
       body &&
       typeof body === 'object' &&
       !Array.isArray(body) &&
-      typeof (body as any).baseUrl === 'string' &&
-      typeof (body as any).apiKey === 'string' &&
-      typeof (body as any).modelName === 'string'
+      'baseUrl' in body && typeof body.baseUrl === 'string' &&
+      'apiKey' in body && typeof body.apiKey === 'string' &&
+      'modelName' in body && typeof body.modelName === 'string'
 
     if (hasInline) {
       const b = body as { baseUrl: string; apiKey: string; modelName: string; provider?: unknown }
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
       baseUrl,
       apiKey,
       model,
-      provider: provider as any,
+      provider,
     })
 
     if (!result.ok && result.error) {

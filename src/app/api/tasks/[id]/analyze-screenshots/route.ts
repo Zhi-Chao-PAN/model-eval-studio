@@ -2,6 +2,8 @@
 // - Node.js runtime (Prisma needs TCP for Neon)
 // - AI call streamed via SSE, DB persist happens at end
 // - Returns 200 immediately on first byte so client gets fast feedback
+import type { Prisma } from '@prisma/client'
+import { parseRecognizedModels } from '@/lib/recognized-models'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/session'
 import { getUserAiConfig } from '@/lib/user-ai'
@@ -187,7 +189,7 @@ export async function POST(
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (event: string, data: any) => {
+      const send = (event: string, data: unknown) => {
         try { controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)) } catch {}
       }
 
@@ -235,11 +237,9 @@ export async function POST(
           const events = buffer.split('\n\n')
           buffer = events.pop() || ''
           for (const ev of events) {
-            let eventName = 'message'
             let dataLine = ''
             for (const line of ev.split('\n')) {
-              if (line.startsWith('event:')) eventName = line.slice(6).trim()
-              else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
+              if (line.startsWith('data:')) dataLine = line.slice(5).trim()
             }
             if (!dataLine || dataLine === '[DONE]') continue
             try {
@@ -271,7 +271,7 @@ export async function POST(
           .replace(/```/g, '')
           .trim()
 
-        let parsed: any = null
+        let parsed: unknown = null
         try { parsed = JSON.parse(clean) } catch {
           try {
             const m = clean.match(/\{[\s\S]*\}/)
@@ -280,7 +280,7 @@ export async function POST(
         }
         parsed = normalizeDashboardTable(parsed)
 
-        if (!Array.isArray(parsed?.models)) {
+        if (!isRecord(parsed) || !Array.isArray(parsed.models)) {
           const reason = finishReason === 'length'
             ? '视觉模型输出达到长度上限，尚未生成最终 JSON。请重试，或上传裁剪后更清晰的截图。'
             : '视觉模型没有返回可识别的 JSON。请重试，或上传裁剪后更清晰的截图。'
@@ -294,7 +294,7 @@ export async function POST(
         let storedScreenshots: TrajectoryScreenshot[] = []
         try {
           const existingCodes = new Set(
-            task.models.map((tm: any) => tm.modelCode.toUpperCase()),
+            task.models.map((tm) => tm.modelCode.toUpperCase()),
           )
 
           // 先把本次的 base64 截图全部存到 Blob
@@ -305,16 +305,16 @@ export async function POST(
             taskId: id,
           })
 
-          const ops: any[] = []
+          const ops: Prisma.PrismaPromise<unknown>[] = []
 
-          for (const m of parsed.models) {
+          for (const m of parseRecognizedModels(parsed, "")) {
             const modelCode = String(m.modelCode || '').trim().toUpperCase()
             if (!modelCode) continue
 
             if (type === 'dashboard') {
               const metricsJson = clampDbText(JSON.stringify(m.metrics || {}), 40_000)
               // 合并：保留另一类（process）的截图，替换本类（dashboard）的截图
-              const existingModel = task.models.find((tm: any) => tm.modelCode.toUpperCase() === modelCode)
+              const existingModel = task.models.find((tm) => tm.modelCode.toUpperCase() === modelCode)
               const existingScreenshots = parseTrajectoryScreenshots(existingModel?.screenshotUrls)
               const otherType = filterScreenshotsByType(existingScreenshots, 'process')
               const mergedScreenshots = [...otherType, ...storedScreenshots]
@@ -336,12 +336,12 @@ export async function POST(
             } else {
               const processText = clampDbText(m.processDetail || m.processSummary || null, 200_000)
               // 合并：保留另一类（dashboard）的截图，替换本类（process）的截图
-              const existingModel = task.models.find((tm: any) => tm.modelCode.toUpperCase() === modelCode)
+              const existingModel = task.models.find((tm) => tm.modelCode.toUpperCase() === modelCode)
               const existingScreenshots = parseTrajectoryScreenshots(existingModel?.screenshotUrls)
               const otherType = filterScreenshotsByType(existingScreenshots, 'dashboard')
               const mergedScreenshots = [...otherType, ...storedScreenshots]
               const screenshotUrls = serializeTrajectoryScreenshots(mergedScreenshots)
-              const updateData: any = { screenshotUrls }
+              const updateData: Prisma.TaskModelUpdateInput = { screenshotUrls }
               if (processText) updateData.processText = processText
               ops.push(
                 prisma.taskModel.upsert({
@@ -366,7 +366,7 @@ export async function POST(
           await prisma.$transaction(ops)
 
           // 根据预加载的数据统计 inserted / updated
-          for (const m of parsed.models) {
+          for (const m of parseRecognizedModels(parsed, "")) {
             const modelCode = String(m.modelCode || '').trim().toUpperCase()
             if (!modelCode) continue
             if (existingCodes.has(modelCode)) {
@@ -386,7 +386,7 @@ export async function POST(
         auditStatus = 'success'
         send('done', { inserted, updated, parsed, raw: clean })
       } catch (e: unknown) {
-        const { message: safeMsg } = safeServerError(e, 'screenshot-analyze')
+        safeServerError(e, 'screenshot-analyze')
         auditError = (e instanceof Error && e.name === 'AbortError')
           ? '截图分析已取消'
           : '截图分析失败，请稍后重试'
