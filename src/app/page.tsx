@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { ComponentProps } from 'react'
 import {
   FlaskConical, Sparkles, Image as ImageIcon, Package, FileCheck2,
   ArrowRight, ChevronDown, BarChart3, Users, Shield,
@@ -8,7 +9,7 @@ import { SkipLink } from '@/components/ui/SkipLink'
 
 // NavBtn: kept at the top of the module so the nav section above can read it
 // without relying on function hoisting.
-function NavBtn({ children, variant = 'primary', ...rest }: any) {
+function NavBtn({ children, variant = 'primary', ...rest }: ComponentProps<'button'> & { variant?: 'primary' | 'ghost' }) {
   const v = variant === 'ghost'
     ? 'text-gray-300 hover:text-white hover:bg-white/[0.06]'
     : 'bg-white text-black hover:bg-gray-100 shadow-[0_0_0_0.5px_rgba(255,255,255,0.2)]'
@@ -100,7 +101,7 @@ export default function Home() {
         </Link>
         <div className="flex items-center gap-2">
           <Link href="/login"><NavBtn variant="ghost">登录</NavBtn></Link>
-          <Link href="/register"><NavBtn>免费注册 <ArrowRight className="h-3.5 w-3.5" /></NavBtn></Link>
+          <Link href="/register"><NavBtn>邀请码注册 <ArrowRight className="h-3.5 w-3.5" /></NavBtn></Link>
         </div>
       </nav>
 
@@ -125,9 +126,9 @@ export default function Home() {
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 animate-rise" style={{ animationDelay: '200ms' }}>
-            <Link href="/register">
+            <Link href="/demo">
               <button className="group relative inline-flex items-center gap-2 h-12 px-7 rounded-xl bg-white text-black font-medium text-[15px] btn-glow hover:-translate-y-0.5 transition-transform duration-200">
-                免费开始使用
+                免登录查看演示
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </button>
             </Link>
