@@ -16,7 +16,6 @@ class RegistrationError extends Error {}
 // Prohibits: whitespace, control chars, angle brackets, slashes, quotes,
 // backslashes, @ (reserved for future email login), etc.
 const USERNAME_RE = /^[\p{L}\p{N}_.-]{3,32}$/u
-const MAX_INVITE_CODE_LENGTH = 32
 const INVITE_CODE_RE = /^[A-F0-9]{8,32}$/
 const MAX_PASSWORD_LENGTH = 200
 

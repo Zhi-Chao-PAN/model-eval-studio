@@ -196,14 +196,15 @@ export function serializeEvidenceChain(items: ArtifactEvidence[], modelId: strin
 
 export function parseStoredEvidenceChain(raw?: string | null): SerializedEvidenceChain | null {
   if (!raw) return null
-  let value: any
+  let value: unknown
   try {
     value = JSON.parse(raw)
   } catch {
     return null
   }
   if (
-    !value ||
+    !value || typeof value !== "object" || Array.isArray(value) ||
+    !("version" in value) || !("modelId" in value) || !("items" in value) ||
     value.version !== 1 ||
     typeof value.modelId !== 'string' ||
     !Array.isArray(value.items)
@@ -211,12 +212,14 @@ export function parseStoredEvidenceChain(raw?: string | null): SerializedEvidenc
     return null
   }
 
+  const modelId = value.modelId
   const validSources = new Set<string>(EVIDENCE_SOURCE_VALUES)
   const validTypes = new Set<string>(EVIDENCE_TYPE_VALUES)
 
   const items: ArtifactEvidence[] = value.items
-    .filter((item: any) =>
-      item &&
+    .filter((item: unknown): item is Record<string, unknown> & { evidenceId: string; title: string; summary: string; evidenceType: string; source: string } =>
+      !!item && typeof item === "object" && !Array.isArray(item) &&
+      "evidenceId" in item && "title" in item && "summary" in item && "evidenceType" in item && "source" in item &&
       typeof item.evidenceId === 'string' &&
       typeof item.title === 'string' &&
       typeof item.summary === 'string' &&
@@ -227,7 +230,7 @@ export function parseStoredEvidenceChain(raw?: string | null): SerializedEvidenc
       validSources.has(item.source),
     )
     .slice(0, 200)
-    .map((item: any) => {
+    .map((item) => {
       const evidenceType = item.evidenceType as EvidenceType
       const source = item.source as EvidenceSource
       // 缺失或非 ISO 字符串的 createdAt 给一个稳定 fallback（epoch 0），
@@ -237,7 +240,7 @@ export function parseStoredEvidenceChain(raw?: string | null): SerializedEvidenc
         : new Date(0).toISOString()
       return {
         evidenceId: item.evidenceId,
-        modelId: typeof item.modelId === 'string' ? item.modelId : value.modelId,
+        modelId: typeof item.modelId === 'string' ? item.modelId : modelId,
         artifactId: typeof item.artifactId === 'string' ? item.artifactId : null,
         runId: typeof item.runId === 'string' ? item.runId : null,
         artifactName: typeof item.artifactName === 'string' ? item.artifactName : null,
@@ -251,7 +254,7 @@ export function parseStoredEvidenceChain(raw?: string | null): SerializedEvidenc
       }
     })
 
-  const generatedAt = typeof value.generatedAt === 'string' && value.generatedAt
+  const generatedAt = 'generatedAt' in value && typeof value.generatedAt === 'string' && value.generatedAt
     ? value.generatedAt
     : new Date(0).toISOString()
 

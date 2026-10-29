@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/api-error'
 import OpenAI from 'openai'
 import { type AiProvider } from '@prisma/client'
 import { openAiChatCompletionsUrl } from '@/lib/ai-endpoint'
@@ -53,7 +54,7 @@ async function generateChatOpenai(
 
   const response = await openai.chat.completions.create({
     model: options.model,
-    messages: messages as any,
+    messages,
     temperature: options.temperature,
     max_tokens: options.maxTokens,
   })
@@ -82,7 +83,7 @@ async function generateChatAnthropic(
     content: m.content,
   }))
 
-  const body: any = {
+  const body: Record<string, unknown> = {
     model: options.model,
     max_tokens: options.maxTokens,
     temperature: options.temperature,
@@ -167,8 +168,8 @@ export async function validateApiKey(options: GenerateOptions): Promise<{ ok: bo
       { ...options, maxTokens: 10 }
     )
     return { ok: true }
-  } catch (e: any) {
-    return { ok: false, error: e.message || 'Unknown error' }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) || 'Unknown error' }
   }
 }
 
@@ -197,10 +198,10 @@ export async function analyzeImages(
     throw new Error('至少需要 1 张图片')
   }
 
-  const messageContent: any[] = [
+  const messageContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
     { type: 'text', text: prompt },
     ...imageUrls.map((url) => ({
-      type: 'image_url',
+      type: 'image_url' as const,
       image_url: { url },
     })),
   ]

@@ -1,5 +1,7 @@
 'use client'
 
+import { parseRecognizedModels, type RecognizedModel } from '@/lib/recognized-models'
+import { errorMessage } from '@/lib/api-error'
 import { useState, useRef, useEffect } from 'react'
 
 interface Props {
@@ -11,22 +13,12 @@ interface Props {
   onSave?: (rows: ModelRow[]) => Promise<void> | void
 }
 
-interface ModelRow {
-  modelCode: string
-  displayName?: string
-  status?: string
-  duration?: string
-  toolCalls?: number
-  processSummary?: string
-  processDetail?: string
-  issues?: string[]
-  metrics?: Record<string, any>
-}
+type ModelRow = RecognizedModel
 
 /**
  * Scans a string for a JSON object. Returns the first match, or null.
  */
-function extractFirstJson(text: string): any | null {
+function extractFirstJson(text: string): unknown {
   // Try a few common patterns: ```json ... ```, ``` ... ```, or a bare { ... }
   const fences = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)]
   for (const m of fences) {
@@ -60,57 +52,13 @@ function extractFirstJson(text: string): any | null {
 /**
  * Normalize an arbitrary AI-returned "models" array into ModelRow[].
  */
-function normalizeModels(parsed: any): { rows: ModelRow[]; allColumns: string[] } {
-  let models: any[] = []
-  if (Array.isArray(parsed?.models)) models = parsed.models
-  else if (Array.isArray(parsed)) models = parsed
-
-  if (!models.length) return { rows: [], allColumns: [] }
-
-  const rows: ModelRow[] = models.map((m: any) => {
-    const row: ModelRow = {
-      modelCode: m.modelCode || m.code || m.name || m.model || '未识别',
-      displayName: m.displayName || m.display_name,
-      status: m.status,
-      duration: m.duration || m.elapsed || m.elapsedTime || m.time,
-      toolCalls: m.toolCalls ?? m.tool_calls,
-      processSummary: m.processSummary || m.process_summary,
-      processDetail: m.processDetail || m.process_detail,
-      issues: m.issues || m.problems,
-    }
-    if (m.metrics && typeof m.metrics === 'object') {
-      row.metrics = m.metrics
-    } else if (m.hardMetrics && typeof m.hardMetrics === 'object') {
-      row.metrics = m.hardMetrics
-    } else {
-      // If the model has additional top-level string/number fields, treat them as metrics
-      const reserved = new Set([
-        'modelCode', 'code', 'name', 'model', 'displayName', 'display_name',
-        'status', 'duration', 'elapsed', 'elapsedTime', 'time',
-        'toolCalls', 'tool_calls', 'processSummary', 'process_summary',
-        'processDetail', 'process_detail', 'issues', 'problems',
-        'metrics', 'hardMetrics',
-      ])
-      const extras: Record<string, any> = {}
-      for (const [k, v] of Object.entries(m)) {
-        if (reserved.has(k)) continue
-        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-          extras[k] = v
-        }
-      }
-      if (Object.keys(extras).length) row.metrics = extras
-    }
-    return row
-  })
-
-  const allColumns = new Set<string>()
-  rows.forEach((r) => {
-    if (r.metrics) Object.keys(r.metrics).forEach((k) => allColumns.add(k))
-  })
-  return { rows, allColumns: Array.from(allColumns) }
+function normalizeModels(parsed: unknown): { rows: ModelRow[]; allColumns: string[] } {
+  const rows = parseRecognizedModels(parsed)
+  const allColumns = [...new Set(rows.flatMap(row => Object.keys(row.metrics || {})))]
+  return { rows, allColumns }
 }
 
-function formatCellValue(v: any): string {
+function formatCellValue(v: unknown): string {
   if (v === null || v === undefined) return '-'
   if (typeof v === 'string') return v
   if (typeof v === 'number') return Number.isFinite(v) ? String(v) : '-'
@@ -135,8 +83,6 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
   useEffect(() => {
     if (addColOpen) {
       setTimeout(() => newColInputRef.current?.focus(), 30)
-    } else {
-      setNewColName('')
     }
   }, [addColOpen])
 
@@ -157,10 +103,10 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
   ]
 
   // When editing, user can add/remove extra metric columns
-  const displayColumns = editing
-    ? editedColumns
-    : [...standardColumns.map((c) => ({ key: c.key, label: c.label, editable: false })),
-       ...allColumns.map((c) => ({ key: c, label: c, editable: true, isMetric: true }))]
+  const displayColumns: { key: string; label: string; editable: boolean; isMetric?: boolean }[] = [
+    ...standardColumns.map(c => ({ key: c.key, label: c.label, editable: false })),
+    ...(editing ? editedColumns : allColumns).map(c => ({ key: c, label: c, editable: true, isMetric: true })),
+  ]
 
   function startEditing() {
     setEditing(true)
@@ -184,7 +130,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
   async function saveEditing() {
     const nextRows = rows.map((r) => {
       const edits = editedRows[r.modelCode] || {}
-      const newMetrics: Record<string, any> = {}
+      const newMetrics: Record<string, unknown> = {}
       for (const col of editedColumns) newMetrics[col] = edits[col] ?? ''
       return { ...r, metrics: newMetrics }
     })
@@ -196,8 +142,8 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
       setSavedRows(nextRows)
       setSavedColumns([...editedColumns])
       setEditing(false)
-    } catch (e: any) {
-      setSaveError(e?.message || String(e))
+    } catch (e) {
+      setSaveError(errorMessage(e) || String(e))
     } finally {
       setSaving(false)
     }
@@ -206,11 +152,11 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
   function confirmAddColumn() {
     const name = newColName.trim()
     if (!name) {
-      setAddColOpen(false)
+      setNewColName(''); setAddColOpen(false)
       return
     }
     if (editedColumns.includes(name)) {
-      setAddColOpen(false)
+      setNewColName(''); setAddColOpen(false)
       setNewColName('')
       return
     }
@@ -223,7 +169,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
       })
       return next
     })
-    setAddColOpen(false)
+    setNewColName(''); setAddColOpen(false)
     setNewColName('')
   }
 
@@ -279,7 +225,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
                     onChange={(e) => setNewColName(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') confirmAddColumn()
-                      if (e.key === 'Escape') setAddColOpen(false)
+                      if (e.key === 'Escape') { setNewColName(''); setAddColOpen(false) }
                     }}
                     placeholder="新列名"
                     aria-label="新列名称"
@@ -295,7 +241,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAddColOpen(false)}
+                    onClick={() => { setNewColName(''); setAddColOpen(false) }}
                     aria-label="取消添加列"
                     className="text-xs px-1 py-0.5 text-gray-500 hover:text-gray-200"
                   >
@@ -344,7 +290,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
         <table className="w-full text-xs">
           <thead className="bg-white/[0.03]">
             <tr>
-              {displayColumns.map((c: any) => (
+              {displayColumns.map((c) => (
                 <th key={String(c.key)} className="text-left px-3 py-2 font-medium text-gray-400 border-b border-white/[0.08] whitespace-nowrap">
                   <span>{c.label}</span>
                   {editing && c.isMetric && (
@@ -365,7 +311,7 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.modelCode} className="border-b border-white/[0.06] last:border-0 hover:bg-white/[0.03]/50">
-                {displayColumns.map((c: any) => {
+                {displayColumns.map((c) => {
                   const isStandard = !c.isMetric
                   const cellKey = String(c.key)
                   if (editing && c.isMetric) {
@@ -387,9 +333,9 @@ export function JsonTable({ text, hideRaw, onSave }: Props) {
                       </td>
                     )
                   }
-                  let val: any = ''
+                  let val: unknown = ''
                   if (isStandard) {
-                    val = (r as any)[c.key]
+                    val = r[c.key as keyof ModelRow]
                   } else {
                     val = r.metrics?.[c.key]
                   }

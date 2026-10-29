@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { AlertTriangle, AlertCircle, Info, X, RefreshCw, Loader2, Gauge } from 'lucide-react'
+import { AlertTriangle, AlertCircle, Info, X, Loader2, Gauge } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { assessHealthAlertLevel, type HealthAlert } from '@/lib/health-alert'
 

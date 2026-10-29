@@ -8,8 +8,11 @@ on:
 
 jobs:
   quality:
-    name: Lint · Type Check · Tests · Prisma
+    name: Type Check · Tests · Prisma
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
 
     steps:
       - name: Checkout
@@ -18,7 +21,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.9
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -38,8 +41,20 @@ jobs:
       - name: TypeScript type check
         run: pnpm tsc --noEmit
 
-      - name: Lint
-        run: pnpm lint
-
       - name: Unit tests
         run: pnpm test
+
+  lint:
+    name: Strict lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec eslint src --max-warnings=0

@@ -112,7 +112,7 @@ export async function POST(
         baseUrl: aiConfig.baseUrl,
         apiKey: aiConfig.apiKey,
         model: aiConfig.model,
-        provider: aiConfig.provider as any,
+        provider: aiConfig.provider,
         temperature: 0.6,
         maxTokens: aiConfig.maxTokens,
       }

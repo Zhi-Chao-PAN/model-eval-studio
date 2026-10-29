@@ -1,5 +1,11 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import type { ModelView } from '@/lib/task-types'
+import type { RecognizedModel } from '@/lib/recognized-models'
+import type { TrajectoryScreenshot } from '@/lib/trajectory-screenshots'
+import NextImage from 'next/image'
+import type { TaskView } from '@/lib/task-types'
+import { errorMessage } from '@/lib/api-error'
+import { useCallback, useState, useRef, useEffect } from 'react'
 import {
   Image as ImageIcon, Camera, BarChart3, UploadCloud, X as XIcon,
   Sparkles, AlertTriangle, SkipForward, CheckCircle2, Lightbulb, ArrowRight,
@@ -11,7 +17,7 @@ import { JsonTable } from '@/components/JsonTable'
 import { cn } from '@/lib/utils'
 
 interface Props {
-  task: any
+  task: TaskView
   onRefresh: () => void
   onNext?: () => void
   onPrev?: () => void
@@ -154,11 +160,10 @@ export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Prop
   const [dashboardImages, setDashboardImages] = useState<UploadedImage[]>([])
   const [savedProcessImages, setSavedProcessImages] = useState<SavedImage[]>([])
   const [savedDashboardImages, setSavedDashboardImages] = useState<SavedImage[]>([])
-  const [loadingSaved, setLoadingSaved] = useState(true)
   const [analyzing, setAnalyzing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [startedAt, setStartedAt] = useState<number | undefined>(undefined)
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<{ parsed?: { models?: RecognizedModel[] }; raw?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [skippedProcess, setSkippedProcess] = useState(false)
   const [streamText, setStreamText] = useState('')
@@ -169,32 +174,23 @@ export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Prop
     abortRef.current?.abort()
   }, [])
 
-  const models = task.models || []
+  const models = task.models
 
-  async function loadSavedScreenshots() {
-    if (!models || models.length === 0) {
-      setLoadingSaved(false)
-      return
-    }
-    // 取第一个有截图的模型的数据（同一任务同一 type 截图内容一致）
-    try {
+  const loadSavedScreenshots = useCallback(() => {
+    async function fetchScreenshots(): Promise<TrajectoryScreenshot[]> {
       for (const model of models) {
-        const res = await fetch('/api/tasks/' + task.id + '/models/' + model.id + '/screenshots')
+        const res = await fetch(`/api/tasks/${task.id}/models/${model.id}/screenshots`)
         if (!res.ok) continue
         const data = await res.json()
-        const screenshots = data.screenshots || []
-        if (screenshots.length > 0) {
-          setSavedProcessImages(screenshots.filter((s: any) => s.type === 'process'))
-          setSavedDashboardImages(screenshots.filter((s: any) => s.type === 'dashboard'))
-          break
-        }
+        if (data.screenshots?.length) return data.screenshots
       }
-    } catch {
-      // 加载失败静默处理
-    } finally {
-      setLoadingSaved(false)
+      return []
     }
-  }
+    return fetchScreenshots().then(screenshots => {
+      setSavedProcessImages(screenshots.filter(s => s.type === 'process'))
+      setSavedDashboardImages(screenshots.filter(s => s.type === 'dashboard'))
+    }).catch(() => { /* Uploaded screenshots remain available if refresh fails. */ })
+  }, [models, task.id])
 
   function stopAnalyze() {
     if (abortRef.current) abortRef.current.abort()
@@ -207,7 +203,7 @@ export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Prop
     if (models.length === 0) return
     loadedRef.current = true
     void loadSavedScreenshots()
-  }, [models.length])
+  }, [models.length, loadSavedScreenshots])
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>, type: Tab) {
     const files = Array.from(e.target.files || [])
@@ -232,7 +228,7 @@ export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Prop
     }
   }
 
-  async function readJsonResponse(res: Response): Promise<any> {
+  async function readJsonResponse(res: Response): Promise<{ error?: string; models?: ModelView[] }> {
     const text = await res.text().catch(() => '')
     if (!text) return {}
     try {
@@ -242,9 +238,9 @@ export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Prop
     }
   }
 
-  async function saveRecognizedRows(rows: any[]) {
-    const modelByCode = new Map<string, any>(
-      models.map((model: any) => [model.modelCode.toUpperCase(), model]),
+  async function saveRecognizedRows(rows: RecognizedModel[]) {
+    const modelByCode = new Map<string, ModelView>(
+      models.map((model) => [model.modelCode.toUpperCase(), model]),
     )
     const missingCodes = rows
       .map((row) => String(row.modelCode || '').trim().toUpperCase())
@@ -327,7 +323,7 @@ export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Prop
             else if (line.startsWith('data:')) dataLine = line.slice(5).trim()
           }
           if (!dataLine) continue
-          let payload: any
+          let payload: { text?: string; message?: string; parsed?: { models?: RecognizedModel[] }; raw?: string }
           try {
             payload = JSON.parse(dataLine)
           } catch {
@@ -351,8 +347,8 @@ export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Prop
         }
       }
       if (!completed && acc) setStreamText(acc)
-    } catch (e: any) {
-      if (e.name !== 'AbortError') setError(e.message || String(e))
+    } catch (e) {
+      if ((e instanceof Error ? e.name : undefined) !== 'AbortError') setError(errorMessage(e) || String(e))
     } finally {
       setAnalyzing(false); setSaving(false); setStreamText(''); setStartedAt(undefined); abortRef.current = null
     }
@@ -506,7 +502,7 @@ export default function StepScreenshot({ task, onRefresh, onNext, onPrev }: Prop
           )
       )}
 
-      {result && activeTab === 'process' && result.parsed?.models?.length > 0 && (
+      {result && activeTab === 'process' && (result.parsed?.models?.length ?? 0) > 0 && (
         <div className="panel p-4"><JsonTable text={result.raw || JSON.stringify(result.parsed)} onSave={saveRecognizedRows} /></div>
       )}
 
@@ -554,7 +550,6 @@ function UploadBox({ label, images, onUpload, onRemove, accent }: {
 }) {
   const hoverBorder = accent === 'indigo' ? 'hover:border-indigo-400/50' : 'hover:border-amber-400/50'
   const hoverText = accent === 'indigo' ? 'group-hover:text-indigo-300' : 'group-hover:text-amber-300'
-  const iconColor = accent === 'indigo' ? 'text-indigo-300' : 'text-amber-300'
   return (
     <div className="space-y-3">
       <label className={cn(
@@ -575,7 +570,7 @@ function UploadBox({ label, images, onUpload, onRemove, accent }: {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
           {images.map((img, i) => (
             <div key={i} className="relative aspect-video rounded-lg overflow-hidden border border-white/10 group animate-rise">
-              <img src={img.dataUrl} alt={img.name} className="w-full h-full object-cover" />
+              <NextImage unoptimized fill sizes="(max-width: 640px) 50vw, 25vw" src={img.dataUrl} alt={img.name} className="w-full h-full object-cover" />
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
                 <div className="text-[10px] text-gray-300 truncate">{img.name}</div>
               </div>
@@ -609,7 +604,7 @@ function SavedScreenshotGrid({ images, label }: { images: SavedImage[]; label: s
             rel="noopener noreferrer"
             className="relative aspect-video rounded-lg overflow-hidden border border-emerald-500/20 group"
           >
-            <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+            <NextImage unoptimized fill sizes="(max-width: 640px) 50vw, 25vw" src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
               <div className="text-[10px] text-gray-300 truncate">{img.name}</div>
             </div>

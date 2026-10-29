@@ -10,7 +10,7 @@ interface ToastItem { id: string; title?: string; message: string; type: ToastTy
 interface StoreState { toasts: ToastItem[] }
 
 const { useStore, api } = create<StoreState>(() => ({ toasts: [] }))
-const setState = (p: any) => (api as any)._set(p)
+const setState = api._set
 
 function push(t: ToastInput) {
   const id = Math.random().toString(36).slice(2)
@@ -22,13 +22,13 @@ function push(t: ToastInput) {
 function remove(id: string) { setState((s: StoreState) => ({ toasts: s.toasts.filter(x => x.id !== id) })) }
 
 export const toast = {
-  success: (m: string, o?: any) => push({ message: m, type: 'success', ...o }),
-  error: (m: string, o?: any) => push({ message: m, type: 'error', duration: 5000, ...o }),
-  info: (m: string, o?: any) => push({ message: m, type: 'info', ...o }),
+  success: (m: string, o?: Omit<ToastInput, "message" | "type">) => push({ message: m, type: 'success', ...o }),
+  error: (m: string, o?: Omit<ToastInput, "message" | "type">) => push({ message: m, type: 'error', duration: 5000, ...o }),
+  info: (m: string, o?: Omit<ToastInput, "message" | "type">) => push({ message: m, type: 'info', ...o }),
 }
 
 export function Toaster() {
-  const toasts = useStore((s: any) => s.toasts)
+  const toasts = useStore((s) => s.toasts)
   return (
     <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
       {toasts.map((t: ToastItem) => {

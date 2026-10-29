@@ -1,3 +1,6 @@
+import { isRecord } from '@/lib/recognized-models'
+import type { ModelReport } from '@prisma/client'
+import type { ReportTask, ReportModel } from '@/lib/task-types'
 /**
  * 报告生成核心逻辑（非 SSE 版本）。
  *
@@ -8,6 +11,7 @@
  * 通过 onPhase / onDelta 回调解耦输出方式。
  */
 
+import { errorMessage } from '@/lib/api-error'
 import { prisma } from '@/lib/prisma'
 import { analyzeImages, generateChat } from '@/lib/ai'
 import { streamChat } from '@/lib/ai-stream'
@@ -60,14 +64,14 @@ const AUXILIARY_CALL_TIMEOUT_MS = 45_000
 const REPORT_CALL_TIMEOUT_MS = 90_000
 
 export interface ReportGenerationCallbacks {
-  onPhase?: (name: string, extra?: Record<string, any>) => void
+  onPhase?: (name: string, extra?: Record<string, unknown>) => void
   onDelta?: (text: string) => void
   onReplace?: (text: string) => void
 }
 
 export interface ReportGenerationOptions {
-  task: any
-  model: any
+  task: ReportTask
+  model: ReportModel
   aiConfig: {
     baseUrl: string
     apiKey: string
@@ -80,7 +84,7 @@ export interface ReportGenerationOptions {
 }
 
 export interface ReportGenerationResult {
-  report: any
+  report: ModelReport
   reportText: string
   tokenInput: number
   tokenOutput: number
@@ -101,7 +105,7 @@ export async function generateReportForModel(
   let tokenInput = 0
   let tokenOutput = 0
 
-  const phase = (name: string, extra?: Record<string, any>) => {
+  const phase = (name: string, extra?: Record<string, unknown>) => {
     onPhase(name, extra)
   }
 
@@ -193,17 +197,16 @@ export async function generateReportForModel(
         tokenInput += imgResult.usage.promptTokens
         tokenOutput += imgResult.usage.completionTokens
       }
-    } catch (err: any) {
-      verificationSummary = '已提供产物效果截图，但视觉解读失败：' + (err?.message || String(err))
+    } catch (err) {
+      verificationSummary = '已提供产物效果截图，但视觉解读失败：' + (errorMessage(err) || String(err))
     }
   } else {
     verificationSummary = missingEvidenceSummary(storedEvidence.length > 0)
   }
 
   // Phase 1.5: Per-file deep analysis
-  const analysisContext = task.analysisJson
-    ? safeJsonParse(task.analysisJson)?.content || ''
-    : ''
+  const parsedAnalysis = task.analysisJson ? safeJsonParse(task.analysisJson) : null
+  const analysisContext = isRecord(parsedAnalysis) && typeof parsedAnalysis.content === 'string' ? parsedAnalysis.content : ''
 
   const processText = model.processText || ''
   let filesAnalysis = ''
@@ -214,8 +217,8 @@ export async function generateReportForModel(
     synthesizedAnalysis = preAnalysis.filesAnalysis
   } else {
     const textArtifacts = model.artifacts
-      .filter((a: any) => (a.parsedText?.length || 0) + (a.textContent?.length || 0) > 0)
-      .sort((a: any, b: any) => {
+      .filter((a) => (a.parsedText?.length || 0) + (a.textContent?.length || 0) > 0)
+      .sort((a, b) => {
         const bText = b.parsedText || b.textContent || ''
         const aText = a.parsedText || a.textContent || ''
         return artifactEntryScore(b.name, inferArtifactPreviewKind(b.name), bText) -
@@ -231,7 +234,7 @@ export async function generateReportForModel(
     if (textArtifacts.length === 0) {
       filesAnalysis = '（未上传可解析的文本产物，基于产物效果截图和硬指标进行评估。）'
     } else {
-      const perFileResults = await Promise.all(textArtifacts.map(async (artifact: any, i: number) => {
+      const perFileResults = await Promise.all(textArtifacts.map(async (artifact, i: number) => {
         const fileContent = artifact.parsedText || artifact.textContent || ''
         const fileName = artifact.name
 
@@ -421,7 +424,7 @@ export async function generateReportForModel(
   // 构建生成配置快照
   const generationConfig = buildGenerationConfig({
     rubric: rubricRecord || null,
-    taskType: task.requirementType || task.category,
+    taskType: task.requirementType || task.category || undefined,
   })
 
   const report = await prisma.modelReport.create({
@@ -461,7 +464,7 @@ export async function generateReportForModel(
 
 // ---- helpers ----
 
-function safeJsonParse(text: string): any {
+function safeJsonParse(text: string): unknown {
   try { return JSON.parse(text) } catch { return null }
 }
 

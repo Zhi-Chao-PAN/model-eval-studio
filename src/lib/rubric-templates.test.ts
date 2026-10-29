@@ -76,9 +76,9 @@ test('validateRubric: 权重和不为 10 拒绝', () => {
 })
 
 test('validateRubric: 维度缺 key/label 拒绝', () => {
-  const r1 = { templateType: 'CUSTOM', dimensions: [{ label: 'A', weight: 10, description: '', scoreRange: [0, 10] }], overallFormula: '' } as any
+  const r1 = { templateType: 'CUSTOM', dimensions: [{ label: 'A', weight: 10, description: '', scoreRange: [0, 10] }], overallFormula: '' }
   assert.equal(validateRubric(r1).valid, false)
-  const r2 = { templateType: 'CUSTOM', dimensions: [{ key: 'a', weight: 10, description: '', scoreRange: [0, 10] }], overallFormula: '' } as any
+  const r2 = { templateType: 'CUSTOM', dimensions: [{ key: 'a', weight: 10, description: '', scoreRange: [0, 10] }], overallFormula: '' }
   assert.equal(validateRubric(r2).valid, false)
 })
 
@@ -96,7 +96,7 @@ test('validateRubric: rejects non-numeric / string / NaN weights (the ||0 bug)',
       { key: 'a', label: 'A', weight: 'hello', description: '', scoreRange: [0, 10] },
     ],
     overallFormula: 'a',
-  } as any
+  }
   const res = validateRubric(bad)
   assert.equal(res.valid, false)
   assert.ok(/权重/.test(res.error || ''), 'should reject string weight: ' + res.error)

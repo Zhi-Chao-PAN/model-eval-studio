@@ -1,3 +1,4 @@
+import type { Task, TaskCollaborator } from '@prisma/client'
 /**
  * 任务访问权限控制
  *
@@ -13,7 +14,7 @@ export type AccessLevel = 'OWNER' | 'EDITOR' | 'VIEWER' | 'PUBLIC_VIEW'
 
 export interface TaskAccessResult {
   access: AccessLevel | null
-  task: any | null
+  task: (Pick<Task, 'id' | 'userId' | 'status' | 'title'> & { collaborators: Pick<TaskCollaborator, 'userId' | 'role'>[] }) | null
 }
 
 // 权限等级数字，用于快速比较

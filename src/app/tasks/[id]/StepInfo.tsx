@@ -1,5 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import type { TaskView } from '@/lib/task-types'
+import { errorMessage } from '@/lib/api-error'
+import { useCallback, useState, useEffect } from 'react'
 import { FileText, Save, Sparkles, Check, Scale, ChevronDown, ChevronUp, Settings2, AlertTriangle, RefreshCw, Lightbulb, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea, Label } from '@/components/ui/input'
@@ -7,8 +9,8 @@ import { Badge } from '@/components/ui/badge'
 import type { RubricData, RubricDimension } from '@/lib/rubric-templates'
 
 interface Props {
-  task: any
-  onUpdate: (data: any) => void
+  task: TaskView
+  onUpdate: (data: Partial<TaskView>) => void
   onNext?: () => void
   onPrev?: () => void
 }
@@ -37,27 +39,24 @@ export default function StepInfo({ task, onUpdate, onNext, onPrev }: Props) {
   const [rubricError, setRubricError] = useState<string | null>(null)
   const [isCustom, setIsCustom] = useState(false)
 
-  useEffect(() => {
-    loadRubric()
-  }, [task.id])
 
-  async function loadRubric() {
-    setRubricLoading(true)
-    setRubricLoadError(null)
-    try {
-      const res = await fetch('/api/tasks/' + task.id + '/rubric')
+  const loadRubric = useCallback(async () => {
+    return fetch('/api/tasks/' + task.id + '/rubric').then(async (res) => {
       const data = await res.json().catch(() => ({}))
+      setRubricLoadError(null)
       if (!res.ok) throw new Error(data.error || '评分规则加载失败，请稍后重试')
       if (data.rubric) {
         setRubric(data.rubric)
         setIsCustom(data.isCustom || false)
       }
-    } catch (e: any) {
-      setRubricLoadError(e?.message || '加载失败')
-    } finally {
+    }).catch((e) => {
+      setRubricLoadError(errorMessage(e) || '加载失败')
+    }).finally(() => {
       setRubricLoading(false)
-    }
-  }
+    })
+  }, [task.id])
+
+  useEffect(() => { void loadRubric() }, [loadRubric])
 
   async function save(): Promise<boolean> {
     setSaving(true); setError('')
@@ -68,6 +67,7 @@ export default function StepInfo({ task, onUpdate, onNext, onPrev }: Props) {
         body: JSON.stringify(form),
       })
       let data; try { data = await res.json(); } catch { throw new Error('保存失败，服务器返回了非预期内容') }
+      setRubricLoadError(null)
       if (!res.ok) throw new Error(data.error || '保存失败，请稍后重试')
       if (data.task) {
         onUpdate(data.task)
@@ -75,7 +75,7 @@ export default function StepInfo({ task, onUpdate, onNext, onPrev }: Props) {
         setTimeout(() => setSaved(false), 1500)
       }
       return true
-    } catch (e: any) { setError(e.message || String(e)); return false }
+    } catch (e) { setError(errorMessage(e) || String(e)); return false }
     finally { setSaving(false) }
   }
 
@@ -101,8 +101,8 @@ export default function StepInfo({ task, onUpdate, onNext, onPrev }: Props) {
         setRubricSaved(true)
         setTimeout(() => setRubricSaved(false), 1500)
       }
-    } catch (e: any) {
-      setRubricError(e?.message || '模板切换失败')
+    } catch (e) {
+      setRubricError(errorMessage(e) || '模板切换失败')
     } finally {
       setRubricSaving(false)
     }
