@@ -1,6 +1,7 @@
 'use client'
 
 import type { TaskView } from '@/lib/task-types'
+import { selectReportForView } from '@/lib/report-selection'
 import { useAsyncResource } from '@/hooks/use-async-resource'
 import { errorMessage } from '@/lib/api-error'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
@@ -218,7 +219,7 @@ export default function StepReport({ task, onRefresh }: Props) {
     return data.report || null
   }, [task.id, currentModelId, selectedReportId])
   const detail = useAsyncResource(
-    versionsOpen && currentModelId && selectedReportId ? `${task.id}:${currentModelId}:${selectedReportId}` : null,
+    currentModelId && selectedReportId ? `${task.id}:${currentModelId}:${selectedReportId}` : null,
     loadDetail,
   )
   const selectedReportDetail = detail.data
@@ -226,9 +227,7 @@ export default function StepReport({ task, onRefresh }: Props) {
   const detailError = detail.error
 
   // 查看的报告：如果选了历史版本就显示历史的，否则显示最新的
-  const viewedReport = selectedReportId && selectedReportDetail
-    ? selectedReportDetail
-    : latestReport
+  const viewedReport = selectReportForView(selectedReportId, latestReport, selectedReportDetail)
   const isViewingHistorical = Boolean(selectedReportId) && latestReport && selectedReportId !== latestReport.id
 
   const SECTION_DEFS: Array<Omit<ReportSection, 'score' | 'content'>> = [
@@ -265,7 +264,7 @@ export default function StepReport({ task, onRefresh }: Props) {
   }
 
   async function submitRevise() {
-    if (!currentModelId || !selectedReportId) return
+    if (!currentModelId || !selectedReportId || !viewedReport) return
     // 前端校验评分范围
     const overallScore = Number(reviseForm.overallScore)
     const efficiencyScore = Number(reviseForm.efficiencyScore)
@@ -705,6 +704,7 @@ export default function StepReport({ task, onRefresh }: Props) {
                       variant="secondary"
                       size="sm"
                       onClick={openRevise}
+                      disabled={!viewedReport}
                       title="人工修订评分和评论"
                     >
                       <Edit3 className="h-3.5 w-3.5" />
@@ -936,7 +936,12 @@ export default function StepReport({ task, onRefresh }: Props) {
               )}
 
               {/* Report module cards */}
-              {latestReport && !isGenerating && !isAdjusting ? (
+              {latestReport && !viewedReport && !isGenerating && !isAdjusting ? (
+                <div className="panel p-8 text-center text-sm text-gray-400" role="status">
+                  {detailLoading ? '正在加载所选版本…' : (detailError || '所选报告版本不可用，请重试或返回最新版。')}
+                  {!detailLoading && <Button variant="ghost" size="sm" onClick={detail.refresh}>重试</Button>}
+                </div>
+              ) : viewedReport && !isGenerating && !isAdjusting ? (
                 <div className="space-y-3">
                   {reportSections.map(section => {
                     const Icon = section.icon
