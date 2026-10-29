@@ -2,7 +2,7 @@
  * 报告版本管理：版本号分配、生成快照、修订记录
  */
 
-import type { ModelReport } from '@prisma/client'
+import type { ModelReport, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { createHash } from 'crypto'
 import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
@@ -35,18 +35,27 @@ export interface ReportGenerationConfig {
   taskType?: string
 }
 
-/** 为 model 分配下一个报告版本号 */
-export async function getNextReportVersion(taskModelId: string): Promise<number> {
-  const maxVersion = await prisma.modelReport.aggregate({
-    where: { taskModelId },
-    _max: { version: true },
+/**
+ * Allocate and persist a version atomically. Lock the model row, including when
+ * it has no reports yet; all writers share this boundary. AI calls stay outside
+ * the short transaction, and unrelated models do not block each other.
+ */
+export async function createVersionedReport(
+  data: Omit<Prisma.ModelReportUncheckedCreateInput, 'version' | 'id'>,
+): Promise<ModelReport> {
+  return prisma.$transaction(async tx => {
+    const models = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "TaskModel" WHERE "id" = ${data.taskModelId} FOR UPDATE
+    `
+    if (!models.length) throw new Error('模型不存在')
+    const latest = await tx.modelReport.aggregate({
+      where: { taskModelId: data.taskModelId },
+      _max: { version: true },
+    })
+    return tx.modelReport.create({
+      data: { ...data, version: (latest._max.version ?? 0) + 1 },
+    })
   })
-  return (maxVersion._max.version || 0) + 1
-}
-
-/** Prisma 唯一约束冲突错误码（见 https://www.prisma.io/docs/reference/api-reference/error-reference#p2002） */
-export function isUniqueConstraintError(err: unknown): boolean {
-  return !!err && typeof err === 'object' && 'code' in err && err.code === 'P2002'
 }
 
 /** 生成文本内容的 SHA-256 哈希（用于快照摘要） */
@@ -160,51 +169,29 @@ export async function createReportRevision(opts: {
     throw new Error('父报告与当前模型不匹配')
   }
 
-  // 使用事务 + 唯一约束冲突重试（最多 3 次），避免并发写入时 version 重复
-  const MAX_RETRIES = 3
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      const report = await prisma.$transaction(async tx => {
-        const version = await tx.modelReport.aggregate({
-          where: { taskModelId: opts.taskModelId },
-          _max: { version: true },
-        }).then((r) => (r._max.version || 0) + 1)
-
-        return tx.modelReport.create({
-          data: {
-            taskModelId: opts.taskModelId,
-            version,
-            source: opts.source,
-            parentReportId: opts.parentReportId,
-            editedById: opts.editedById || null,
-            editNote: clampDbText(opts.editNote ?? null, 500),
-            productFeedback: clampRequiredText(opts.productFeedback ?? parent.productFeedback, DB_TEXT_LIMITS.COMMENT),
-            verificationScreenshotUrls:
-              opts.verificationScreenshotUrls !== undefined
-                ? opts.verificationScreenshotUrls
-                : parent.verificationScreenshotUrls,
-            verificationSummary: clampDbText(
-              opts.verificationSummary !== undefined ? opts.verificationSummary : parent.verificationSummary,
-              DB_TEXT_LIMITS.VERIFICATION,
-            ),
-            overallScore: opts.overallScore ?? parent.overallScore,
-            overallComment: clampRequiredText(opts.overallComment ?? parent.overallComment, DB_TEXT_LIMITS.COMMENT),
-            efficiencyScore: opts.efficiencyScore ?? parent.efficiencyScore,
-            efficiencyComment: clampRequiredText(opts.efficiencyComment ?? parent.efficiencyComment, DB_TEXT_LIMITS.COMMENT),
-            qualityScore: opts.qualityScore ?? parent.qualityScore,
-            qualityComment: clampRequiredText(opts.qualityComment ?? parent.qualityComment, DB_TEXT_LIMITS.COMMENT),
-            trajectoryAnalysis: clampDbText(opts.trajectoryAnalysis ?? parent.trajectoryAnalysis, DB_TEXT_LIMITS.ANALYSIS),
-            generationSnapshot: opts.generationSnapshot ?? parent.generationSnapshot,
-            generationConfig: opts.generationConfig ?? parent.generationConfig,
-          },
-        })
-      })
-      return report
-    } catch (err) {
-      if (!isUniqueConstraintError(err) || attempt === MAX_RETRIES - 1) throw err
-      // 等待随机时间再重试，避免再次冲突
-      await new Promise(r => setTimeout(r, 20 + Math.random() * 80))
-    }
-  }
-  throw new Error("Report revision retry limit exhausted")
+  return createVersionedReport({
+    taskModelId: opts.taskModelId,
+    source: opts.source,
+    parentReportId: opts.parentReportId,
+    editedById: opts.editedById || null,
+    editNote: clampDbText(opts.editNote ?? null, 500),
+    productFeedback: clampRequiredText(opts.productFeedback ?? parent.productFeedback, DB_TEXT_LIMITS.COMMENT),
+    verificationScreenshotUrls:
+      opts.verificationScreenshotUrls !== undefined
+        ? opts.verificationScreenshotUrls
+        : parent.verificationScreenshotUrls,
+    verificationSummary: clampDbText(
+      opts.verificationSummary !== undefined ? opts.verificationSummary : parent.verificationSummary,
+      DB_TEXT_LIMITS.VERIFICATION,
+    ),
+    overallScore: opts.overallScore ?? parent.overallScore,
+    overallComment: clampRequiredText(opts.overallComment ?? parent.overallComment, DB_TEXT_LIMITS.COMMENT),
+    efficiencyScore: opts.efficiencyScore ?? parent.efficiencyScore,
+    efficiencyComment: clampRequiredText(opts.efficiencyComment ?? parent.efficiencyComment, DB_TEXT_LIMITS.COMMENT),
+    qualityScore: opts.qualityScore ?? parent.qualityScore,
+    qualityComment: clampRequiredText(opts.qualityComment ?? parent.qualityComment, DB_TEXT_LIMITS.COMMENT),
+    trajectoryAnalysis: clampDbText(opts.trajectoryAnalysis ?? parent.trajectoryAnalysis, DB_TEXT_LIMITS.ANALYSIS),
+    generationSnapshot: opts.generationSnapshot ?? parent.generationSnapshot,
+    generationConfig: opts.generationConfig ?? parent.generationConfig,
+  })
 }
