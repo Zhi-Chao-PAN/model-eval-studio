@@ -54,7 +54,7 @@ import {
   type RubricData,
 } from '@/lib/rubric-templates'
 import {
-  getNextReportVersion,
+  createVersionedReport,
   buildGenerationSnapshot,
   buildGenerationConfig,
 } from '@/lib/report-versioning'
@@ -391,9 +391,6 @@ export async function generateReportForModel(
   phase('saving')
   const parsed = validated.parsed
 
-  // 分配版本号
-  const version = await getNextReportVersion(model.id)
-
   // 加载 rubric 用于生成配置快照
   const rubricRecord = await prisma.evaluationRubric.findUnique({
     where: { taskId: task.id },
@@ -427,24 +424,21 @@ export async function generateReportForModel(
     taskType: task.requirementType || task.category || undefined,
   })
 
-  const report = await prisma.modelReport.create({
-    data: {
-      taskModelId: model.id,
-      version,
-      source: 'AI_GENERATED',
-      productFeedback: clampRequiredText(parsed.productFeedback, DB_TEXT_LIMITS.COMMENT),
-      verificationScreenshotUrls,
-      verificationSummary: clampDbText(verificationSummary, DB_TEXT_LIMITS.VERIFICATION),
-      overallScore: parsed.overallScore,
-      overallComment: clampRequiredText(parsed.overallComment, DB_TEXT_LIMITS.COMMENT),
-      efficiencyScore: parsed.efficiencyScore,
-      efficiencyComment: clampRequiredText(parsed.efficiencyComment, DB_TEXT_LIMITS.COMMENT),
-      qualityScore: parsed.qualityScore,
-      qualityComment: clampRequiredText(parsed.qualityComment, DB_TEXT_LIMITS.COMMENT),
-      trajectoryAnalysis: clampDbText(parsed.trajectoryAnalysis, DB_TEXT_LIMITS.ANALYSIS),
-      generationSnapshot,
-      generationConfig,
-    },
+  const report = await createVersionedReport({
+    taskModelId: model.id,
+    source: 'AI_GENERATED',
+    productFeedback: clampRequiredText(parsed.productFeedback, DB_TEXT_LIMITS.COMMENT),
+    verificationScreenshotUrls,
+    verificationSummary: clampDbText(verificationSummary, DB_TEXT_LIMITS.VERIFICATION),
+    overallScore: parsed.overallScore,
+    overallComment: clampRequiredText(parsed.overallComment, DB_TEXT_LIMITS.COMMENT),
+    efficiencyScore: parsed.efficiencyScore,
+    efficiencyComment: clampRequiredText(parsed.efficiencyComment, DB_TEXT_LIMITS.COMMENT),
+    qualityScore: parsed.qualityScore,
+    qualityComment: clampRequiredText(parsed.qualityComment, DB_TEXT_LIMITS.COMMENT),
+    trajectoryAnalysis: clampDbText(parsed.trajectoryAnalysis, DB_TEXT_LIMITS.ANALYSIS),
+    generationSnapshot,
+    generationConfig,
   })
   await prisma.task.update({ where: { id: task.id }, data: { currentStep: 'REPORT' } })
 

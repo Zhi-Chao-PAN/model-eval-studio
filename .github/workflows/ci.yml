@@ -7,6 +7,38 @@ on:
     branches: [main]
 
 jobs:
+  report-database:
+    name: PostgreSQL report concurrency
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: modeleval_test_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d modeleval_test_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/modeleval_test_ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/modeleval_test_ci
+      TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/modeleval_test_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma db push --skip-generate
+      - run: pnpm test:database
+
   quality:
     name: Type Check · Tests · Prisma
     runs-on: ubuntu-latest
@@ -57,4 +89,4 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec eslint src --max-warnings=0
+      - run: pnpm lint
