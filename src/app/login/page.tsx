@@ -1,4 +1,5 @@
 'use client'
+import { errorMessage } from '@/lib/api-error'
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -28,15 +29,15 @@ export default function LoginPage() {
       })
       // Safely parse JSON to avoid SyntaxError if server returns HTML error page
       const text = await res.text()
-      let data: any = {}
+      let data: { error?: string; ok?: boolean } = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
       if (!res.ok) throw new Error(data.error || '登录失败，请稍后重试')
       // Validate nextPath to prevent open-redirect attacks (must start with / and not be //)
       const safeRedirect = nextPath.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/dashboard'
       router.push(safeRedirect)
       router.refresh()
-    } catch (e: any) {
-      setError(e.message || '登录失败，请稍后重试')
+    } catch (e) {
+      setError(errorMessage(e) || '登录失败，请稍后重试')
     } finally {
       setSubmitting(false)
     }

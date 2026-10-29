@@ -24,7 +24,6 @@ import {
   type StoredModelArtifactAnalysis,
 } from '@/lib/model-artifact-analysis'
 import {
-  parseStoredEvidenceChain,
   serializeEvidenceChain,
   type ArtifactEvidence,
 } from '@/lib/artifact-evidence-chain'

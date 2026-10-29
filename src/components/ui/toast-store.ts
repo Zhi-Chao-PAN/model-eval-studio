@@ -2,44 +2,26 @@
 import { useSyncExternalStore } from 'react'
 
 type Listener = () => void
+type StateUpdate<T> = Partial<T> | ((state: T) => Partial<T>)
 
-interface Store<T> {
-  getState: () => T
-  setState: (partial: Partial<T> | ((s: T) => Partial<T>)) => void
-  subscribe: (l: Listener) => () => void
-  api: Record<string, any>
-}
-
-export function create<T extends Record<string, any>>(
-  factory: (set: (p: Partial<T> | ((s: T) => Partial<T>)) => void, get: () => T) => T,
-): {
-  useStore: <U>(selector: (s: T) => U) => U
-  api: Record<string, any>
-} {
-  let state: any
+export function create<T extends object>(
+  factory: (set: (update: StateUpdate<T>) => void, get: () => T) => T,
+) {
+  let state: T
   const listeners = new Set<Listener>()
-
-  const setState = (p: any) => {
-    const patch = typeof p === 'function' ? p(state) : p
+  const setState = (update: StateUpdate<T>) => {
+    const patch = typeof update === 'function' ? update(state) : update
     state = { ...state, ...patch }
-    listeners.forEach(l => l())
+    listeners.forEach(listener => listener())
   }
-
   const getState = () => state
-  const subscribe = (l: Listener) => { listeners.add(l); return () => listeners.delete(l) }
-
-  state = factory(setState, getState)
-
-  // bind any functions in state as api
-  const api: Record<string, any> = { _set: setState }
-  for (const k of Object.keys(state)) {
-    const v = (state as any)[k]
-    if (typeof v === 'function') api[k] = v
+  const subscribe = (listener: Listener) => {
+    listeners.add(listener)
+    return () => { listeners.delete(listener) }
   }
-
-  function useStore<U>(selector: (s: T) => U): U {
+  state = factory(setState, getState)
+  function useStore<U>(selector: (state: T) => U): U {
     return useSyncExternalStore(subscribe, () => selector(state), () => selector(state))
   }
-
-  return { useStore, api }
+  return { useStore, api: { _set: setState } }
 }

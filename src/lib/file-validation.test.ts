@@ -13,7 +13,7 @@ describe('sanitizeFileName', () => {
     assert.equal(sanitizeFileName(null), 'file')
     assert.equal(sanitizeFileName(undefined, 'fb'), 'fb')
     assert.equal(sanitizeFileName('', 'fb'), 'fb')
-    assert.equal(sanitizeFileName(123 as any, 'fb'), 'fb')
+    assert.equal(sanitizeFileName(123, 'fb'), 'fb')
   })
 
   it('strips control characters (C0 + DEL)', () => {
@@ -59,7 +59,7 @@ describe('sanitizeFileName', () => {
 describe('validateFileName', () => {
   it('rejects empty / non-string', () => {
     assert.ok(validateFileName(''))
-    assert.ok(validateFileName(null as any))
+    assert.ok(validateFileName(null as unknown as string))
   })
 
   it('rejects names longer than MAX_FILENAME_LENGTH', () => {

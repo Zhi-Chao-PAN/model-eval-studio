@@ -1,9 +1,9 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
-type Variant = 'default' | 'success' | 'warn' | 'danger' | 'outline' | 'primary' | 'muted'
+export type BadgeVariant = 'default' | 'success' | 'warn' | 'danger' | 'outline' | 'primary' | 'muted'
 
-const variants: Record<Variant, string> = {
+const variants: Record<BadgeVariant, string> = {
   default: 'bg-white/10 text-white border-white/10',
   primary: 'bg-indigo-500/15 text-indigo-300 border-indigo-400/25',
   success: 'bg-emerald-500/12 text-emerald-300 border-emerald-400/20',
@@ -17,7 +17,7 @@ export function Badge({
   className,
   variant = 'default',
   ...p
-}: React.HTMLAttributes<HTMLSpanElement> & { variant?: Variant }) {
+}: React.HTMLAttributes<HTMLSpanElement> & { variant?: BadgeVariant }) {
   return (
     <span
       className={cn(

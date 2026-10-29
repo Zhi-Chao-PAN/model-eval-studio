@@ -1,11 +1,13 @@
 'use client'
 
+import type { TaskView } from '@/lib/task-types'
+import { errorMessage } from '@/lib/api-error'
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   FileCheck2, Star, ShieldCheck, Zap, Award, Activity,
-  Sparkles, AlertTriangle, ArrowLeft, Loader2,
+  Sparkles, AlertTriangle, Loader2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -15,8 +17,8 @@ export default function SharePage() {
   const params = useParams()
   const token = params.token as string
 
-  const [task, setTask] = useState<any>(null)
-  const [share, setShare] = useState<any>(null)
+  const [task, setTask] = useState<TaskView | null>(null)
+  const [share, setShare] = useState<{ expiresAt?: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
@@ -26,19 +28,19 @@ export default function SharePage() {
       try {
         const res = await fetch('/api/share/' + token)
         const text = await res.text()
-        let data: any = {}
+        let data: { task?: TaskView; share?: { expiresAt?: string | null }; error?: string } = {}
         try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
         if (!res.ok) {
           setError(data.error || '加载失败，请稍后重试')
           return
         }
-        setTask(data.task)
-        setShare(data.share)
-        if (data.task?.models?.length > 0) {
+        setTask(data.task ?? null)
+        setShare(data.share ?? null)
+        if (data.task && data.task.models.length > 0) {
           setSelectedModelId(data.task.models[0].id)
         }
-      } catch (e: any) {
-        setError(e.message || '网络异常，请稍后重试')
+      } catch (e) {
+        setError(errorMessage(e) || '网络异常，请稍后重试')
       } finally {
         setLoading(false)
       }
@@ -46,7 +48,7 @@ export default function SharePage() {
     load()
   }, [token])
 
-  const selectedModel = task?.models?.find((m: any) => m.id === selectedModelId)
+  const selectedModel = task?.models?.find((m) => m.id === selectedModelId)
   const latestReport = selectedModel?.reports?.[0]
 
   function tierText(score: number): string {
@@ -149,7 +151,7 @@ export default function SharePage() {
           <>
             {/* Score overview */}
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-            {task.models.map((m: any) => {
+            {task.models.map((m) => {
               const report = m.reports?.[0]
               const score = report?.overallScore || 0
               const isActive = selectedModelId === m.id

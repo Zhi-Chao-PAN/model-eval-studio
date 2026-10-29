@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { errorMessage } from '@/lib/api-error'
+import { useCallback, useState, useEffect } from 'react'
 import {
   X, Users, Link2, Copy, Check, Plus, Trash2, ExternalLink,
   Clock, Shield, AlertTriangle, RefreshCw,
@@ -52,9 +53,6 @@ export function SharePanel({ taskId, onClose }: Props) {
   const [confirmRemoveUser, setConfirmRemoveUser] = useState<string | null>(null)
   const [confirmRevokeShare, setConfirmRevokeShare] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadData()
-  }, [taskId, activeTab])
 
   function flashSuccess(msg: string) {
     toast.success(msg)
@@ -63,27 +61,19 @@ export function SharePanel({ taskId, onClose }: Props) {
     toast.error(msg)
   }
 
-  async function loadData() {
-    setLoading(true)
-    setLoadError(null)
-    try {
-      if (activeTab === 'collaborators') {
-        const res = await fetch('/api/tasks/' + taskId + '/collaborators')
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.error || '加载协作者列表失败，请稍后重试')
-        setCollaborators(data.collaborators || [])
-      } else {
-        const res = await fetch('/api/tasks/' + taskId + '/shares')
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.error || '加载共享链接失败，请稍后重试')
-        setShares(data.shares || [])
-      }
-    } catch (e: any) {
-      setLoadError(e?.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loadData = useCallback(() => {
+    const endpoint = activeTab === 'collaborators' ? 'collaborators' : 'shares'
+    return fetch(`/api/tasks/${taskId}/${endpoint}`).then(async res => {
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '加载失败，请稍后重试')
+      setLoadError(null)
+      if (activeTab === 'collaborators') setCollaborators(data.collaborators || [])
+      else setShares(data.shares || [])
+    }).catch(e => setLoadError(errorMessage(e) || '加载失败'))
+      .finally(() => setLoading(false))
+  }, [taskId, activeTab])
+
+  useEffect(() => { void loadData() }, [loadData])
 
   async function addCollaborator() {
     const username = addUsername.trim()
@@ -106,8 +96,8 @@ export function SharePanel({ taskId, onClose }: Props) {
       setAddUsername('')
       flashSuccess('已添加协作者 ' + username)
       loadData()
-    } catch (e: any) {
-      flashError(e?.message || '添加失败，请检查网络连接')
+    } catch (e) {
+      flashError(errorMessage(e) || '添加失败，请检查网络连接')
     } finally {
       setAdding(false)
     }
@@ -128,8 +118,8 @@ export function SharePanel({ taskId, onClose }: Props) {
       }
       flashSuccess('角色已更新')
       loadData()
-    } catch (e: any) {
-      flashError(e?.message || '角色更新失败，请检查网络连接')
+    } catch (e) {
+      flashError(errorMessage(e) || '角色更新失败，请检查网络连接')
     } finally {
       setActingUserId(null)
     }
@@ -155,8 +145,8 @@ export function SharePanel({ taskId, onClose }: Props) {
       }
       flashSuccess('协作者已移除')
       loadData()
-    } catch (e: any) {
-      flashError(e?.message || '移除失败，请检查网络连接')
+    } catch (e) {
+      flashError(errorMessage(e) || '移除失败，请检查网络连接')
     } finally {
       setActingUserId(null)
     }
@@ -181,8 +171,8 @@ export function SharePanel({ taskId, onClose }: Props) {
       }
       flashSuccess('共享链接已创建')
       loadData()
-    } catch (e: any) {
-      flashError(e?.message || '创建失败，请检查网络连接')
+    } catch (e) {
+      flashError(errorMessage(e) || '创建失败，请检查网络连接')
     } finally {
       setCreatingShare(false)
     }
@@ -206,8 +196,8 @@ export function SharePanel({ taskId, onClose }: Props) {
       }
       flashSuccess('共享链接已吊销')
       loadData()
-    } catch (e: any) {
-      flashError(e?.message || '吊销失败，请检查网络连接')
+    } catch (e) {
+      flashError(errorMessage(e) || '吊销失败，请检查网络连接')
     } finally {
       setRevokingId(null)
     }

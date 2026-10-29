@@ -154,7 +154,7 @@ export async function POST(
       { role: 'user' as const, content: message },
     ]
 
-    const result = await generateChat(messages as any, {
+    const result = await generateChat(messages, {
       baseUrl: aiConfig.baseUrl,
       apiKey: aiConfig.apiKey,
       model: aiConfig.model,

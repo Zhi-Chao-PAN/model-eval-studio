@@ -1,5 +1,5 @@
 import { prisma } from './prisma'
-import type { AuditAction } from '@prisma/client'
+import type { AuditAction, Prisma } from '@prisma/client'
 
 export interface AuditLogInput {
   action: AuditAction
@@ -37,7 +37,7 @@ export async function logAudit(
         action: input.action,
         userId: input.userId ?? null,
         taskId: input.taskId ?? null,
-        detail: (input.detail ?? undefined) as any,
+        detail: input.detail ? JSON.parse(JSON.stringify(input.detail)) as Prisma.InputJsonValue : undefined,
         ipAddress: ip,
         userAgent,
         path: url.pathname,
@@ -51,7 +51,6 @@ export async function logAudit(
     })
   } catch (e) {
     // Audit logging must never break the main flow.
-    // eslint-disable-next-line no-console
-    console.error('[audit] failed to write audit log:', e)
+      console.error('[audit] failed to write audit log:', e)
   }
 }

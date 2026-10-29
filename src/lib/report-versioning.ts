@@ -2,6 +2,7 @@
  * 报告版本管理：版本号分配、生成快照、修订记录
  */
 
+import type { ModelReport } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { createHash } from 'crypto'
 import { clampDbText, clampRequiredText, DB_TEXT_LIMITS } from '@/lib/utils'
@@ -45,7 +46,7 @@ export async function getNextReportVersion(taskModelId: string): Promise<number>
 
 /** Prisma 唯一约束冲突错误码（见 https://www.prisma.io/docs/reference/api-reference/error-reference#p2002） */
 export function isUniqueConstraintError(err: unknown): boolean {
-  return !!err && typeof err === 'object' && (err as any).code === 'P2002'
+  return !!err && typeof err === 'object' && 'code' in err && err.code === 'P2002'
 }
 
 /** 生成文本内容的 SHA-256 哈希（用于快照摘要） */
@@ -149,7 +150,7 @@ export async function createReportRevision(opts: {
   verificationSummary?: string | null
   generationSnapshot?: string
   generationConfig?: string
-}): Promise<any> {
+}): Promise<ModelReport> {
   const parent = await prisma.modelReport.findUnique({
     where: { id: opts.parentReportId },
   })
@@ -164,12 +165,12 @@ export async function createReportRevision(opts: {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       const report = await prisma.$transaction(async tx => {
-        const version = await (tx as any).modelReport.aggregate({
+        const version = await tx.modelReport.aggregate({
           where: { taskModelId: opts.taskModelId },
           _max: { version: true },
-        }).then((r: any) => (r._max.version || 0) + 1)
+        }).then((r) => (r._max.version || 0) + 1)
 
-        return (tx as any).modelReport.create({
+        return tx.modelReport.create({
           data: {
             taskModelId: opts.taskModelId,
             version,
@@ -199,10 +200,11 @@ export async function createReportRevision(opts: {
         })
       })
       return report
-    } catch (err: any) {
+    } catch (err) {
       if (!isUniqueConstraintError(err) || attempt === MAX_RETRIES - 1) throw err
       // 等待随机时间再重试，避免再次冲突
       await new Promise(r => setTimeout(r, 20 + Math.random() * 80))
     }
   }
+  throw new Error("Report revision retry limit exhausted")
 }

@@ -5,7 +5,7 @@ import { requireAuth } from '@/lib/session'
 import { logAudit } from '@/lib/audit'
 import { deleteArtifactFile } from '@/lib/artifact-storage'
 import { parseTrajectoryScreenshots } from '@/lib/trajectory-screenshots'
-import { getTaskAccess, hasAccessLevel, requireAccess } from '@/lib/task-access'
+import { getTaskAccess, requireAccess } from '@/lib/task-access'
 import { clampDbText, isValidCuid } from '@/lib/utils'
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { safeServerError } from '@/lib/api-error'
@@ -33,7 +33,7 @@ export async function GET(
     const { id } = await params
     if (!isValidCuid(id)) return NextResponse.json({ error: '任务 ID 无效' }, { status: 400 })
 
-    const { access, task: accessTask } = await getTaskAccess(id, session)
+    const { access } = await getTaskAccess(id, session)
     const accessDenied = requireAccess(access, 'VIEWER')
     if (accessDenied) {
       return NextResponse.json({ error: accessDenied.error }, { status: accessDenied.status })
@@ -118,14 +118,12 @@ export async function GET(
     // 懒加载字段不在任务详情中返回，避免 payload 膨胀
     // - screenshotUrls: 轨迹截图 Blob URL 列表，通过 /models/[modelId]/screenshots 按需加载
     // - verificationScreenshotUrls: 验证截图 base64，通过 /models/[modelId]/verification 按需加载
-    for (const model of task.models) {
-      ;(model as any).screenshotUrls = undefined
-      ;(model as any).verificationScreenshotUrls = undefined
-    }
+
 
     return NextResponse.json({
       task: {
         ...task,
+        models: task.models.map(model => ({ ...model, screenshotUrls: undefined, verificationScreenshotUrls: undefined })),
         messages: [...task.messages].reverse(),
       },
     })
@@ -358,7 +356,7 @@ export async function DELETE(
         if (artifact.url) blobUrls.add(artifact.url)
       }
       // 收集轨迹截图 URL（Set 自动去重）
-      const screenshots = parseTrajectoryScreenshots((model as any).screenshotUrls)
+      const screenshots = parseTrajectoryScreenshots(model.screenshotUrls)
       for (const s of screenshots) {
         if (s.url) blobUrls.add(s.url)
       }

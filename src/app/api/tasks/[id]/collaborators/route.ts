@@ -9,7 +9,6 @@ import { logAudit } from '@/lib/audit'
 
 const MAX_USERNAME_LENGTH = 64
 const MAX_COLLABORATORS_PER_TASK = 50
-const ALLOWED_ROLES = ['VIEWER', 'EDITOR'] as const
 
 // Username pattern mirrors the register route: allow letters, numbers, CJK,
 // . _ - (but NOT @ since usernames don't contain email domain parts)
@@ -80,8 +79,8 @@ export async function POST(
 
     const rawUsername = (body as { username?: unknown }).username
     const rawRole = (body as { role?: unknown }).role
-    const role = typeof rawRole === 'string' && ALLOWED_ROLES.includes(rawRole as any)
-      ? (rawRole as typeof ALLOWED_ROLES[number])
+    const role = typeof rawRole === 'string' && (rawRole === 'VIEWER' || rawRole === 'EDITOR')
+      ? rawRole
       : 'VIEWER'
 
     if (typeof rawUsername !== 'string' || !rawUsername.trim()) {
@@ -94,7 +93,7 @@ export async function POST(
     if (!USERNAME_RE.test(username)) {
       return NextResponse.json({ error: '用户名格式无效' }, { status: 400 })
     }
-    if (rawRole !== undefined && (typeof rawRole !== 'string' || !ALLOWED_ROLES.includes(rawRole as any))) {
+    if (rawRole !== undefined && (typeof rawRole !== 'string' || !(rawRole === 'VIEWER' || rawRole === 'EDITOR'))) {
       return NextResponse.json({ error: '角色必须是 VIEWER 或 EDITOR' }, { status: 400 })
     }
 
