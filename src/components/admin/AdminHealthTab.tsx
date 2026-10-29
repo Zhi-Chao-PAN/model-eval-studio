@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { errorMessage } from '@/lib/api-error'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Activity, AlertTriangle, BarChart3, Clock, Gauge, Loader2,
   RefreshCw, TrendingUp, Users, Zap,
@@ -117,12 +118,9 @@ export function AdminHealthTab() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
-  async function load(opts: { refresh?: boolean } = {}) {
-    if (opts.refresh) setRefreshing(true)
-    else setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/admin/health?range=' + range)
+  const load = useCallback(async () => {
+    return fetch('/api/admin/health?range=' + range).then(async (res) => {
+      setError(null)
       if (!res.ok) {
         let msg = '健康监控数据加载失败'
         try { const d = await res.json(); if (d.error) msg = d.error } catch { /* ignore */ }
@@ -131,18 +129,16 @@ export function AdminHealthTab() {
       const data = await res.json().catch(() => ({}))
       if (data.summary) setSummary(data.summary)
       else throw new Error('健康监控数据格式异常')
-    } catch (e: any) {
-      setError(e?.message || '健康监控数据加载失败，请检查网络后重试')
-    } finally {
+    }).catch((e) => {
+      setError(errorMessage(e) || '健康监控数据加载失败，请检查网络后重试')
+    }).finally(() => {
       setLoading(false)
       setRefreshing(false)
-    }
-  }
-
-  useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    })
   }, [range])
+
+  useEffect(() => { void load() }, [load])
+
 
   if (loading && !summary) {
     return (
@@ -181,7 +177,7 @@ export function AdminHealthTab() {
             {(['today', '7d', '30d'] as const).map(r => (
               <button
                 key={r}
-                onClick={() => setRange(r)}
+                onClick={() => { setLoading(true); setRange(r) }}
                 className={cn(
                   'px-3 h-7 rounded-md text-[11px] font-medium transition-colors',
                   range === r ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300',
@@ -197,7 +193,7 @@ export function AdminHealthTab() {
             {new Date(win.to).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => load({ refresh: true })} disabled={refreshing}>
+        <Button variant="ghost" size="sm" onClick={() => { setRefreshing(true); void load() }} disabled={refreshing}>
           {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           刷新
         </Button>

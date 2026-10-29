@@ -1,5 +1,7 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import type { BadgeVariant } from '@/components/ui/badge'
+import { errorMessage } from '@/lib/api-error'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -42,7 +44,7 @@ const stepLabels: Record<string, string> = {
   DESIGN: '任务设计', INFO: '任务信息', SCREENSHOT: '看板识别', ARTIFACT: '产物分析', REPORT: '评估报告',
 }
 
-const statusMeta: Record<string, { label: string; variant: any }> = {
+const statusMeta: Record<string, { label: string; variant: BadgeVariant }> = {
   DRAFT: { label: '草稿', variant: 'muted' },
   IN_PROGRESS: { label: '进行中', variant: 'primary' },
   COMPLETED: { label: '已完成', variant: 'success' },
@@ -74,10 +76,9 @@ export default function DashboardPage() {
     { keys: ['Esc'], label: '关闭弹层' },
   ]
 
-  async function loadTasks() {
-    setLoadError(null)
-    try {
-      const res = await fetch('/api/tasks')
+  const loadTasks = useCallback(async () => {
+    return fetch('/api/tasks').then(async (res) => {
+      setLoadError(null)
       if (!res.ok) {
         let msg = '加载任务失败，请稍后重试'
         try { const d = await res.json(); if (d.error) msg = d.error } catch { /* ignore */ }
@@ -87,12 +88,12 @@ export default function DashboardPage() {
       try { data = await res.json() } catch { throw new Error('服务器返回了非预期内容') }
       if (data.tasks) setTasks(data.tasks)
       if (data.sharedTasks) setSharedTasks(data.sharedTasks)
-    } catch (e: any) {
-      setLoadError(e?.message || '加载任务失败，请检查网络连接后重试')
-    } finally { setLoading(false) }
-  }
+    }).catch((e) => {
+      setLoadError(errorMessage(e) || '加载任务失败，请检查网络连接后重试')
+    }).finally(() => { setLoading(false) })
+  }, [])
 
-  useEffect(() => { loadTasks() }, [])
+  useEffect(() => { loadTasks() }, [loadTasks])
 
   // Keyboard shortcut: press '/' to focus search (when not in an input)
   useEffect(() => {
@@ -138,8 +139,8 @@ export default function DashboardPage() {
         return
       }
       router.push('/tasks/' + data.task.id)
-    } catch (err: any) {
-      toast.error(err?.message || '创建任务失败，请检查网络连接')
+    } catch (err) {
+      toast.error(errorMessage(err) || '创建任务失败，请检查网络连接')
     } finally { setCreating(false) }
   }
 
@@ -160,8 +161,8 @@ export default function DashboardPage() {
         return
       }
       await loadTasks()
-    } catch (err: any) {
-      toast.error(err?.message || '删除失败，请检查网络连接')
+    } catch (err) {
+      toast.error(errorMessage(err) || '删除失败，请检查网络连接')
     } finally { setDeletingId(null) }
   }
 
@@ -176,8 +177,8 @@ export default function DashboardPage() {
       }
       await loadTasks()
       router.push(`/tasks/${data.id}`)
-    } catch (err: any) {
-      toast.error(err?.message || '复制任务失败，请检查网络连接')
+    } catch (err) {
+      toast.error(errorMessage(err) || '复制任务失败，请检查网络连接')
     } finally { setDuplicatingId(null) }
   }
 

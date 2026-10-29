@@ -1,11 +1,12 @@
 'use client'
+import type { LucideIcon } from 'lucide-react'
 import {
   FileText, Image as ImageIcon, Package, FileCheck2, ChevronRight, Check,
   Wand2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const ICONS: Record<string, any> = {
+const ICONS: Record<string, LucideIcon> = {
   DESIGN: Wand2,
   INFO: FileText,
   SCREENSHOT: ImageIcon,
@@ -38,7 +39,6 @@ export function DesktopStepSidebar({ steps, currentStep, onChange, completedStep
         const Icon = ICONS[step.key] || FileText
         const isCurrent = step.key === currentStep
         const isDone = completedSteps ? completedSteps.has(step.key) : i < currentIdx
-        const isFuture = !isCurrent && !isDone
         const accent = ACCENTS[step.key] || 'from-indigo-500 to-violet-500'
         return (
           <button

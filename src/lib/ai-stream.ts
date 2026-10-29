@@ -56,21 +56,21 @@ async function* streamOpenAI(
     timeout: options.timeoutMs,
   })
 
-  const stream = (await openai.chat.completions.create({
+  const stream = await openai.chat.completions.create({
     model: options.model,
-    messages: messages as any,
+    messages,
     temperature: options.temperature,
     max_tokens: options.maxTokens,
     stream: true,
     stream_options: { include_usage: true },
-  } as any)) as any
+  })
 
   let reasoningOpen = false
 
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta
     const content = delta?.content
-    const reasoning = delta?.reasoning_content
+    const reasoning = delta && "reasoning_content" in delta && typeof delta.reasoning_content === "string" ? delta.reasoning_content : undefined
 
     if (reasoning) {
       if (!reasoningOpen) {
@@ -89,8 +89,8 @@ async function* streamOpenAI(
     }
 
     // Some providers include usage on the final chunk
-    if ((chunk as any).usage) {
-      const u = (chunk as any).usage
+    if (chunk.usage) {
+      const u = chunk.usage
       yield {
         type: 'usage',
         usage: {
@@ -112,7 +112,7 @@ async function* streamAnthropic(
   const systemMsgs = messages.filter((m) => m.role === 'system').map((m) => m.content)
   const nonSystemMsgs = messages.filter((m) => m.role !== 'system')
 
-  const body: any = {
+  const body: Record<string, unknown> = {
     model: options.model,
     max_tokens: options.maxTokens,
     temperature: options.temperature,

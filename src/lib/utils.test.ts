@@ -33,7 +33,7 @@ test('clampDbText: maxLen 过小（<3）时返回纯省略号，不抛错', () =
 })
 
 test('clampDbText: 非字符串输入强转字符串', () => {
-  assert.equal(clampDbText(12345 as any, 10), '12345')
+  assert.equal(clampDbText(12345 as unknown as string, 10), '12345')
 })
 
 test('clampRequiredText: null/undefined/空串返回空串', () => {

@@ -155,7 +155,7 @@ export async function POST(
 
     const stream = new ReadableStream({
       async start(controller) {
-        const send = (event: string, data: any) => {
+        const send = (event: string, data: unknown) => {
           controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
         }
 
