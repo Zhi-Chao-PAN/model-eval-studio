@@ -19,7 +19,11 @@
     "db:setup": "FORCE_MIGRATE=1 node scripts/migrate-if-production.js",
     "db:deploy-prod": "VERCEL_ENV=production node scripts/migrate-if-production.js",
     "typecheck": "tsc --noEmit",
-    "init:admin": "tsx scripts/init-admin.ts"
+    "init:admin": "tsx scripts/init-admin.ts",
+    "security:scan": "node scripts/secret-scan.mjs history",
+    "security:install-hooks": "node scripts/install-security-hooks.mjs",
+    "test:security": "node --test scripts/test-ai.test.cjs",
+    "prepare": "node scripts/install-security-hooks.mjs --if-local"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

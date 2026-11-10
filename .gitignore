@@ -70,3 +70,11 @@ LPT1
 LPT2
 LPT3
 .vercel/.env.production.local
+
+# Credential files: examples must contain no real values
+.env*
+!.env.example
+!.env.*.example
+*.key
+*.p12
+*.pfx

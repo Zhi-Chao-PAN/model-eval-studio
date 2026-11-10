@@ -1,0 +1,9 @@
+title = "Model Eval Studio credential protection"
+[extend]
+useDefault = true
+
+[[rules]]
+id = "minimax-token-plan-key"
+description = "MiniMax subscription key"
+regex = '''sk-cp-[A-Za-z0-9_+/=-]{16,512}'''
+keywords = ["sk-cp-"]
